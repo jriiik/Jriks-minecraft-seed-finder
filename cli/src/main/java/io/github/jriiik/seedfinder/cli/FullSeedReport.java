@@ -8,6 +8,7 @@ import io.github.jriiik.seedfinder.bedrock.BedrockPattern;
 import io.github.jriiik.seedfinder.finder.FullSeedFinder;
 import io.github.jriiik.seedfinder.finder.FullSeedFinder.Candidate;
 import io.github.jriiik.seedfinder.finder.FullSeedFinder.Origin;
+import io.github.jriiik.seedfinder.finder.WorldSeedSearch;
 import io.github.jriiik.seedfinder.version.VersionData;
 import java.io.PrintWriter;
 import java.util.ArrayList;
@@ -35,8 +36,24 @@ final class FullSeedReport {
     }
 
     /** Searches and prints; returns true when at least one world seed could be named. */
-    static boolean run(PrintWriter out, VersionData data, List<Long> foundSeeds, BedrockEvidence evidence, int threads) {
+    static boolean run(PrintWriter out, VersionData data, List<Long> foundSeeds, BedrockEvidence evidence, OptionalLong hashedSeed,
+                       int threads) {
         List<Long> structureSeeds = new ArrayList<>(new LinkedHashSet<>(foundSeeds));
+        if (hashedSeed.isPresent() && structureSeeds.size() <= WorldSeedSearch.MAX_HASHED_SEED_CHECKS) {
+            long[] matches = Seeds.withHashedSeed(structureSeeds, hashedSeed.getAsLong());
+            if (matches.length == 1) {
+                out.println("Found the full seed: " + matches[0]);
+                out.println("It is the only seed with these structures whose hash is the hashed seed in your notes.");
+                List<BedrockObservation> wrong = evidence.problems().isEmpty() ? evidence.mismatchesOf(matches[0]) : List.of();
+                if (!wrong.isEmpty()) {
+                    out.printf("But it gets %d of your bedrock blocks wrong, for example:%n", wrong.size());
+                    wrong.stream().limit(MAX_MISTAKES_SHOWN).forEach(observation -> out.println("  " + mistake(observation)));
+                }
+                return true;
+            }
+            out.println("None of the possible seeds has the hashed seed in your notes (the server may send a different value),");
+            out.println("so it is not used.");
+        }
         if (!evidence.structureSeedObservations().isEmpty()) {
             structureSeeds = narrowByNether(out, structureSeeds, evidence);
             if (structureSeeds.isEmpty()) {

@@ -119,7 +119,7 @@ final class FindCommand implements Callable<Integer> {
         out.println();
         boolean named = false;
         if (found.size() <= FullSeedFinder.MAX_STRUCTURE_SEEDS) {
-            named = FullSeedReport.run(out, data, found, bedrock, threadCount);
+            named = FullSeedReport.run(out, data, found, bedrock, read.hashedSeed(), threadCount);
         } else if (!read.bedrock().isEmpty()) {
             out.println("Too many structure seeds to check the bedrock against; add more structures first.");
         }

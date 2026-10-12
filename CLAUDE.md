@@ -36,6 +36,14 @@ the client already received.
     `FullSeedFinderTest.theFalseFitEstimateMatchesReality`. Never present a seed with bedrock mismatches as found.
 - `cli/`: picocli app `seedfinder` (`find`, `full-seed`, `structure-seed`, `locate`, `bedrock`, `structures`,
   `versions`).
+- `mod/`: Fabric client mod for 26.3 (Loom, non-remapping, Mojang names; the engine is nested as jar-in-jar, Gson
+  comes from Minecraft). `SeedFinderClient` registers an unbound key, a HUD line, chunk-load and system-message
+  listeners; `WorldSession` holds per-world notes (opt-in `collecting`, saved as JSON plus a CLI-readable notes
+  file in `config/jriksseedfinder/`); `SearchRunner` runs `WorldSeedSearch` on its own low-priority thread;
+  `BedrockScanner` reads bedrock layers (B / natural stone / unknown); the class tweaker opens
+  `BiomeManager.biomeZoomSeed` (the hashed seed). `NoNetworkGuardTest` scans the built jar and fails on any
+  command, networking, packet, mixin or reflection reference. `src/gametest` is an in-game test (real client under
+  Xvfb) with a test-only mixin that works around Xvfb's missing sRGB framebuffer.
 - `tools/oracle/`: `run-oracle.sh <version>` downloads the official server jar into `tools/oracle/build/` and runs
   `Oracle.java` (plus `BedrockOracle.java` next to it, found by Java's multi-file source launcher) against the
   game's own code to write version data and test fixtures (`engine/src/test/resources/fixtures/<v>/`). Output is
@@ -45,8 +53,9 @@ the client already received.
 ## Commands
 
 ```
-./gradlew build            # compile (-Xlint:all -Werror) and run all tests
+./gradlew build            # compile (-Xlint:all -Werror) and run all tests (Gradle must run on JDK 25 for Loom)
 ./gradlew :cli:fatJar      # cli/build/libs/seedfinder.jar
+xvfb-run -a ./gradlew :mod:runProductionClientGameTest   # in-game test, about 2-5 minutes
 JAVA_HOME=<jdk25> tools/oracle/run-oracle.sh 26.3
 ```
 
@@ -55,7 +64,10 @@ JAVA_HOME=<jdk25> tools/oracle/run-oracle.sh 26.3
 - The engine must reproduce the game bit for bit. Every generation feature gets oracle fixtures from the real game
   and tests that compare against them. Do not hand-write "expected" values; compute or record them.
 - Never commit Minecraft code, jars, decompiled sources or assets. Only facts (numbers, names) produced by the oracle.
-- Engine and CLI target Java 21 (`options.release = 21`); Minecraft 26.x itself needs Java 25 (oracle, future mod).
+- Engine and CLI target Java 21 (`options.release = 21`); Minecraft 26.x itself needs Java 25 (oracle, mod), and
+  Gradle runs on JDK 25 (CI too).
+- The mod must stay command-free and send-free; extend `NoNetworkGuard` rather than weakening it. Only the passive
+  Fabric API modules listed in `mod/build.gradle.kts` may be used.
 - Dependencies go through `gradle/libs.versions.toml`.
 
 ## Sandbox notes
@@ -63,5 +75,7 @@ JAVA_HOME=<jdk25> tools/oracle/run-oracle.sh 26.3
 - Maven Central sometimes answers 429 (rate limit) from the cloud sandbox. Workaround used so far: a Gradle init
   script in `~/.gradle/init.d/` that swaps Maven Central for `https://maven-central.storage-download.googleapis.com/maven2/`.
   This lives outside the repo; recreate it when needed.
-- JDK 25 is not preinstalled; Temurin 25 can be downloaded from `api.adoptium.net` (verify the SHA-256).
+- JDK 25 is not preinstalled; Temurin 25 can be downloaded from `api.adoptium.net` (verify the SHA-256). In earlier
+  sessions it was at `/opt/jdks/jdk-25.0.4.1+1`.
+- Xvfb and Mesa (llvmpipe) are installed, so the in-game test runs here; its first run downloads ~480 MB of assets.
 - To read game code: decompile the server jar (Vineflower) into the scratchpad, never into the repo.

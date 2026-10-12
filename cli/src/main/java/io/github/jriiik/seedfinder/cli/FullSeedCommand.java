@@ -88,6 +88,6 @@ final class FullSeedCommand implements Callable<Integer> {
             return 1;
         }
         int threadCount = Threads.resolve(commandLine, threads);
-        return FullSeedReport.run(out, data, structureSeeds, evidence, threadCount) ? 0 : 1;
+        return FullSeedReport.run(out, data, structureSeeds, evidence, observations.hashedSeed(), threadCount) ? 0 : 1;
     }
 }

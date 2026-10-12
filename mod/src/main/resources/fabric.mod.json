@@ -1,0 +1,27 @@
+{
+    "schemaVersion": 1,
+    "id": "jriksseedfinder",
+    "version": "${version}",
+    "name": "Jrik's Seed Finder",
+    "description": "Finds the world seed from structures and bedrock you come across. Registers no chat commands and sends nothing to the server.",
+    "authors": ["jriiik"],
+    "license": "GPL-3.0-only",
+    "contact": {
+        "sources": "https://github.com/jriiik/Jriks-minecraft-seed-finder"
+    },
+    "environment": "client",
+    "entrypoints": {
+        "client": ["io.github.jriiik.seedfinder.mod.SeedFinderClient"]
+    },
+    "accessWidener": "jriksseedfinder.classtweaker",
+    "depends": {
+        "fabricloader": ">=0.19.5",
+        "minecraft": "~26.3",
+        "java": ">=25",
+        "fabric-api-base": "*",
+        "fabric-key-mapping-api-v1": "*",
+        "fabric-lifecycle-events-v1": "*",
+        "fabric-rendering-v1": "*",
+        "fabric-message-api-v1": "*"
+    }
+}
