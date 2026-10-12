@@ -5,8 +5,9 @@ such as where villages, temples and other structures are. Built from scratch, st
 Minecraft version (**26.3**).
 
 > **Work in progress.** From about six structure positions the finder works out the world's *structure seed* (the
-> part of the seed that decides where structures go), usually in under a second. Finding the full seed is the next
-> step. See the [roadmap](docs/ROADMAP.md).
+> part of the seed that decides where structures go), usually in under a second, and names the likely full seed.
+> With the bedrock floor of one chunk added, it finds the full seed for certain. The Minecraft mod is next. See the
+> [roadmap](docs/ROADMAP.md).
 
 *Not an official Minecraft product. Not approved by or associated with Mojang or Microsoft.*
 
@@ -17,8 +18,11 @@ Minecraft version (**26.3**).
 | Structure placement for Minecraft 26.3, checked against the real game | ✅ done |
 | `seedfinder locate`: list structure spots for a seed | ✅ done |
 | `seedfinder find`: work out the structure seed (48 bits) from structure positions | ✅ done |
-| Find the full seed (64 bits) | ⏳ next |
-| Fabric client mod that collects structure positions while you play | 🔜 planned |
+| Name the likely full seed (64 bits) of worlds whose seed was picked by Minecraft or typed as text | ✅ done |
+| Find the full seed for certain from the bedrock floor (`seedfinder full-seed`, or bedrock notes in `find`) | ✅ done |
+| `seedfinder bedrock`: show the bedrock floor of a seed you know | ✅ done |
+| Fabric client mod that collects structures and bedrock while you play | 🔜 next |
+| Full seed from biomes, structure seed from nether bedrock alone | 🔜 later |
 
 ## Trying the command-line app
 
@@ -31,6 +35,8 @@ Minecraft version (**26.3**).
 ```
 java -jar seedfinder.jar find desert_pyramid:272,80 swamp_hut:256,-144 village:336,80 shipwreck:-128,32 ruined_portal:16,0 trial_chamber:0,224
 java -jar seedfinder.jar find --file my-structures.txt
+java -jar seedfinder.jar full-seed 12345 --file my-bedrock.txt
+java -jar seedfinder.jar bedrock --seed 12345
 java -jar seedfinder.jar structure-seed 12345
 java -jar seedfinder.jar locate --seed 12345
 java -jar seedfinder.jar locate --seed "my world" --at 500,-1200 --radius 2000 villages pillager_outposts
@@ -60,15 +66,67 @@ The first example uses structure positions of seed 12345 and finds exactly that.
    The nearest minecraft:village_plains is at [336, ~, 80] (345 blocks away)
    ```
 4. **Read the answer.** The *structure seed* is the last 48 bits of the world seed. If several seeds fit, the
-   finder lists them all and names the structure types that would tell them apart.
+   finder lists them all and names the structure types that would tell them apart. Then it goes on to the full
+   seed (next section).
+
+## Finding the full seed
+
+65,536 world seeds share each structure seed. Two things narrow them down.
+
+**How the seed was made.** When nobody types a seed, Minecraft picks one with Java's random number generator, and
+only one (sometimes two) of the 65,536 can come out of it. A seed typed as text, like "My World", also leaves only one.
+`find` names these right away:
+
+```
+If nobody typed a seed when the world was created (Minecraft then picks one), it is 5794443870565576761.
+If the seed was typed as text (like "My World") or as a short number, it is 12345.
+```
+
+That is a good guess for most worlds and servers, but only a guess: if the seed was typed, the "random" answer is
+a different seed that happens to share the structure seed.
+
+**Bedrock, to be sure.** The bottom of the overworld (y = -64 to -60) is a random-looking bedrock pattern that
+depends on the whole seed. With bedrock notes, the finder checks every one of the 65,536 seeds.
+
+1. Go to the bottom of the overworld, outside any mineshaft or stronghold, and pick a chunk (F3+G shows chunk
+   borders).
+2. Clear the whole chunk down to the bedrock: mine every block that isn't bedrock, until bedrock stops you in every
+   column. That is about 900 blocks of deepslate.
+3. For each of the 16 x 16 columns, note how high the **highest bedrock block** is, as the last digit of its height:
+   `0` for y=-60, `1` for -61, `2` for -62, `3` for -63, `4` for -64. F3 shows the height of the block you look at
+   ("Targeted Block"). Write one row of 16 digits per z, from north to south, each row from west to east, below a line
+   with the x and z of the north-west column (the corner with the lowest x and z). Use `?` for columns you skipped.
+
+   ```
+   # my-bedrock.txt
+   bedrock-heights 0 0
+   1123131433440202
+   2040332322041110
+   ...                (16 rows in total)
+   ```
+4. Run `seedfinder full-seed <structure seed> --file my-bedrock.txt`, or put the bedrock lines in the same file as your
+   structures and run `find`.
+
+What the answers mean:
+
+- **"Found the full seed"**: exactly one world seed fits all of your bedrock.
+- **"N world seeds fit"**: the area was too small. The finder names a few columns where they differ; add those.
+- **"No world seed fits all of your bedrock"**: the finder lists the blocks that don't fit. Usually a height was
+  noted wrong; check those spots, fix them and run again.
+
+A whole chunk is nearly always enough; an 8 x 8 area usually is too, but then a wrong structure seed could also
+match by chance, and the finder says so. Bedrock can also be noted block by block (`bedrock x y z`,
+`not-bedrock x y z`) or one layer at a time (`bedrock-layer x y z` followed by rows of `B` and `.`); see
+`seedfinder full-seed --help`. Nether bedrock only depends on the structure seed, so it can't give the full seed.
 
 **Try it on your own world:** create a world, use `/locate structure` for about six structures of different
 types, put the results into a file, run `find`, and compare the answer with
-`seedfinder structure-seed <the number /seed shows>`.
+`seedfinder structure-seed <the number /seed shows>`. `seedfinder bedrock --seed <the number /seed shows>` prints
+the bedrock floor the finder expects, in the same format as the notes, to compare with what you dig out.
 
-`locate` does the opposite: it lists the spots where each structure tries to generate for a seed you know, nearest
-first, using the same positions that `/locate` reports. A structure only appears at its spot if the biome there
-allows it. The finder does not check biomes yet, so some spots will turn out empty in the game.
+`locate` does the opposite of `find`: it lists the spots where each structure tries to generate for a seed you
+know, nearest first, using the same positions that `/locate` reports. A structure only appears at its spot if the
+biome there allows it. The finder does not check biomes yet, so some spots will turn out empty in the game.
 
 ## Ground rules
 
@@ -76,6 +134,10 @@ Seed finding is meant for your own worlds, friends' servers with their permissio
 and server owners checking whether their own seed can be found. Many servers don't allow it, because the seed
 reveals where ores and structures are. This project will not include anything to hide from anti-cheat or to get
 around a server's seed protection.
+
+The command-line app never connects to a server. The planned mod will not add chat commands (so nothing can clash
+with a server's own commands or plugins, such as `/locate`) and will not send anything to the server: it opens with
+a key you choose and only looks at what the game already shows you.
 
 ## How the project is organized
 
@@ -88,8 +150,10 @@ around a server's seed protection.
 
 **Testing against the real game.** `tools/oracle` runs Minecraft's own world generation code for a list of
 test seeds and records the results. The engine's tests then require our code to give exactly the same answers.
-For 26.3 that covers every structure type, 10 seeds, negative coordinates and positions far from spawn. The
-finder's tests feed it structure positions recorded from the game and require it to find the right seed.
+For 26.3 that covers every structure type, 10 seeds, negative coordinates and positions far from spawn, the random
+number generators used for blocks, the seeds Minecraft picks by itself, and the bedrock of real chunks generated
+by the game (overworld and nether, 184,320 blocks). The finder's tests feed it structure positions recorded from
+the game and require it to find the right seed.
 
 ## Building from source
 

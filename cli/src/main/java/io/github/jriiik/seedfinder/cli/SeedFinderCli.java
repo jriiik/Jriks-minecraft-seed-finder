@@ -14,13 +14,15 @@ import picocli.CommandLine.Command;
         "Not an official Minecraft product. Not approved by or associated with Mojang or Microsoft.",
     },
     subcommands = {
-        FindCommand.class, StructureSeedCommand.class, LocateCommand.class, StructuresCommand.class, VersionsCommand.class,
+        FindCommand.class, FullSeedCommand.class, StructureSeedCommand.class, LocateCommand.class, BedrockCommand.class,
+        StructuresCommand.class, VersionsCommand.class,
         CommandLine.HelpCommand.class,
     },
     footer = {
         "",
         "Examples:",
         "  seedfinder find desert_pyramid:272,80 swamp_hut:256,-144 village:336,80 shipwreck:-128,32 ruined_portal:16,0 trial_chamber:0,224",
+        "  seedfinder full-seed 12345 --file my-bedrock.txt",
         "  seedfinder locate --seed 12345 villages desert_pyramids",
     }
 )
