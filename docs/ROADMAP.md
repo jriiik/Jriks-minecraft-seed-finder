@@ -93,7 +93,8 @@ Typical searches take well under a second. Villages-only searches need more stru
 
 ### Phase 5: the mod
 
-- **Opt-in per world.** Nothing is read until the player switches collecting on for that world or server.
+- **Opt-in per world.** Nothing is read until the player switches collecting on for that world or server. Notes
+  are kept per address (or save name) and hashed seed, so worlds behind one address never mix.
 - **The hashed seed.** Every server sends players a SHA-256 hash of the world seed (for biome blending). Once the
   structure seed is known, checking its 65,536 full seeds against that hash settles the seed at once. If no
   candidate matches (a server may send a different value), the mod says so and uses bedrock instead.
@@ -123,6 +124,16 @@ Typical searches take well under a second. Villages-only searches need more stru
   patch, and two savanna centres over which the game laid its own terrain-following farm streets. Recognition took
   at most 0.11 s for 1,024 chunks. The in-game test then recognizes one of each type in a real client and checks
   every recognized start against the game's records.
+- *Player builds.* A review found that a plain roof of white wool stairs on grass matched camp tents (their built
+  blocks are mostly those stairs). Now 70% of the built blocks other than the most common one must match too, and
+  the most common block is only used to search when nothing else can be.
+- *Real structures that don't follow the seed:* chunks made by older versions (before 1.18 villages used a 32-chunk
+  grid), `/place structure` (it puts the start piece on the corner of the chunk you name) and copied areas. The mod
+  reads `/place` answers and ignores those spots; for the rest, "no seed fits" triggers a search that leaves out one
+  structure at a time and only reports a result that the hashed seed or bedrock proves.
+- *Every build checks real structures.* The in-game test generates the chunks around the 4 nearest starts of each
+  of the six types (24) with the game itself and requires the recognizer to find them with no wrong or
+  contradicting start; it also checks that a camp placed with `/place` is not noted.
 - *Underground structures need real blocks.* Servers with anti-xray hide them; the mod doesn't try to get around
   that, and they are simply not found there.
 

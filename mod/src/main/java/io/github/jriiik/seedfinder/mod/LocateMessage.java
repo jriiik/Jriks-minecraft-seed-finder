@@ -41,11 +41,12 @@ record LocateMessage(String structure, int x, int z) {
         }
     }
 
-    private static String text(Object arg) {
+    static String text(Object arg) {
         return arg instanceof Component component ? component.getString() : String.valueOf(arg);
     }
 
-    private static TranslatableContents find(Object node, String key) {
+    /** The translatable text with this key anywhere in a message (also nested in its arguments), or null. */
+    static TranslatableContents find(Object node, String key) {
         if (!(node instanceof Component component)) {
             return null;
         }

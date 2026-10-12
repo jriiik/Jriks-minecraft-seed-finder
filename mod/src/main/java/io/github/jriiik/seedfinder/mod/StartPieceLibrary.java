@@ -30,7 +30,9 @@ import net.minecraft.nbt.NbtAccounter;
 import net.minecraft.nbt.NbtIo;
 import net.minecraft.nbt.NbtUtils;
 import net.minecraft.resources.Identifier;
-import net.minecraft.server.packs.VanillaPackResources;
+import net.minecraft.server.packs.PackResources;
+import net.minecraft.server.packs.PackType;
+import net.minecraft.server.packs.resources.IoSupplier;
 import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.block.state.BlockState;
@@ -65,14 +67,19 @@ final class StartPieceLibrary {
         InputStream open(String path) throws IOException;
     }
 
-    /** The running game's own files (the same place the game loads its built-in data from). */
-    static final DataFiles GAME = path -> {
-        InputStream in = VanillaPackResources.class.getResourceAsStream("/data/minecraft/" + path);
-        if (in == null) {
-            throw new FileNotFoundException("data/minecraft/" + path);
-        }
-        return in;
-    };
+    /**
+     * The game's own built-in data pack (the game jar only). Not the class loader: other mods' jars come first there,
+     * and a mod shipping its own copy of a vanilla file (a block tag, say) would replace the game's.
+     */
+    static DataFiles vanilla(PackResources pack) {
+        return path -> {
+            IoSupplier<InputStream> resource = pack.getResource(PackType.SERVER_DATA, Identifier.withDefaultNamespace(path));
+            if (resource == null) {
+                throw new FileNotFoundException("data/minecraft/" + path);
+            }
+            return resource.get();
+        };
+    }
 
     /** The blueprints, and what could not be used (for the log). */
     record Library(List<StartPiece> pieces, List<String> problems) {
@@ -326,6 +333,9 @@ final class StartPieceLibrary {
         for (JsonElement value : json("tags/block/" + path(id) + ".json").getAsJsonArray("values")) {
             String entry = value.isJsonObject() ? string(value.getAsJsonObject(), "id") : value.getAsString();
             if (entry.startsWith("#")) {
+                if (!Identifier.parse(entry.substring(1)).getNamespace().equals("minecraft")) {
+                    throw new IllegalArgumentException("block tag " + id + " includes " + entry + ", which is not part of the game");
+                }
                 blocks.addAll(tag(entry.substring(1)));
             } else {
                 BuiltInRegistries.BLOCK.getOptional(Identifier.parse(entry)).ifPresent(blocks::add);

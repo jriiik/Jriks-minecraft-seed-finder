@@ -20,6 +20,8 @@ final class RemoveStructureScreen extends Screen {
     private final Screen parent;
     private final WorldSession session;
     private ScrollableLayout list;
+    /** The notes' version the list shows; recognition can change the notes while the screen is open. */
+    private int shownVersion;
 
     RemoveStructureScreen(Screen parent, WorldSession session) {
         super(Component.translatable("gui.jriksseedfinder.remove_structure"));
@@ -35,15 +37,14 @@ final class RemoveStructureScreen extends Screen {
         if (structures.isEmpty()) {
             buttons.addChild(new StringWidget(Component.literal("No structures noted yet."), font));
         }
-        for (int i = 0; i < structures.size(); i++) {
-            WorldSession.NotedStructure structure = structures.get(i);
-            int index = i;
+        for (WorldSession.NotedStructure structure : structures) {
             buttons.addChild(Button.builder(Component.literal(structure.set() + " at " + structure.x() + ", " + structure.z()
                 + " (" + structure.source() + ")"), button -> {
-                    session.removeStructure(index);
+                    session.removeStructure(structure);
                     onClose();
                 }).width(300).build());
         }
+        shownVersion = session.version();
         list = new ScrollableLayout(minecraft, buttons, height - 33 - 33 - 20);
         layout.addToContents(list);
         LinearLayout footer = layout.addToFooter(LinearLayout.horizontal().spacing(6));
@@ -58,6 +59,13 @@ final class RemoveStructureScreen extends Screen {
         footer.addChild(Button.builder(Component.translatable("gui.jriksseedfinder.back"), button -> onClose()).width(150).build());
         layout.visitWidgets(this::addRenderableWidget);
         repositionElements();
+    }
+
+    @Override
+    public void tick() {
+        if (session.version() != shownVersion) {
+            rebuildWidgets();
+        }
     }
 
     @Override

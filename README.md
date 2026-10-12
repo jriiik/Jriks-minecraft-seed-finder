@@ -157,13 +157,24 @@ itself. It needs Minecraft **26.3** with **Fabric Loader** (0.19.5 or newer) and
 structure's first piece (it reads them from the Minecraft you are running; nothing of Minecraft is copied into the
 mod). The game puts that piece exactly on the corner of the chunk where the structure starts, so a match that
 doesn't sit on a chunk corner is thrown away. A structure is only noted when at least 70% of its blueprint is
-there, including 70% of the built blocks (not just ground). Tested against worlds made by the game's own code
-(204 structures, with trees, ores and other decoration): it never named a wrong chunk. Some structures are
-not recognized, which only means they don't count: a village whose centre was overbuilt by its own farm streets
-or a sand patch, a rare zombie village centre, or anything players have taken apart. Underground structures (trial
-chambers, ancient cities, trail ruins) can only be seen where the server sends the real underground blocks; servers
-that hide them (anti-xray) simply mean they are not found. If a recognized structure looks wrong to you, remove it
-on the mod's screen; it won't be noted again.
+there, 70% of its built blocks (not just ground), and 70% of its built blocks other than the most common one (so a
+roof of wool stairs on grass doesn't count as a camp tent). Tested against worlds made by the game's own code (204
+structures, with trees, ores and other decoration): it never named a wrong chunk, and every build of the project
+checks 24 more in a real game. Some structures are not recognized, which only means they don't count: a village
+whose centre was overbuilt by its own farm streets or a sand patch, a rare zombie village centre, or anything
+players have taken apart. Underground structures (trial chambers, ancient cities, trail ruins) can only be seen
+where the server sends the real underground blocks; servers that hide them (anti-xray) simply mean they are not
+found.
+
+Some structures are real but don't follow the seed: villages and outposts in chunks made by Minecraft 1.17 or
+older (an upgraded world), structures placed with `/place` or copied from elsewhere, and exact copies players
+built on a chunk corner. The mod ignores structures you place with `/place` yourself. When the others make "no
+seed fits", the mod tries again leaving out one structure at a time; if that proves a seed (with the hashed seed or
+bedrock), it shows the seed and names the structure that doesn't fit. Structures you remove on the mod's screen
+are not noted again.
+
+Each world has its own notes, told apart by the server address (or save name) and the hashed seed, so a server
+network's lobby and game world, or a world that was reset, never mix.
 
 The notes are saved in `config/jriksseedfinder/` inside your Minecraft folder: a `.txt` file per world that the
 command-line app reads too (`seedfinder find --file <that file>`).

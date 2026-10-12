@@ -47,7 +47,10 @@ class StartPieceRecognizerTest {
 
         /** Places a piece the way the game does: its reference point on the chunk's corner, turned around it. */
         void place(StartPiece piece, List<StartPiece.Block> blocks, int chunkX, int chunkZ, int y, PieceRotation rotation) {
-            BlockPos reference = piece.references().get(0);
+            place(piece.references().get(0), blocks, chunkX, chunkZ, y, rotation);
+        }
+
+        void place(BlockPos reference, List<StartPiece.Block> blocks, int chunkX, int chunkZ, int y, PieceRotation rotation) {
             int originX = chunkX * 16 - rotation.x(reference.x(), reference.z());
             int originZ = chunkZ * 16 - rotation.z(reference.x(), reference.z());
             for (StartPiece.Block block : blocks) {
@@ -281,5 +284,112 @@ class StartPieceRecognizerTest {
         RecognizedStarts found = world.recognize(new StartPieceRecognizer(List.of(piece)));
         assertEquals(List.of(), found.starts());
         assertEquals(2, found.conflicting().size());
+    }
+
+    @Test
+    void aPieceWithTwoPossibleReferencePointsFindsTheRightOne() {
+        // Like the pillager outpost's watchtower: the start chunk's corner is the tower's origin or the block
+        // before it, depending on where the tower was attached; only one of the two can be a chunk corner.
+        List<StartPiece.Block> blocks = blueprint(12, true);
+        List<BlockPos> references = List.of(BlockPos.ZERO, new BlockPos(-1, 0, 0));
+        StartPiece piece = new StartPiece("tower", "pillager_outposts", 32, 8, blocks, references);
+        StartPieceRecognizer recognizer = new StartPieceRecognizer(List.of(piece));
+        for (BlockPos reference : references) {
+            for (PieceRotation rotation : PieceRotation.values()) {
+                TestWorld world = new TestWorld();
+                world.load(-36, -30, -70, -62);
+                world.place(reference, blocks, -32, -64, 70, rotation);
+                RecognizedStarts found = world.recognize(recognizer);
+                assertEquals(List.of(new RecognizedStarts.Start("pillager_outposts", -32, -64)), found.starts(), reference + " " + rotation);
+            }
+        }
+    }
+
+    @Test
+    void exactlySeventyPercentIsEnoughForAllBlocksAndForBuiltBlocks() {
+        // 20 ground blocks and 10 built blocks (a bell and 9 planks): 21 of 30 and 7 of 10 are needed.
+        List<StartPiece.Block> blocks = new ArrayList<>();
+        for (int i = 0; i < 20; i++) {
+            blocks.add(new StartPiece.Block(i % 5, 0, i / 5, "minecraft:grass_block"));
+        }
+        for (int i = 0; i < 9; i++) {
+            blocks.add(new StartPiece.Block(i % 5, 1, i / 5, "minecraft:oak_planks"));
+        }
+        blocks.add(new StartPiece.Block(2, 2, 2, "minecraft:bell"));
+        StartPiece piece = piece(blocks, BlockPos.ZERO);
+        assertEquals(21, StartPieceRecognizer.required(30));
+        assertEquals(7, StartPieceRecognizer.required(10));
+        StartPieceRecognizer recognizer = new StartPieceRecognizer(List.of(piece));
+        int[][] cases = {{9, 0, 1}, {10, 0, 0}, {0, 3, 1}, {0, 4, 0}, {6, 3, 1}, {7, 3, 0}};
+        for (int[] c : cases) {
+            TestWorld world = new TestWorld();
+            world.load(-1, 1, -1, 1);
+            world.place(piece, blocks, 0, 0, 64, PieceRotation.NONE);
+            for (int i = 0; i < c[0]; i++) {
+                world.blocks.put(new BlockPos(i % 5, 64, i / 5), "minecraft:sand");
+            }
+            for (int i = 0; i < c[1]; i++) {
+                world.blocks.put(new BlockPos(i % 5, 65, i / 5), "minecraft:air");
+            }
+            assertEquals(c[2] == 1 ? 1 : 0, world.recognize(recognizer).starts().size(), c[0] + " ground and " + c[1] + " built blocks changed");
+        }
+    }
+
+    @Test
+    void regionsAreCountedTheSameWayOnTheNegativeSide() {
+        StartPiece piece = piece(blueprint(13, true), BlockPos.ZERO);
+        RecognizedStarts apart = new RecognizedStarts();
+        // Chunks -1 and 0 are in regions -1 and 0.
+        apart.add(new StartPieceRecognizer.Candidate(piece, PieceRotation.NONE, -16, 64, 0, -1, 0));
+        apart.add(new StartPieceRecognizer.Candidate(piece, PieceRotation.NONE, 0, 64, 0, 0, 0));
+        assertEquals(2, apart.starts().size());
+        assertEquals(List.of(), apart.conflicting());
+        // Chunks -34 and -9 are both in region -1.
+        RecognizedStarts together = new RecognizedStarts();
+        together.add(new StartPieceRecognizer.Candidate(piece, PieceRotation.NONE, -34 * 16, 64, 0, -34, 0));
+        together.add(new StartPieceRecognizer.Candidate(piece, PieceRotation.NONE, -9 * 16, 64, 0, -9, 0));
+        assertEquals(List.of(), together.starts());
+        assertEquals(2, together.conflicting().size());
+    }
+
+    @Test
+    void aPlayersTentRoofOfTheSameStairsIsNotACamp() {
+        // A tent: a grass floor, an A-frame roof of 40 wool stairs, and a few other blocks (fences, beds, a chest).
+        List<StartPiece.Block> blocks = new ArrayList<>();
+        for (int x = 0; x < 8; x++) {
+            for (int z = 0; z < 8; z++) {
+                blocks.add(new StartPiece.Block(x, 0, z, "minecraft:grass_block"));
+            }
+        }
+        for (int x = 0; x < 5; x++) {
+            for (int k = 0; k < 4; k++) {
+                blocks.add(new StartPiece.Block(x, 1 + k, k, "minecraft:white_wool_stairs"));
+                blocks.add(new StartPiece.Block(x, 1 + k, 7 - k, "minecraft:white_wool_stairs"));
+            }
+        }
+        for (int i = 0; i < 8; i++) {
+            blocks.add(new StartPiece.Block(6 + i % 2, 1, i, "minecraft:oak_fence"));
+        }
+        blocks.add(new StartPiece.Block(2, 1, 3, "minecraft:straw_bed"));
+        blocks.add(new StartPiece.Block(2, 1, 4, "minecraft:straw_bed"));
+        blocks.add(new StartPiece.Block(4, 1, 3, "minecraft:chest"));
+        StartPiece tent = new StartPiece("tent", "abandoned_camp", 37, 8, blocks, List.of(BlockPos.ZERO));
+        assertTrue(tent.anchorBlocks().stream().noneMatch(id -> id.equals("minecraft:white_wool_stairs")), tent.anchorBlocks().toString());
+        StartPieceRecognizer recognizer = new StartPieceRecognizer(List.of(tent));
+        for (PieceRotation rotation : PieceRotation.values()) {
+            TestWorld real = new TestWorld();
+            real.load(-2, 3, -2, 3);
+            real.place(tent, blocks, 1, 1, 63, rotation);
+            assertEquals(1, real.recognize(recognizer).starts().size(), "the real tent, " + rotation);
+
+            // The player's roof: the same floor and stairs, a fence and a chest elsewhere, no beds.
+            TestWorld player = new TestWorld();
+            player.load(-2, 3, -2, 3);
+            player.place(tent, blocks.stream().filter(b -> b.id().equals("minecraft:grass_block") || b.id().equals("minecraft:white_wool_stairs")).toList(),
+                1, 1, 63, rotation);
+            player.blocks.put(new BlockPos(16 + 3, 64, 16 + 3), "minecraft:chest");
+            player.blocks.put(new BlockPos(16 + 6, 64, 16), "minecraft:oak_fence");
+            assertEquals(List.of(), player.recognize(recognizer).starts(), "a player's roof, " + rotation);
+        }
     }
 }

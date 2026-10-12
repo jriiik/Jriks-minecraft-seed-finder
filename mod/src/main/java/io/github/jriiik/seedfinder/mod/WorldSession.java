@@ -39,11 +39,15 @@ final class WorldSession {
     private boolean collecting;
     private boolean showStatus = true;
     private OptionalLong hashedSeed = OptionalLong.empty();
-    /** True when the server sent a different hashed seed than the one stored with these notes (this session). */
-    private boolean hashedSeedChanged;
     private final List<NotedStructure> structures = new ArrayList<>();
-    /** Structures the player removed; automatic recognition doesn't add them again. */
+    /**
+     * Structures automatic recognition must not note again: removed by the player, or recognized starts that
+     * contradicted another note in the same placement region.
+     */
     private final List<NotedStructure> removed = new ArrayList<>();
+    /** Recognized starts left out this session because the notes already have that set elsewhere in the region. */
+    private final List<String> disagreements = new ArrayList<>();
+    private int removals;
     private final List<ScannedChunk> bedrock = new ArrayList<>();
 
     /** Increases with every change, so a search result can tell whether it is still up to date. */
@@ -57,8 +61,15 @@ final class WorldSession {
         this.world = world;
     }
 
+    /** The key the notes are kept under (see {@link WorldIdentity#key}). */
     String world() {
         return world;
+    }
+
+    /** The world's address or save name, without the hashed seed. */
+    String displayName() {
+        int bracket = world.lastIndexOf(" [");
+        return bracket < 0 ? world : world.substring(0, bracket);
     }
 
     boolean collecting() {
@@ -85,18 +96,9 @@ final class WorldSession {
 
     void setHashedSeed(long value) {
         if (hashedSeed.isEmpty() || hashedSeed.getAsLong() != value) {
-            hashedSeedChanged |= hashedSeed.isPresent();
             hashedSeed = OptionalLong.of(value);
             version++;
         }
-    }
-
-    /**
-     * Whether the hashed seed changed while these notes were kept: the world behind this address may have been reset
-     * or replaced, and then the older notes belong to a different world.
-     */
-    boolean hashedSeedChanged() {
-        return hashedSeedChanged;
     }
 
     List<NotedStructure> structures() {
@@ -115,23 +117,95 @@ final class WorldSession {
         return true;
     }
 
-    /** Removes a structure the player picked; recognition will not note it again. */
-    void removeStructure(int index) {
-        removed.add(structures.remove(index));
-        version++;
+    /** Removes a structure the player picked, if it is still there; recognition will not note it again. */
+    void removeStructure(NotedStructure structure) {
+        if (structures.remove(structure)) {
+            removed.add(structure);
+            disagreements.clear();
+            removals++;
+            version++;
+        }
     }
 
-    /** Adds a structure recognized automatically, unless the player removed it before. */
-    boolean addRecognized(NotedStructure structure) {
-        boolean wasRemoved = removed.stream().anyMatch(s -> s.set().equals(structure.set())
-            && Math.floorDiv(s.x(), 16) == Math.floorDiv(structure.x(), 16) && Math.floorDiv(s.z(), 16) == Math.floorDiv(structure.z(), 16));
-        return !wasRemoved && addStructure(structure);
+    /** Counts the player's removals, so recognition can offer starts again that disagreed with a removed note. */
+    int removals() {
+        return removals;
     }
 
-    /** Removes a structure noted from the given source in that chunk, if there is one. */
-    void removeStructure(String set, int x, int z, String source) {
-        if (structures.removeIf(s -> s.set().equals(set) && s.source().equals(source)
-            && Math.floorDiv(s.x(), 16) == Math.floorDiv(x, 16) && Math.floorDiv(s.z(), 16) == Math.floorDiv(z, 16))) {
+    /** What happened to a structure offered by automatic recognition. */
+    enum Offer {
+        ADDED,
+        /** Already noted in that chunk. */
+        KNOWN,
+        /** The player removed it before (or it contradicted another recognized start). */
+        LEFT_OUT,
+        /** The notes have this set in another chunk of the same region, where only one start fits. */
+        DISAGREES,
+    }
+
+    /**
+     * Adds a structure recognized automatically. A structure set starts at most once per region of
+     * {@code spacing} x {@code spacing} chunks, so a recognized start in the same region as another note of its set
+     * can't both be right: an earlier recognized note is then taken back (neither is noted again), and a note from
+     * /locate or the player is kept and the disagreement is shown, so the player can decide.
+     */
+    Offer addRecognized(NotedStructure structure, int spacing) {
+        int chunkX = Math.floorDiv(structure.x(), 16);
+        int chunkZ = Math.floorDiv(structure.z(), 16);
+        if (removed.stream().anyMatch(s -> s.set().equals(structure.set()) && Math.floorDiv(s.x(), 16) == chunkX && Math.floorDiv(s.z(), 16) == chunkZ)) {
+            return Offer.LEFT_OUT;
+        }
+        List<NotedStructure> sameRegion = structures.stream().filter(s -> s.set().equals(structure.set())
+            && Math.floorDiv(Math.floorDiv(s.x(), 16), spacing) == Math.floorDiv(chunkX, spacing)
+            && Math.floorDiv(Math.floorDiv(s.z(), 16), spacing) == Math.floorDiv(chunkZ, spacing)).toList();
+        if (sameRegion.stream().anyMatch(s -> Math.floorDiv(s.x(), 16) == chunkX && Math.floorDiv(s.z(), 16) == chunkZ)) {
+            return Offer.KNOWN;
+        }
+        if (sameRegion.isEmpty()) {
+            structures.add(structure);
+            version++;
+            return Offer.ADDED;
+        }
+        List<NotedStructure> recognizedBefore = sameRegion.stream().filter(s -> s.source().equals(structure.source())).toList();
+        if (!recognizedBefore.isEmpty()) {
+            structures.removeAll(recognizedBefore);
+            removed.addAll(recognizedBefore);
+            removed.add(structure);
+            version++;
+            return Offer.LEFT_OUT;
+        }
+        NotedStructure other = sameRegion.get(0);
+        String text = "Recognized " + structure.set() + " at " + structure.x() + ", " + structure.z() + " is left out: "
+            + (other.source().equals("from /locate")
+                ? "/locate places it at " + other.x() + ", " + other.z() + ", and /locate is always right."
+                : "your note has it at " + other.x() + ", " + other.z() + " (" + other.source() + ") and only one can be right."
+                    + " If your note is wrong, remove it.");
+        if (!disagreements.contains(text)) {
+            disagreements.add(text);
+            version++;
+        }
+        return Offer.DISAGREES;
+    }
+
+    /** Recognized starts that were left out because they disagree with a note from /locate or the player. */
+    List<String> disagreements() {
+        return List.copyOf(disagreements);
+    }
+
+    /**
+     * A start that recognition can't trust (its region holds contradicting matches, or a command put it there):
+     * takes back an automatic note of it, if any, also one from an earlier session, and never notes it again.
+     */
+    void distrust(String set, int x, int z) {
+        int chunkX = Math.floorDiv(x, 16);
+        int chunkZ = Math.floorDiv(z, 16);
+        boolean changed = structures.removeIf(s -> s.set().equals(set) && s.source().equals(StructureRecognition.SOURCE)
+            && Math.floorDiv(s.x(), 16) == chunkX && Math.floorDiv(s.z(), 16) == chunkZ);
+        if (removed.stream().noneMatch(s -> s.set().equals(set) && Math.floorDiv(s.x(), 16) == chunkX && Math.floorDiv(s.z(), 16) == chunkZ)) {
+            removed.add(new NotedStructure(set, chunkX * 16, chunkZ * 16, "not trusted"));
+            changed = true;
+        }
+        if (changed) {
             version++;
         }
     }
@@ -159,9 +233,9 @@ final class WorldSession {
     void clearAll() {
         structures.clear();
         removed.clear();
+        disagreements.clear();
         bedrock.clear();
         hashedSeed = OptionalLong.empty();
-        hashedSeedChanged = false;
         version++;
     }
 
@@ -278,10 +352,30 @@ final class WorldSession {
         }
     }
 
-    /** Loads what was saved for this world, or starts empty (collecting switched off). */
+    /**
+     * Loads what was saved for this world, or starts empty (collecting switched off). Notes saved by earlier versions
+     * of the mod under the address alone are picked up when their hashed seed is the same (or wasn't known).
+     */
+    static WorldSession load(Path folder, String world, String identity, long hashedSeed) {
+        if (!Files.isRegularFile(folder.resolve(fileName(world) + ".json")) && Files.isRegularFile(folder.resolve(fileName(identity) + ".json"))) {
+            WorldSession earlier = load(folder, identity);
+            if (earlier.hashedSeed.isEmpty() || earlier.hashedSeed.getAsLong() == hashedSeed) {
+                WorldSession moved = load(folder, identity, world);
+                moved.version++;
+                return moved;
+            }
+        }
+        return load(folder, world);
+    }
+
     static WorldSession load(Path folder, String world) {
+        return load(folder, world, world);
+    }
+
+    /** Reads the notes saved under {@code savedAs} into a session for {@code world}. */
+    private static WorldSession load(Path folder, String savedAs, String world) {
         WorldSession session = new WorldSession(world);
-        Path file = folder.resolve(fileName(world) + ".json");
+        Path file = folder.resolve(fileName(savedAs) + ".json");
         if (!Files.isRegularFile(file)) {
             return session;
         }

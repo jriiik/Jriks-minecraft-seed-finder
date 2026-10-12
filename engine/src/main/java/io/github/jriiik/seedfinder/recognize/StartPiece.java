@@ -32,7 +32,9 @@ public final class StartPiece {
     private final int[] zs;
     private final String[] ids;
     private final boolean[] built;
+    private final boolean[] distinct;
     private final int builtCount;
+    private final int distinctCount;
     private final Map<String, List<BlockPos>> anchors;
 
     /**
@@ -79,13 +81,34 @@ public final class StartPiece {
             }
         }
         builtCount = builtBlocks;
+
+        // The built blocks other than the most common one: a player's roof of the same stairs, say, has none of them.
+        Map<String, Integer> counts = new LinkedHashMap<>();
+        for (int i = 0; i < count; i++) {
+            if (built[i]) {
+                counts.merge(ids[i], 1, Integer::sum);
+            }
+        }
+        String mostCommon = counts.entrySet().stream()
+            .max(Comparator.comparingInt((Map.Entry<String, Integer> entry) -> entry.getValue()).thenComparing(Map.Entry::getKey, Comparator.reverseOrder()))
+            .map(Map.Entry::getKey).orElse(null);
+        distinct = new boolean[count];
+        int distinctBlocks = 0;
+        for (int i = 0; i < count; i++) {
+            distinct[i] = built[i] && !ids[i].equals(mostCommon);
+            if (distinct[i]) {
+                distinctBlocks++;
+            }
+        }
+        distinctCount = distinctBlocks;
         anchors = chooseAnchors();
     }
 
     /**
      * The blocks searched for in loaded chunks. A bell or reinforced deepslate alone when the piece has one (only
      * village centres and ancient city centres do); otherwise up to three of the piece's rarest built blocks that
-     * don't also generate in nature.
+     * don't also generate in nature, preferring blocks other than its most common built block (which players use in
+     * bulk). Anchors only decide where to look; whether a placement matches is decided by the scores.
      */
     private Map<String, List<BlockPos>> chooseAnchors() {
         Map<String, List<BlockPos>> positions = new LinkedHashMap<>();
@@ -99,13 +122,28 @@ public final class StartPiece {
                 return Map.of(unique, List.copyOf(positions.get(unique)));
             }
         }
+        Map<String, List<BlockPos>> chosen = rarest(positions, true);
+        return chosen.isEmpty() ? rarest(positions, false) : chosen;
+    }
+
+    private Map<String, List<BlockPos>> rarest(Map<String, List<BlockPos>> positions, boolean distinctOnly) {
         Map<String, List<BlockPos>> chosen = new LinkedHashMap<>();
         positions.entrySet().stream()
             .filter(entry -> !BlockKinds.NOT_ANCHORS.contains(entry.getKey()))
+            .filter(entry -> !distinctOnly || isDistinct(entry.getKey()))
             .sorted(Comparator.comparingInt((Map.Entry<String, List<BlockPos>> entry) -> entry.getValue().size()).thenComparing(Map.Entry::getKey))
             .limit(3)
             .forEach(entry -> chosen.put(entry.getKey(), List.copyOf(entry.getValue())));
         return chosen;
+    }
+
+    private boolean isDistinct(String id) {
+        for (int i = 0; i < ids.length; i++) {
+            if (ids[i].equals(id)) {
+                return distinct[i];
+            }
+        }
+        return false;
     }
 
     public String name() {
@@ -134,6 +172,11 @@ public final class StartPiece {
 
     public int builtCount() {
         return builtCount;
+    }
+
+    /** The number of built blocks other than the most common built block. */
+    public int distinctCount() {
+        return distinctCount;
     }
 
     /** The anchor block ids and where they are in the piece; empty when the piece has nothing to search for. */
@@ -175,8 +218,13 @@ public final class StartPiece {
         return built[index];
     }
 
+    boolean distinct(int index) {
+        return distinct[index];
+    }
+
     @Override
     public String toString() {
-        return name + " (" + structureSet + ", " + ids.length + " blocks, " + builtCount + " built, anchors " + anchors.keySet() + ")";
+        return name + " (" + structureSet + ", " + ids.length + " blocks, " + builtCount + " built, " + distinctCount + " distinct, anchors "
+            + anchors.keySet() + ")";
     }
 }

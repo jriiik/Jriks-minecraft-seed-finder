@@ -3,10 +3,12 @@ package io.github.jriiik.seedfinder.mod;
 import io.github.jriiik.seedfinder.recognize.BlockView;
 import io.github.jriiik.seedfinder.recognize.RecognizedStarts;
 import io.github.jriiik.seedfinder.recognize.StartPieceRecognizer;
+import io.github.jriiik.seedfinder.structure.RandomSpreadPlacement;
 import io.github.jriiik.seedfinder.version.VersionData;
 import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.IdentityHashMap;
 import java.util.LinkedHashSet;
@@ -14,6 +16,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.CompletableFuture;
+import java.util.function.Predicate;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.multiplayer.ClientLevel;
 import net.minecraft.core.BlockPos;
@@ -44,6 +47,8 @@ final class StructureRecognition {
     private static final int RETRY_TICKS = 40;
     private static final int MAX_WAITING = 20_000;
     private static final int MAX_SEEN = 500_000;
+    /** Blocks looked at between two checks of the time budget. */
+    private static final int SCAN_SLICE = 512;
 
     /** The blueprints, read once from the game's files in the background. */
     private static CompletableFuture<StartPieceRecognizer> recognizer;
@@ -51,6 +56,8 @@ final class StructureRecognition {
     private final VersionData data;
     /** The dimensions the recognized structure sets can appear in. */
     private final Set<String> dimensions;
+    /** Each recognized set's spacing (the size of its placement regions, in chunks). */
+    private final Map<String, Integer> spacing = new HashMap<>();
     private ClientLevel level;
     private Set<Block> anchors;
     private final Map<Block, String> ids = new IdentityHashMap<>();
@@ -59,24 +66,41 @@ final class StructureRecognition {
     private final ArrayDeque<StartPieceRecognizer.Candidate> waiting = new ArrayDeque<>();
     private final Set<StartPieceRecognizer.Candidate> seen = new HashSet<>();
     private final RecognizedStarts starts = new RecognizedStarts();
+    /** Starts offered to the notes this session, and those that were added. */
+    private final Set<RecognizedStarts.Start> offered = new HashSet<>();
     private final Set<RecognizedStarts.Start> noted = new HashSet<>();
+    private final Set<RecognizedStarts.Start> distrusted = new HashSet<>();
     private boolean scanAllLoaded = true;
     private int ticks;
+    /** The chunk being scanned, and where in it. */
+    private LevelChunk scanning;
+    private int scanSection;
+    private int scanBlock;
+    private final Predicate<BlockState> isAnchor = state -> anchors.contains(state.getBlock());
+    /** Starts left out because they disagreed with a note; offered again after the player removes a note. */
+    private final Set<RecognizedStarts.Start> disagreed = new HashSet<>();
+    private int removals;
 
     StructureRecognition(VersionData data) {
         this.data = data;
         Set<String> found = new HashSet<>();
         for (String set : StartPieceLibrary.SETS) {
-            data.structureSet(set).ifPresent(structureSet -> found.addAll(data.dimensionsOf(structureSet)));
+            data.structureSet(set).ifPresent(structureSet -> {
+                found.addAll(data.dimensionsOf(structureSet));
+                if (structureSet.placement() instanceof RandomSpreadPlacement placement) {
+                    spacing.put(set, placement.spacing());
+                }
+            });
         }
         this.dimensions = Set.copyOf(found);
     }
 
-    /** Starts reading the blueprints, once. */
+    /** Starts reading the blueprints, once (call on the main thread). */
     static synchronized CompletableFuture<StartPieceRecognizer> recognizer(VersionData data) {
         if (recognizer == null) {
+            StartPieceLibrary.DataFiles files = StartPieceLibrary.vanilla(Minecraft.getInstance().getVanillaPackResources().fullResources());
             recognizer = CompletableFuture.supplyAsync(() -> {
-                StartPieceLibrary.Library library = StartPieceLibrary.load(data, StartPieceLibrary.GAME);
+                StartPieceLibrary.Library library = StartPieceLibrary.load(data, files);
                 library.problems().forEach(problem -> SeedFinderClient.LOG.warn("Structure recognition: {}", problem));
                 SeedFinderClient.LOG.info("Structure recognition: {} start pieces of {} structure sets", library.pieces().size(),
                     library.pieces().stream().map(piece -> piece.structureSet()).distinct().count());
@@ -84,15 +108,31 @@ final class StructureRecognition {
             });
             recognizer = recognizer.exceptionally(error -> {
                 SeedFinderClient.LOG.warn("Structure recognition is not available", error);
-                return null;
+                return new StartPieceRecognizer(List.of());
             });
         }
         return recognizer;
     }
 
-    /** Whether reading the blueprints failed (recognition is then off). */
-    static synchronized boolean failed() {
-        return recognizer != null && recognizer.isDone() && recognizer.getNow(null) == null;
+    /** The structure sets whose blueprints could not be read (none until reading has finished). */
+    static synchronized List<String> missingSets() {
+        StartPieceRecognizer done = recognizer == null ? null : recognizer.getNow(null);
+        if (done == null) {
+            return List.of();
+        }
+        Set<String> loaded = new HashSet<>();
+        done.pieces().forEach(piece -> loaded.add(piece.structureSet()));
+        return StartPieceLibrary.SETS.stream().filter(set -> !loaded.contains(set)).toList();
+    }
+
+    /** The structure sets recognition has blueprints for (empty until they are read). */
+    static synchronized Set<String> recognizedSets() {
+        StartPieceRecognizer done = recognizer == null ? null : recognizer.getNow(null);
+        Set<String> sets = new HashSet<>();
+        if (done != null) {
+            done.pieces().forEach(piece -> sets.add(piece.structureSet()));
+        }
+        return sets;
     }
 
     /** The starts found so far in this world (for the in-game test). */
@@ -103,7 +143,9 @@ final class StructureRecognition {
     /** Chunk loaded: remember to look for anchor blocks in it. */
     void chunkLoaded(ClientLevel level, LevelChunk chunk) {
         switchLevel(level);
-        chunksToScan.add(chunk.getPos().pack());
+        if (inStructureDimension()) {
+            chunksToScan.add(chunk.getPos().pack());
+        }
     }
 
     /** Collecting was just switched on: look at every chunk that is already loaded. */
@@ -118,6 +160,7 @@ final class StructureRecognition {
             toCheck.clear();
             waiting.clear();
             seen.clear();
+            scanning = null;
             scanAllLoaded = true;
         }
     }
@@ -156,18 +199,26 @@ final class StructureRecognition {
             toCheck.addAll(waiting);
             waiting.clear();
         }
+        if (session.removals() != removals) {
+            // The player removed a note: starts that disagreed with it may fit now.
+            removals = session.removals();
+            offered.removeAll(disagreed);
+            disagreed.clear();
+            updateNotes(session);
+        }
         long end = System.nanoTime() + BUDGET_NANOS;
         View view = new View();
         while (System.nanoTime() < end) {
             if (!toCheck.isEmpty()) {
                 check(pieces, toCheck.poll(), view, session);
+            } else if (scanning != null) {
+                scanSome(pieces);
             } else if (!chunksToScan.isEmpty()) {
                 long pos = chunksToScan.iterator().next();
                 chunksToScan.remove(pos);
-                LevelChunk chunk = level.getChunkSource().getChunk(ChunkPos.getX(pos), ChunkPos.getZ(pos), ChunkStatus.FULL, false);
-                if (chunk != null) {
-                    scan(pieces, chunk);
-                }
+                scanning = level.getChunkSource().getChunk(ChunkPos.getX(pos), ChunkPos.getZ(pos), ChunkStatus.FULL, false);
+                scanSection = 0;
+                scanBlock = 0;
             } else {
                 break;
             }
@@ -178,35 +229,45 @@ final class StructureRecognition {
         return dimensions.contains(level.dimension().identifier().toString());
     }
 
-    /** Finds anchor blocks in a chunk; only sections whose palette may hold one are looked at block by block. */
-    private void scan(StartPieceRecognizer pieces, LevelChunk chunk) {
-        LevelChunkSection[] sections = chunk.getSections();
-        int minX = chunk.getPos().getMinBlockX();
-        int minZ = chunk.getPos().getMinBlockZ();
-        for (int index = 0; index < sections.length; index++) {
-            LevelChunkSection section = sections[index];
-            if (section.hasOnlyAir() || !section.maybeHas(state -> anchors.contains(state.getBlock()))) {
+    /**
+     * Looks for anchor blocks in the chunk being scanned, a slice of at most {@link #SCAN_SLICE} blocks at a time so
+     * the budget is never overrun by much. Sections whose palette can't hold an anchor block are skipped whole.
+     */
+    private void scanSome(StartPieceRecognizer pieces) {
+        LevelChunkSection[] sections = scanning.getSections();
+        while (scanSection < sections.length) {
+            LevelChunkSection section = sections[scanSection];
+            if (scanBlock == 0 && (section.hasOnlyAir() || !section.maybeHas(isAnchor))) {
+                scanSection++;
                 continue;
             }
-            int minY = SectionPos.sectionToBlockCoord(chunk.getSectionYFromSectionIndex(index));
-            for (int y = 0; y < 16; y++) {
-                for (int z = 0; z < 16; z++) {
-                    for (int x = 0; x < 16; x++) {
-                        BlockState state = section.getBlockState(x, y, z);
-                        if (anchors.contains(state.getBlock())) {
-                            for (StartPieceRecognizer.Candidate candidate : pieces.candidates(id(state.getBlock()), minX + x, minY + y, minZ + z)) {
-                                if (seen.size() >= MAX_SEEN) {
-                                    seen.clear();
-                                }
-                                if (seen.add(candidate)) {
-                                    toCheck.add(candidate);
-                                }
-                            }
+            int minX = scanning.getPos().getMinBlockX();
+            int minY = SectionPos.sectionToBlockCoord(scanning.getSectionYFromSectionIndex(scanSection));
+            int minZ = scanning.getPos().getMinBlockZ();
+            int stop = Math.min(4096, scanBlock + SCAN_SLICE);
+            for (; scanBlock < stop; scanBlock++) {
+                int x = scanBlock & 15;
+                int z = (scanBlock >> 4) & 15;
+                int y = scanBlock >> 8;
+                Block block = section.getBlockState(x, y, z).getBlock();
+                if (anchors.contains(block)) {
+                    for (StartPieceRecognizer.Candidate candidate : pieces.candidates(id(block), minX + x, minY + y, minZ + z)) {
+                        if (seen.size() >= MAX_SEEN) {
+                            seen.clear();
+                        }
+                        if (seen.add(candidate)) {
+                            toCheck.add(candidate);
                         }
                     }
                 }
             }
+            if (scanBlock == 4096) {
+                scanSection++;
+                scanBlock = 0;
+            }
+            return;
         }
+        scanning = null;
     }
 
     private void check(StartPieceRecognizer pieces, StartPieceRecognizer.Candidate candidate, View view, WorldSession session) {
@@ -221,9 +282,10 @@ final class StructureRecognition {
             case NO_MATCH -> {
             }
             case MATCH -> {
-                SeedFinderClient.LOG.info("Recognized {} starting in chunk {}, {} ({} turned {}; {}/{} blocks, {}/{} built blocks)",
+                SeedFinderClient.LOG.info("Recognized {} starting in chunk {}, {} ({} turned {}; {}/{} blocks, {}/{} built, {}/{} distinct)",
                     candidate.piece().structureSet(), candidate.chunkX(), candidate.chunkZ(), candidate.piece().name(), candidate.rotation(),
-                    check.matched(), candidate.piece().blockCount(), check.builtMatched(), candidate.piece().builtCount());
+                    check.matched(), candidate.piece().blockCount(), check.builtMatched(), candidate.piece().builtCount(),
+                    check.distinctMatched(), candidate.piece().distinctCount());
                 if (starts.add(candidate)) {
                     updateNotes(session);
                 }
@@ -234,16 +296,26 @@ final class StructureRecognition {
     /** Notes new starts, and takes back starts whose region turned out to hold contradicting matches. */
     private void updateNotes(WorldSession session) {
         for (RecognizedStarts.Start start : starts.starts()) {
-            if (noted.add(start)) {
-                session.addRecognized(new WorldSession.NotedStructure(start.structureSet(), start.chunkX() * 16, start.chunkZ() * 16, SOURCE));
+            if (offered.add(start)) {
+                WorldSession.Offer offer = session.addRecognized(
+                    new WorldSession.NotedStructure(start.structureSet(), start.chunkX() * 16, start.chunkZ() * 16, SOURCE), spacing.get(start.structureSet()));
+                if (offer == WorldSession.Offer.ADDED) {
+                    noted.add(start);
+                } else if (offer == WorldSession.Offer.DISAGREES) {
+                    disagreed.add(start);
+                } else if (offer != WorldSession.Offer.KNOWN) {
+                    SeedFinderClient.LOG.warn("Structure recognition: {} start in chunk {}, {} is not noted ({})",
+                        start.structureSet(), start.chunkX(), start.chunkZ(), offer);
+                }
             }
         }
         List<RecognizedStarts.Start> conflicting = new ArrayList<>(starts.conflicting());
         for (RecognizedStarts.Start start : conflicting) {
-            SeedFinderClient.LOG.warn("Structure recognition: matches disagree near {} start in chunk {}, {}; noting none there",
-                start.structureSet(), start.chunkX(), start.chunkZ());
-            if (noted.remove(start)) {
-                session.removeStructure(start.structureSet(), start.chunkX() * 16, start.chunkZ() * 16, SOURCE);
+            if (distrusted.add(start)) {
+                SeedFinderClient.LOG.warn("Structure recognition: matches disagree near {} start in chunk {}, {}; noting none there",
+                    start.structureSet(), start.chunkX(), start.chunkZ());
+                noted.remove(start);
+                session.distrust(start.structureSet(), start.chunkX() * 16, start.chunkZ() * 16);
             }
         }
     }

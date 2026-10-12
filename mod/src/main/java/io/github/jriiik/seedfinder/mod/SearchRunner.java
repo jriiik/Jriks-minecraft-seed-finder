@@ -78,7 +78,12 @@ final class SearchRunner {
                 ObservationReader.Observations notes = ObservationReader.read(data, lines);
                 WorldSeedSearch.StructureStep step = reuse != null ? reuse
                     : WorldSeedSearch.structureSeeds(data, notes.structures(), threads, (done, total) -> percent = (int) (100 * done / total));
-                return new Outcome(structureKey, step, WorldSeedSearch.fullSeed(step, notes.bedrock(), notes.hashedSeed(), threads));
+                WorldSeedSearch.Result result = WorldSeedSearch.fullSeed(step, notes.bedrock(), notes.hashedSeed(), threads);
+                if (result.stage() == WorldSeedSearch.Stage.NO_STRUCTURE_SEED) {
+                    // One structure that doesn't follow the seed (older chunks, a command, a copy) spoils the search.
+                    result = WorldSeedSearch.withoutMisfit(data, notes.structures(), notes.bedrock(), notes.hashedSeed(), threads).orElse(result);
+                }
+                return new Outcome(structureKey, step, result);
             }, WORKER)
             .whenCompleteAsync((outcome, error) -> {
                 running = false;

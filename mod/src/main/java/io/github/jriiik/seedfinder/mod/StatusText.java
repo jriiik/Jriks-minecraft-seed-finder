@@ -16,10 +16,12 @@ final class StatusText {
 
     static List<String> lines(WorldSession session, SearchRunner runner) {
         List<String> lines = new ArrayList<>();
-        lines.add("World: " + session.world());
+        lines.add("World: " + session.displayName());
         if (!session.collecting()) {
             lines.add("Collecting is switched off in this world, so nothing is noted here.");
             lines.add("Switch it on only for your own worlds or where the server allows looking for the seed.");
+            lines.add("Each world has its own notes; worlds behind one address (a lobby and a game world, a reset world) are told");
+            lines.add("apart by the hashed seed the server sends.");
             return lines;
         }
         List<WorldSession.NotedStructure> structures = session.structures();
@@ -27,16 +29,14 @@ final class StatusText {
         lines.add("Structures: " + structures.size() + (structures.isEmpty() ? "" : " (" + structures.stream()
             .map(WorldSession.NotedStructure::set).distinct().collect(Collectors.joining(", ")) + ")")
             + (recognized > 0 ? ", " + recognized + " recognized automatically" : ""));
-        if (StructureRecognition.failed()) {
-            lines.add("Automatic structure recognition could not start (see the game log); you can still note structures yourself.");
+        List<String> missing = StructureRecognition.missingSets();
+        if (!missing.isEmpty()) {
+            lines.add("Could not prepare recognition of " + String.join(", ", missing) + " (see the game log).");
         }
+        lines.addAll(session.disagreements());
         lines.add("Bedrock: " + chunks(session.bedrockChunks("minecraft:overworld"), "overworld") + ", "
             + chunks(session.bedrockChunks("minecraft:the_nether"), "nether"));
         lines.add("Hashed seed from the server: " + (session.hashedSeed().isPresent() ? "received" : "not yet"));
-        if (session.hashedSeedChanged()) {
-            lines.add("The hashed seed changed since these notes were started. If the world was reset or this address now leads to");
-            lines.add("another world, the older notes don't fit it: \"Remove a structure\" -> \"Remove all notes\" starts over.");
-        }
         lines.add("");
         if (runner.running()) {
             lines.add("Searching..." + (runner.percent() >= 0 ? " " + runner.percent() + "%" : ""));
@@ -49,8 +49,8 @@ final class StatusText {
         WorldSeedSearch.Result result = session.result();
         if (result == null) {
             lines.add(structures.isEmpty()
-                ? "Villages, outposts, trial chambers, ancient cities, trail ruins and camps are recognized when you come near. For other"
-                    + " structures, stand in the chunk where one starts and press \"Add a structure here\". Answers to /locate (if you may use it) are noted too."
+                ? "Villages, outposts, trial chambers, ancient cities, trail ruins and camps are recognized when you come near. Pyramids,"
+                    + " jungle temples and swamp huts you can add yourself (\"Add a structure here\"). Answers to /locate (if you may use it) are noted too."
                 : "About to search...");
             return lines;
         }
@@ -63,8 +63,9 @@ final class StatusText {
                 result.plan().problems().forEach(problem -> lines.add("- " + problem));
             }
             case NO_STRUCTURE_SEED -> {
-                lines.add("No seed fits these structures. Check that each one is noted in the chunk where it starts,");
-                lines.add("and remove any you are not sure about.");
+                lines.add("No seed fits these structures together. Possible reasons: a structure noted in the wrong chunk, structures");
+                lines.add("in chunks made by an older Minecraft version, structures placed by a command or copied, or a server that");
+                lines.add("places structures differently (then the seed can't be found from structures). Remove the ones you doubt.");
             }
             case STRUCTURE_SEED -> structureSeedLines(result, lines);
             case WORLD_SEED -> {
@@ -72,6 +73,10 @@ final class StatusText {
                 lines.add(result.proof().orElseThrow() == WorldSeedSearch.Proof.HASHED_SEED
                     ? "Certain: it is the only seed that fits the structures and the hashed seed the server sent."
                     : "Certain: it is the only seed that fits the structures and the bedrock floor.");
+                result.leftOut().ifPresent(misfit -> {
+                    lines.add("Left out: " + misfit + " doesn't fit this seed. It may come from an older Minecraft version, a command");
+                    lines.add("or a copy (or was noted in the wrong place). Remove it on \"Remove a structure\".");
+                });
                 if (result.bedrockDisagrees()) {
                     lines.add("Note: some of the bedrock seen doesn't fit this seed (the server may change blocks it sends).");
                 }

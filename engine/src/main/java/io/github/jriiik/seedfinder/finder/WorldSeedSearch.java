@@ -55,6 +55,7 @@ public final class WorldSeedSearch {
      * @param bedrockProblems notes that contradict the game's bedrock rules whatever the seed
      * @param bedrockDisagrees true when the world seed found from the hashed seed gets some bedrock wrong
      * @param likelySeeds    without proof: the seeds Minecraft could have picked itself or a text seed would give
+     * @param leftOut        a structure that doesn't fit the world seed and was left out (see {@link #withoutMisfit})
      */
     public record Result(
         Stage stage,
@@ -66,8 +67,14 @@ public final class WorldSeedSearch {
         Optional<FullSeedFinder.Result> bedrock,
         List<String> bedrockProblems,
         boolean bedrockDisagrees,
-        List<Long> likelySeeds
+        List<Long> likelySeeds,
+        Optional<StructureObservation> leftOut
     ) {
+
+        Result withLeftOut(StructureObservation structure) {
+            return new Result(stage, plan, structureSeeds, worldSeed, proof, hashedSeedFitsNone, bedrock, bedrockProblems, bedrockDisagrees,
+                likelySeeds, Optional.of(structure));
+        }
     }
 
     private WorldSeedSearch() {
@@ -96,6 +103,40 @@ public final class WorldSeedSearch {
         return fullSeed(structureSeeds(data, structures, threads, progress), bedrockNotes, hashedSeed, threads);
     }
 
+    /** Above this many structures {@link #withoutMisfit} doesn't try (one search per structure). */
+    public static final int MAX_MISFIT_CHECKS = 16;
+
+    /**
+     * When no seed fits all the structures: tries again without each structure in turn. If leaving out exactly one
+     * gives a world seed that is proven (by the hashed seed or by bedrock), that structure doesn't follow the seed's
+     * placement: it may come from chunks made by an older Minecraft version, a command, a copy, or a wrong note.
+     * Returns that proven result, naming the structure left out.
+     */
+    public static Optional<Result> withoutMisfit(VersionData data, List<StructureObservation> structures, List<BedrockObservation> bedrockNotes,
+                                                 OptionalLong hashedSeed, int threads) {
+        if (structures.size() > MAX_MISFIT_CHECKS) {
+            return Optional.empty();
+        }
+        Result proven = null;
+        for (int i = 0; i < structures.size(); i++) {
+            List<StructureObservation> rest = new ArrayList<>(structures);
+            StructureObservation left = rest.remove(i);
+            StructureStep step = structureSeeds(data, rest, threads, (done, total) -> { });
+            if (!step.plan().canSearch() || step.structureSeeds().isEmpty()) {
+                continue;
+            }
+            Result result = fullSeed(step, bedrockNotes, hashedSeed, threads);
+            if (result.stage() == Stage.WORLD_SEED) {
+                if (proven != null) {
+                    // Two different structures each seem to be the odd one out: no clear answer.
+                    return Optional.empty();
+                }
+                proven = result.withLeftOut(left);
+            }
+        }
+        return Optional.ofNullable(proven);
+    }
+
     /** The second step: the full seed from the hashed seed or bedrock, or the likely seeds. */
     public static Result fullSeed(StructureStep step, List<BedrockObservation> bedrockNotes, OptionalLong hashedSeed, int threads) {
         SearchPlan plan = step.plan();
@@ -104,11 +145,11 @@ public final class WorldSeedSearch {
         List<String> bedrockProblems = evidence.problems();
         if (!plan.canSearch()) {
             return new Result(Stage.NEED_MORE_STRUCTURES, plan, List.of(), OptionalLong.empty(), Optional.empty(), false,
-                Optional.empty(), bedrockProblems, false, List.of());
+                Optional.empty(), bedrockProblems, false, List.of(), Optional.empty());
         }
         if (structureSeeds.isEmpty()) {
             return new Result(Stage.NO_STRUCTURE_SEED, plan, structureSeeds, OptionalLong.empty(), Optional.empty(), false,
-                Optional.empty(), bedrockProblems, false, List.of());
+                Optional.empty(), bedrockProblems, false, List.of(), Optional.empty());
         }
 
         boolean hashedSeedFitsNone = false;
@@ -122,7 +163,7 @@ public final class WorldSeedSearch {
                 long worldSeed = matches[0];
                 boolean disagrees = bedrockProblems.isEmpty() && !evidence.mismatchesOf(worldSeed).isEmpty();
                 return new Result(Stage.WORLD_SEED, plan, structureSeeds, OptionalLong.of(worldSeed), Optional.of(Proof.HASHED_SEED),
-                    false, Optional.empty(), bedrockProblems, disagrees, List.of());
+                    false, Optional.empty(), bedrockProblems, disagrees, List.of(), Optional.empty());
             }
             hashedSeedFitsNone = checkedAll && matches.length == 0;
         }
@@ -137,7 +178,7 @@ public final class WorldSeedSearch {
                 && FullSeedFinder.expectedFalseFits(evidence.fullSeedObservations().size()) < 0.02;
             if (certain) {
                 return new Result(Stage.WORLD_SEED, plan, structureSeeds, OptionalLong.of(best.get(0).worldSeed()), Optional.of(Proof.BEDROCK),
-                    hashedSeedFitsNone, bedrock, bedrockProblems, false, List.of());
+                    hashedSeedFitsNone, bedrock, bedrockProblems, false, List.of(), Optional.empty());
             }
         }
 
@@ -151,6 +192,6 @@ public final class WorldSeedSearch {
             });
         }
         return new Result(Stage.STRUCTURE_SEED, plan, structureSeeds, OptionalLong.empty(), Optional.empty(), hashedSeedFitsNone,
-            bedrock, bedrockProblems, false, likely);
+            bedrock, bedrockProblems, false, likely, Optional.empty());
     }
 }

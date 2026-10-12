@@ -77,4 +77,26 @@ class WorldSeedSearchTest {
             ObservationReader.read(DATA, List.of("# from the mod", "hashed-seed -6467378160175308932")).hashedSeed());
         assertEquals(OptionalLong.empty(), ObservationReader.read(DATA, List.of("igloo 48 208")).hashedSeed());
     }
+
+    @Test
+    void aStructureThatDoesntFitTheSeedIsFoundAndLeftOut() {
+        // A village one chunk off the spot seed 12345 uses in its region: like a village from an older game version,
+        // placed by a command, or copied.
+        var villages = DATA.structureSet("villages").orElseThrow();
+        var placement = (io.github.jriiik.seedfinder.structure.RandomSpreadPlacement) villages.placement();
+        var spot = placement.potentialChunk(12345L, 3, 3);
+        String misfit = "village " + (spot.minBlockX() + 16) + " " + spot.minBlockZ();
+        List<String> structures = new java.util.ArrayList<>(STRUCTURES_12345);
+        structures.add(2, misfit);
+        List<StructureObservation> observations = ObservationReader.read(DATA, structures).structures();
+        WorldSeedSearch.Result plain = WorldSeedSearch.run(DATA, observations, List.of(), OptionalLong.of(Seeds.hashedSeed(12345L)), 2, (done, total) -> { });
+        assertEquals(WorldSeedSearch.Stage.NO_STRUCTURE_SEED, plain.stage());
+
+        WorldSeedSearch.Result fixed = WorldSeedSearch.withoutMisfit(DATA, observations, List.of(), OptionalLong.of(Seeds.hashedSeed(12345L)), 2).orElseThrow();
+        assertEquals(OptionalLong.of(12345L), fixed.worldSeed());
+        assertEquals(Optional.of(observations.get(2)), fixed.leftOut());
+
+        // Without a proof (no hashed seed, no bedrock) nothing is claimed.
+        assertTrue(WorldSeedSearch.withoutMisfit(DATA, observations, List.of(), OptionalLong.empty(), 2).isEmpty());
+    }
 }

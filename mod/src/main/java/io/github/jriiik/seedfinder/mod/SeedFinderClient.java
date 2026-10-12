@@ -80,10 +80,10 @@ public final class SeedFinderClient implements ClientModInitializer {
 
     /** The session for the world the player is in, opening or switching it when needed (main thread). */
     static WorldSession session(Minecraft minecraft) {
-        String world = WorldIdentity.current(minecraft);
+        String world = WorldIdentity.key(minecraft);
         if (!Objects.equals(world, session == null ? null : session.world())) {
             save();
-            session = world == null ? null : WorldSession.load(folder(), world);
+            session = world == null ? null : WorldSession.load(folder(), world, WorldIdentity.current(minecraft), HashedSeed.read(minecraft.level));
             recognition = world == null ? null : new StructureRecognition(data());
             wasCollecting = false;
         }
@@ -192,12 +192,17 @@ public final class SeedFinderClient implements ClientModInitializer {
         }
     }
 
-    /** Picks up the answer to a /locate command the player typed (the mod itself never sends commands). */
+    /**
+     * Picks up the answer to a /locate command the player typed, and structures placed with /place, which must never
+     * be taken for real starts (the mod itself never sends commands).
+     */
     private static void onGameMessage(Component message, boolean overlay) {
         if (overlay || session == null || !session.collecting()) {
             return;
         }
         LocateMessage.parse(message).ifPresent(found -> data().findStructureSet(found.structure()).ifPresent(set ->
             session.addStructure(new WorldSession.NotedStructure(set.shortId(), found.x(), found.z(), "from /locate"))));
+        PlacedStructureMessage.parse(message).ifPresent(placed -> data().findStructureSet(placed.structure()).ifPresent(set ->
+            session.distrust(set.shortId(), placed.x(), placed.z())));
     }
 }

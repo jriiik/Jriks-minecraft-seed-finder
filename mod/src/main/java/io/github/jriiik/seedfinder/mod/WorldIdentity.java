@@ -31,6 +31,20 @@ final class WorldIdentity {
         return minecraft.level == null ? null : "unknown";
     }
 
+    /**
+     * The key the mod keeps notes under: where the world is, plus the hashed seed the server sent. Two worlds behind
+     * one address (a lobby and a survival world on a network, a reset world, Realm slots) get separate notes, so
+     * their structures and bedrock never mix. Null outside a world.
+     */
+    static String key(Minecraft minecraft) {
+        String identity = current(minecraft);
+        return identity == null || minecraft.level == null ? null : key(identity, HashedSeed.read(minecraft.level));
+    }
+
+    static String key(String identity, long hashedSeed) {
+        return identity + " [" + String.format("%016x", hashedSeed) + "]";
+    }
+
     /** Superflat worlds have a flat bedrock floor; the server tells every client whether the world is superflat. */
     static boolean isSuperflat(ClientLevel level) {
         return level.getLevelData().voidDarknessOnsetRange() == 1.0F;
