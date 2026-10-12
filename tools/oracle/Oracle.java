@@ -48,7 +48,9 @@ import net.minecraft.world.level.levelgen.structure.placement.RandomSpreadStruct
  * <p>It runs against the official server jar (downloaded by run-oracle.sh, never committed) and writes:
  * <ul>
  *   <li>version data: the vanilla structure sets in datapack JSON format, plus the biomes each structure may use;</li>
- *   <li>test fixtures: RNG outputs, structure placement results and stronghold positions for a list of seeds.</li>
+ *   <li>version data: the bedrock rules of each dimension (see {@link BedrockOracle});</li>
+ *   <li>test fixtures: RNG outputs, structure placement results and stronghold positions for a list of seeds;</li>
+ *   <li>test fixtures: the Xoroshiro128++ generator, random world seeds, and bedrock from real generated chunks.</li>
  * </ul>
  * Only plain facts (numbers and names) are written; no Minecraft code ends up in the repository.
  *
@@ -89,7 +91,8 @@ public final class Oracle {
         SharedConstants.tryDetectVersion();
         Bootstrap.bootStrap();
         String version = SharedConstants.getCurrentVersion().name();
-        HolderLookup.Provider registries = loadVanillaWorldRegistries();
+        LoadedRegistries loaded = loadVanillaWorldRegistries();
+        HolderLookup.Provider registries = loaded.lookup();
         HolderLookup.RegistryLookup<StructureSet> structureSets = registries.lookupOrThrow(Registries.STRUCTURE_SET);
         List<Holder.Reference<StructureSet>> sets = structureSets.listElements()
             .sorted(Comparator.comparing(ref -> ref.key().identifier().toString()))
@@ -98,18 +101,26 @@ public final class Oracle {
         write(versionDataDir.resolve("structure_sets.json"), structureSetsJson(version, registries, sets));
         write(versionDataDir.resolve("structures.json"), structuresJson(version, sets));
         write(versionDataDir.resolve("dimensions.json"), dimensionsJson(version, registries));
+        write(versionDataDir.resolve("bedrock.json"), BedrockOracle.bedrockRulesJson(version, registries));
         write(fixturesDir.resolve("rng.json"), rngJson(version));
         write(fixturesDir.resolve("placements.json"), placementsJson(version, registries, structureSets, sets));
         write(fixturesDir.resolve("strongholds.json"), strongholdsJson(version, registries, structureSets, sets));
+        write(fixturesDir.resolve("xoroshiro.json"), BedrockOracle.xoroshiroJson(version, registries));
+        write(fixturesDir.resolve("random_seeds.json"), BedrockOracle.randomSeedsJson(version));
+        write(fixturesDir.resolve("bedrock.json"), BedrockOracle.bedrockChunksJson(version, registries, loaded.world()));
         System.out.println("Oracle finished for Minecraft " + version);
         System.exit(0); // the game's background executors would otherwise keep the JVM alive
+    }
+
+    /** The loaded registries: a lookup over all of them, and the world-generation layer on its own. */
+    record LoadedRegistries(HolderLookup.Provider lookup, RegistryAccess.Frozen world) {
     }
 
     /**
      * Loads the world-generation registries from the built-in vanilla data pack, including tags such as
      * "#minecraft:has_structure/village_plains", following the same steps as the server's WorldLoader.
      */
-    static HolderLookup.Provider loadVanillaWorldRegistries() {
+    static LoadedRegistries loadVanillaWorldRegistries() {
         PackRepository packs = ServerPacksSource.createVanillaTrustedRepository();
         packs.reload();
         packs.setSelected(List.of("vanilla"));
@@ -118,7 +129,10 @@ public final class Oracle {
         List<Registry.PendingTags<?>> staticTags = TagLoader.loadTagsForExistingRegistries(resources, layers.getLayer(RegistryLayer.STATIC));
         List<HolderLookup.RegistryLookup<?>> context = TagLoader.buildUpdatedLookups(layers.getAccessForLoading(RegistryLayer.WORLD), staticTags);
         RegistryAccess.Frozen world = RegistryDataLoader.load(resources, context, RegistryDataLoader.WORLD_REGISTRIES, Runnable::run).join();
-        return HolderLookup.Provider.create(Stream.concat(context.stream(), world.listRegistries()));
+        // Like ReloadableServerResources: block tags such as #minecraft:uncarvable (which keeps carvers away from
+        // bedrock) only work once they are bound.
+        staticTags.forEach(Registry.PendingTags::apply);
+        return new LoadedRegistries(HolderLookup.Provider.create(Stream.concat(context.stream(), world.listRegistries())), world);
     }
 
     /** All structure sets, exactly as a datapack would define them. */

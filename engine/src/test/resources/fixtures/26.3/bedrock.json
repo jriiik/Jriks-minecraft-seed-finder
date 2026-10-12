@@ -1,0 +1,947 @@
+{
+  "minecraft_version": "26.3",
+  "generated_by": "tools/oracle (calls the official Minecraft server code)",
+  "format": "seed -> dimension -> \"chunkX,chunkZ\" -> y -> 16 rows of 4 hex digits, one row per z from the chunk's north edge; bit x (0 = west edge) of a row is set where the block is bedrock",
+  "seeds": {
+    "0": {
+      "minecraft:overworld": {
+        "0,0": {
+          "-64": "ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff",
+          "-63": "ff7b fbfc d7f7 fadf dddf efff dd6e fc7e bfff f39f 1a7f dfef eebf ffef bfbd 777f",
+          "-62": "f73a a16c 45e3 ba57 f8dc 4dff 5d4e 186b 363e f382 1a38 d56f eebe fead a791 365f",
+          "-61": "a71a 2004 4440 3007 f09c 0c97 1d0e 18c3 0230 c302 1a00 416d a6aa 948d 2111 3557",
+          "-60": "a108 2200 0000 1007 3008 0003 2108 0040 0200 4100 1002 0000 040e 50a1 0000 b412",
+          "-59": "0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000"
+        },
+        "-1,-1": {
+          "-64": "ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff",
+          "-63": "fdbf fddd d9eb efff fbcf eff7 7cb0 f39f fdfb fc7f ef75 ffef f77f f6ba dfd7 7fbf",
+          "-62": "b797 f4d9 11ca 6fff fbce ed17 3830 839f 78f3 bc30 e554 ff65 773f d4ba 8f45 6d0b",
+          "-61": "4715 d458 0208 6352 a8ce 6d05 b030 8187 10d1 8630 e170 d260 721f c018 0445 4008",
+          "-60": "0300 c04b 0098 0a00 2ae2 0101 8020 0001 2080 0400 2120 8040 001a c010 0001 0088",
+          "-59": "0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000"
+        },
+        "7,-3": {
+          "-64": "ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff",
+          "-63": "ffe3 ffdd ff7b fe78 8fe5 ecde ff7e 9bf7 ffe6 ff76 ffd9 eefc f7df bfb7 39eb d6ff",
+          "-62": "d762 8741 d9fb 86f9 8f18 a9d2 7f7e 926f 6fe2 cf16 ca93 ee4c f71f 3d35 28eb fc57",
+          "-61": "4760 8743 c12b c74a 9a18 291a 6f6a 9041 6562 4a0e ca92 ea4c d233 1921 28e1 b003",
+          "-60": "0180 0010 0113 010e 9018 0910 2c30 1000 2400 0800 8880 3a04 1911 0100 2268 0000",
+          "-59": "0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000"
+        },
+        "1874999,-1875000": {
+          "-64": "ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff",
+          "-63": "cffe 3fff dcbd deef 7ff7 ffdf 5efe d7d3 ffff db7f 3dfa ffdb fffe feff 7ffb df7b",
+          "-62": "3993 ff74 67e2 6f54 c91c 7ae7 a72f 7a3a ed11 fccd faab 64b7 d86d 8554 bcac 2ecf",
+          "-61": "4474 5009 c01c 60ea 3433 9659 5a50 85c7 12a8 03ba 1254 3b00 2bd2 722d 605b 4b21",
+          "-60": "0980 2622 0180 0700 8004 2004 2412 5818 8009 89c4 6203 0420 2004 0401 8020 8000",
+          "-59": "0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000"
+        }
+      },
+      "minecraft:the_nether": {
+        "0,0": {
+          "0": "ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff",
+          "1": "7fdf ffbb ebd5 ed7e df7f ffbf cfff fefd 7faf fbdf ffbf eb3f fff6 9fe7 dddf ffef",
+          "2": "1fd3 2d93 eef7 fe9b fdb0 f734 455f e3be bde7 ad82 f122 8e54 db01 e343 a37d 5fa5",
+          "3": "5995 d088 9520 1320 59b1 74d0 1470 6099 df56 9382 bc28 0e75 aea3 008c b93b 2200",
+          "4": "9800 8001 0101 0808 102d 0052 00fc c2e0 0408 8011 0118 1036 7001 320a 8408 1021",
+          "5": "0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000",
+          "122": "0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000",
+          "123": "0020 4100 1041 4808 0800 4105 0082 1292 3c21 8008 b048 81c0 a066 0020 4444 0201",
+          "124": "4421 5b00 0800 9612 6d38 6359 0a97 43ec 3ac8 b2d4 0432 a193 40d8 0c0c 4401 c03d",
+          "125": "bb3b a156 f37c 2f6c f8bc 6226 5e5f 314e 99bf bb92 78ac feea 88e5 b9f1 41df 36a6",
+          "126": "ffc6 3aff 3f7e ffbf 7fef fff7 f6df 7dfb 8efb bfa7 c7ef ffff 7aef 5f9f beef f7fc",
+          "127": "ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff"
+        },
+        "-1,-1": {
+          "0": "ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff",
+          "1": "effb ebfb ff7e dae7 bbfe fdfa f86f f7fe fbd9 7aff fddd ffff ffff bc6f fcbf bfff",
+          "2": "8955 1af0 df30 c4de 49d9 15f6 299f d36b 0918 eecf 74c5 5c9f f8df f6af f456 c77c",
+          "3": "900b 15c8 b132 2740 43c4 09b5 18d1 d283 8582 270c afd1 024d 9612 0c80 02f2 2216",
+          "4": "8000 4840 0040 e1c8 0011 8c40 0801 0106 8010 4a82 6d08 8440 0632 6421 3200 0142",
+          "5": "0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000",
+          "122": "0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000",
+          "123": "4002 0180 5754 0800 0020 0252 3400 3006 4200 82d0 0119 0000 0a46 6064 0410 0041",
+          "124": "2865 2c57 aa76 2074 7840 c34a 20c1 428a 6238 2a90 7201 608d d046 c0c7 2829 00a0",
+          "125": "116f df8c d436 4f6b a9ee eaff d8a5 c6ee 5932 b018 fded ddc9 17f6 7df8 7e36 d54b",
+          "126": "7cd2 7fdf f7cb f3e5 6f9a fbfe fffe dfeb fa7b ff7d e7ff 9fee cfff fffb ff63 babc",
+          "127": "ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff"
+        },
+        "7,-3": {
+          "0": "ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff",
+          "1": "fe7f faae cfe7 da3f bfcf 3ee5 ed5d fb6f 75fd ff7f 7fed ed7f 3fd7 bdbb deb9 7bff",
+          "2": "748b ccf7 f37f 9577 6575 7b69 45f6 fbc5 ec50 17d2 6c7d 901b ff6e f382 d107 bb67",
+          "3": "2908 0921 1d24 0853 0220 c106 5b86 2261 044e 584b cab6 efe3 e26c 1f5c 044d e0c0",
+          "4": "0100 4001 cd80 c434 c108 4801 c084 8000 1100 0022 5007 0011 6a86 1200 4009 0014",
+          "5": "0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000",
+          "122": "0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000",
+          "123": "5023 2204 3031 0002 5445 0160 0000 0004 2582 1440 8b00 008e 6904 0061 0000 4000",
+          "124": "4019 4051 203e 80cc d646 1b4c 145c 49b2 000e 802c c342 2203 8cf4 aa85 c52a b495",
+          "125": "7fde 2ab7 720f cf4f f16d 6b66 5d7f a45f afd8 746a ad9f 5b63 f5ce 5a6b 9b0f a5ea",
+          "126": "3cff f7ff 7ffa f7fe dd7c feef decf deb7 fb5f f3fd a5fe 7adf fbd7 dffd dbf1 6e7f",
+          "127": "ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff"
+        },
+        "1874999,-1875000": {
+          "0": "ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff",
+          "1": "7f5f 9ffd ff6d 6f6f 77cf 5edf dbb9 f5ff efff e6eb fffe befa d7eb be17 5aef fb7f",
+          "2": "b6f9 7caf ff31 efe8 bbe8 76fa bffe 850e bdd7 93f2 ba3d bf56 cbdd 33f2 caf6 d06f",
+          "3": "7f82 0330 29ec 8b03 c570 6ca8 616c a686 6023 4882 7f14 e135 7802 03b6 4402 2285",
+          "4": "4040 1000 3523 6200 4002 0121 0800 a220 0204 0810 0089 1084 2604 3480 0001 0100",
+          "5": "0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000",
+          "122": "0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000",
+          "123": "0008 008e 0052 0840 1140 1b20 4c83 0100 0004 0000 0040 0088 0302 0e05 8088 a8d0",
+          "124": "6516 0c63 2a04 8503 be68 5146 d04d 0b20 101d 24c2 8a79 1608 6e50 ca75 8d24 02c5",
+          "125": "c7df 67be 0fbd df45 9ffc 1edc bff4 ac50 d64b 7717 dcf5 e0f9 6bbd abbb d6ed d72d",
+          "126": "8dfd c6db fdef cf7b f3c9 f7af bdfe f62d e6fd ff95 c776 dfff f67f eff6 ffbc 9fbd",
+          "127": "ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff"
+        }
+      }
+    },
+    "1": {
+      "minecraft:overworld": {
+        "0,0": {
+          "-64": "ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff",
+          "-63": "7fed dfff bb3f dfff bf67 f2fd aff9 f7bf ffef 9efd f7f7 fedf dbe5 ef5f fffe eff0",
+          "-62": "3fac 0ff7 3b0c 5faf b627 92d5 aad1 f781 5b67 8cf4 f7a3 c29e 9b60 ef19 79de c9b0",
+          "-61": "2f2c 0bf1 2108 1e2f b223 9241 2a90 e681 0a05 8c24 b4f3 2090 8a61 4519 388e 8918",
+          "-60": "8004 0141 0008 1405 1209 0201 0210 0280 0200 0002 1042 0810 0850 4011 1084 8810",
+          "-59": "0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000"
+        },
+        "-1,-1": {
+          "-64": "ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff",
+          "-63": "ffef 1fef ffff f5ef 2ff3 e6ee cfdf 7fe3 dfee fbdf 1feb 7e9f e9fb fff7 f8ba fef7",
+          "-62": "ffc9 1b27 e73d 71eb 0cb3 f686 8bdf 5e63 47e6 13cf 16ab 5693 e9da fbf5 60b8 dee1",
+          "-61": "2744 3127 e319 3144 0ca3 1208 8e5b 5863 02a4 02ca 12ab 0593 889a e8f5 2000 1ea1",
+          "-60": "0720 0023 4018 1100 1c81 1020 b409 8001 0200 0280 1080 0580 0490 4051 2000 0100",
+          "-59": "0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000"
+        },
+        "7,-3": {
+          "-64": "ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff",
+          "-63": "eeff fcbd fef8 79d7 fdff f7ff a1af fdbf dbdd fdff 7f6f b7bf 6efd eefe dfdd afef",
+          "-62": "aef7 d8bb fee4 71c7 fdfb 337d 81b7 a4bd 9f15 fd6b 1e7e 1726 6ef0 405e 5f91 afff",
+          "-61": "a434 d43b d0a0 61c7 15b9 312d 8183 94b1 3019 7c0a be7a 1624 43b0 404a 1e11 2187",
+          "-60": "8808 4088 1022 1085 8018 0d00 0000 1020 0408 8880 0040 3204 0811 0040 1b70 0008",
+          "-59": "0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000"
+        },
+        "1874999,-1875000": {
+          "-64": "ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff",
+          "-63": "ff9d eeff 3fef afb7 cfcf eae6 b5af 7f3f efd3 fced ebff e4ef da2d 9d7f 9fbf f3cf",
+          "-62": "dfbf 35cb d81d fdef a2eb f175 17b8 d7ed cbe6 e092 315c 6ff9 aece 1a3b 33aa de31",
+          "-61": "3b17 cd01 032a 2994 a803 e026 b512 422d eb90 a084 e265 20bc 0e2d 8419 90ae 0605",
+          "-60": "2180 6408 0012 1500 8220 6014 f450 5109 90c8 8190 2200 0508 07c4 1620 c060 c811",
+          "-59": "0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000"
+        }
+      },
+      "minecraft:the_nether": {
+        "0,0": {
+          "0": "ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff",
+          "1": "7fff fcff 7def bffe 7ffd b3b7 b97e bbeb ff37 8fff f79d f7ff de5f adc4 6ebc 17ef",
+          "2": "6e67 b77b 76c7 3bee d5ca bd70 6def 6df8 f6df c2d1 78f3 81b0 ee75 36ff a265 775e",
+          "3": "a1c1 35e2 4c04 a425 6a32 8f5a 2541 123a 3e1a 1096 2ad3 f8b0 317e 9092 2427 2104",
+          "4": "0088 8500 0a80 2a02 042c 3845 0047 0400 1403 0040 4220 4001 8828 0904 0108 6804",
+          "5": "0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000",
+          "122": "0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000",
+          "123": "0000 0010 4210 4000 4620 0220 0500 8400 0023 0400 2920 0000 210c f82a 2210 081c",
+          "124": "00d8 094a b0d6 a272 7db4 1209 f68f 915d e007 a860 8942 c5cc b438 51c3 f10d 8ab7",
+          "125": "5be9 5f31 df6f 426f dee2 bf3f 04bb df59 18fe ed90 55fd b7bf dd9f f829 a72c ac4f",
+          "126": "f3db fbd7 ff7b bf7f b3ef 7fff beef ff5f afff c2ff efbf ef5f d7ff dbbb d51c f77d",
+          "127": "ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff"
+        },
+        "-1,-1": {
+          "0": "ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff",
+          "1": "df73 ffd1 f9fd 573b ffbf fadf f2ff fba7 ffab fbaf 5f89 9edf 7fff ffff 7cfd ef7f",
+          "2": "ddd6 b5dd e79b eb9d b927 4e57 9c2e 13d3 be83 6e7d fdef 0d7e 2899 bbad f7ee eddb",
+          "3": "719f 4048 61e1 9303 7432 4e6a 0512 8201 04a2 ac91 8450 a0b3 f7c8 491a 695c 9e1c",
+          "4": "0220 0179 0000 0420 0040 0000 0006 1005 0817 5400 4e00 0128 8207 80b8 1228 1012",
+          "5": "0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000",
+          "122": "0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000",
+          "123": "0902 6020 2a00 ac3e 0220 0140 1900 0400 0000 1002 9140 0985 0904 4004 082c 1400",
+          "124": "8651 dab2 6106 9215 5479 7747 84b0 0d2f 1270 2143 eacd 30c5 7753 d8cb 6ca2 e025",
+          "125": "7670 f57a e2e1 6c7e f27f ff9a cf4f 033b f884 74a7 0959 fcbf cad7 e9c4 e7dc 1de4",
+          "126": "fd5e 7ddf f87f eff6 bf7f f5ff d1fe ffd7 ff7b e5ff f7fb fafc eef1 fdff afdf d7ff",
+          "127": "ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff"
+        },
+        "7,-3": {
+          "0": "ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff",
+          "1": "f7cf a477 ffd7 a3df 6ff7 ff7f cebf a7d9 fbbb fdff ffff ffcd 37ff fff3 f3ff d54b",
+          "2": "b8b2 683d fde6 f6b7 c9d9 ebab ea69 e5e3 efe8 bc9e e8c3 5f0f 0f6b 3e87 7f75 a6c1",
+          "3": "6958 a762 2567 003c 17c8 5463 0262 5916 c07d 6476 4c34 2c26 40dc bf1c 17a5 8584",
+          "4": "4052 2640 8080 0015 0170 8004 0143 0104 0520 4001 0406 0000 0500 4031 0004 0284",
+          "5": "0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000",
+          "122": "0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000",
+          "123": "2448 0202 9071 1100 4290 cc28 8201 0480 1059 9202 0021 5922 0081 8904 0818 802a",
+          "124": "8001 0000 2840 adc6 6744 492f 841a ed4a 7015 3d5a 8430 0ba0 0903 8c94 4c51 c160",
+          "125": "2bf3 6b7f ebc4 9177 39fe 3a7e eb4e fefa b8c7 de8f bf8a 0d8b cbbe 7f1f 1c1d 8657",
+          "126": "a9fd dfca ff59 fcff 7f57 b96c ffde fffe ffb7 dfd7 7ffd e5cb def6 f4df 5bf7 7fff",
+          "127": "ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff"
+        },
+        "1874999,-1875000": {
+          "0": "ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff",
+          "1": "fffe 5cbf fbff bfcd efff af5f d66e afef bfb7 de3f fdf5 cfef 3cb7 d5bf fffb bfbe",
+          "2": "0e53 ed9f 3f4b fc13 6dfb 84dc aa59 7c93 fbe8 fe8f f9fb a9f1 cbab 1f9e dfda b73b",
+          "3": "7592 483d 8070 daa1 3818 c1e2 3480 0000 1828 969b 010f c92c 83d2 0a86 fa9d 9e92",
+          "4": "0a04 0181 0080 8000 4621 2040 8260 1002 0180 5002 1080 4600 0d93 a004 08a0 0200",
+          "5": "0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000",
+          "122": "0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000",
+          "123": "0200 8035 2c00 0002 0008 5100 40a4 1804 8032 5012 0148 1012 0668 0201 2484 4800",
+          "124": "041f 810c f8a8 3021 80a8 af53 b191 0381 b2c8 0229 9728 1271 02a4 8620 189a 2744",
+          "125": "6e4e 335c ba49 f8ec ffbd f62a 9949 97d2 acc5 b8ff 6f43 c5f0 dbee 3f54 d1cd dd3d",
+          "126": "9fff effb bff7 effb 6f5b f777 ecff fbeb f3ff 247f c7ff fbdf fd6f fbf6 fff7 fbfb",
+          "127": "ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff"
+        }
+      }
+    },
+    "-1": {
+      "minecraft:overworld": {
+        "0,0": {
+          "-64": "ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff",
+          "-63": "b7be 17fb dfde bf9f ffdb 4f6b 7b3f ebf6 ffde f3ff fbbf b533 fffe 7ff9 fce1 ffff",
+          "-62": "b71e 1341 d7dc b49f f7da 2f43 7b3a caf5 3b12 73b6 b89d bd33 ecfa 7bd1 1ca5 ff7f",
+          "-61": "b016 1341 c5d8 a01a 63d8 2f42 693a 88f6 b002 73ab 8098 9523 6c9a 7bd0 5481 374c",
+          "-60": "1010 1400 c0d0 a010 0100 0400 012a 0854 a012 0181 0004 9501 0408 1862 0420 3042",
+          "-59": "0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000"
+        },
+        "-1,-1": {
+          "-64": "ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff",
+          "-63": "b7de ffff 17fc 3ffc ffff 995b 7b3f ff9f f3bf dfaf f9bd ade5 b7ff f3ff f7f7 bfd1",
+          "-62": "471c fdff 4a70 17bc 3def 997b 72ab db9d 979b 5ea7 b9bc 85e8 97df f25b 77d7 0590",
+          "-61": "0600 64d8 0a54 07bc b16d 9953 3222 ab9c 901b de22 b93c 85e8 358d b00a 3747 0590",
+          "-60": "0010 8458 0840 8c34 a040 0143 4000 0300 2003 5420 a900 0040 0100 100a 1607 0050",
+          "-59": "0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000"
+        },
+        "7,-3": {
+          "-64": "ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff",
+          "-63": "bffc 97df cdef dfed a3a7 fcb5 fb5e ff7f 7f6b ffd7 ebfd ebff fffb 7b7f ffff ff3f",
+          "-62": "2521 ef47 33cf d7a9 8639 e1a5 dd4e fbfc e2a3 ef56 d8ae eeff 5773 7bf5 8969 3fdf",
+          "-61": "2904 010a 01cb 8781 8227 4824 7c5c 0a6c 47c2 8314 40a8 e0c9 1523 dbb7 a078 1554",
+          "-60": "2100 2420 01d1 2000 6440 1238 3627 44c2 2216 0021 a480 0901 1000 c188 c008 09c0",
+          "-59": "0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000"
+        },
+        "1874999,-1875000": {
+          "-64": "ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff",
+          "-63": "bbf6 fffb f7fb d7d5 bfbf ff5d fe7a fbdb dffd bfbb f6e3 7fff 7fde ffed fbbf 6ff7",
+          "-62": "2be6 7f68 c5ba d6d9 8f35 bedb fe6e d9d7 aef5 2efa d6e5 dfdf f5e6 d6c5 ec23 4df6",
+          "-61": "2062 5930 c432 d240 9734 1ec9 ea44 8bd2 1175 2ebb 1280 1154 75d2 f644 6c71 4dd2",
+          "-60": "0060 12a0 d480 021c 11c4 1ac9 0a04 0810 2001 2847 d402 9820 401a 6806 0410 1000",
+          "-59": "0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000"
+        }
+      },
+      "minecraft:the_nether": {
+        "0,0": {
+          "0": "ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff",
+          "1": "dfe9 d2ef ceff f4bb ffef 7eff 97bd 6ffd dbfb f3ef bfd3 fdbf affe f277 f753 dffd",
+          "2": "aafb d1dd fd69 61c1 f57e 7270 feb7 51a9 9bfd aeb4 f2b3 ccef b707 aa8b ee30 b179",
+          "3": "8491 5219 7e93 b809 90da 35cb 5084 1164 779c 231c 4493 95b8 c02a 99c6 5930 15a0",
+          "4": "0d01 2255 1840 1201 0916 c2a0 2028 2000 0110 0010 2820 8008 21e0 1005 0221 0800",
+          "5": "0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000",
+          "122": "0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000",
+          "123": "8000 2210 0000 6160 0330 8000 1010 2001 8842 0011 0010 8009 010a 1403 0141 4000",
+          "124": "17b3 1398 4874 9fa1 8a15 c19a 494d 8d32 a091 b301 a22c 4828 6892 222b 4348 9c08",
+          "125": "ad18 b787 d8ae 339d 8e2b 37e4 d427 b09b 6758 4da5 7b09 b6bb e6e0 74bf 799b d5da",
+          "126": "fb3f eaff ffb7 c77b fc8f ff7f fdff ff56 faff aff5 7fde 6dff ddf7 77b9 ffff bfee",
+          "127": "ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff"
+        },
+        "-1,-1": {
+          "0": "ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff",
+          "1": "9af6 7ff7 aef7 dddf bbe7 af7f 9e4b ffda 6f2e 7ffc e359 fefd ef78 ff1b effc fed7",
+          "2": "af31 6c1b baff a6ff 6f5e fa62 2b17 5eff 9397 3a00 e945 098c 99be 471d 36ff 7243",
+          "3": "63c2 0a41 9086 8233 4227 3a43 90f4 7088 f9ae 0810 6284 f60c 5d5f 203e ba56 2485",
+          "4": "2800 0420 0818 0000 818f 2102 0100 0000 0500 0448 0103 0e82 3909 00c5 0e00 5088",
+          "5": "0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000",
+          "122": "0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000",
+          "123": "3220 5000 8402 8100 0e00 2402 1812 0400 4012 0419 8008 4002 1020 1808 0080 4088",
+          "124": "a23b 2463 9736 a8d8 b7a0 3c24 43a9 158b 180a cd73 6d0c e643 1103 1bb2 4414 2281",
+          "125": "3fe6 f716 203c af5c e9a8 afce 2a3e 5f31 6dbb a35f 73d5 5b8c eeed 77c8 dab7 d39f",
+          "126": "bffe ffff fdff 3fd9 bff7 fe6d ffff 5baa d2eb d1fb 7f7d fdff e37f adc7 5bff bbbf",
+          "127": "ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff"
+        },
+        "7,-3": {
+          "0": "ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff",
+          "1": "4ca9 3fe7 d3bf 67ff bffb 5ded ffad deff f6ff ae76 72bd afff addd bff4 27fb 7fef",
+          "2": "34e1 34f1 66bf 7c79 29a7 68e5 3d5d d7af c7d8 f8ff ce3e 3223 cf2f b8ed 36a9 fe19",
+          "3": "7412 2ac0 3039 4041 7627 ec71 c64d 5e8c 6097 5d61 0a13 280d 26c9 28c7 1ac4 ec26",
+          "4": "0414 1840 0014 2282 0f05 6010 0000 0080 0886 0022 4800 3102 8003 c002 2ea0 8511",
+          "5": "0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000",
+          "122": "0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000",
+          "123": "0004 8609 0900 0410 010e 1801 14c3 2402 3411 2806 0821 8662 2010 0802 0a33 49aa",
+          "124": "b049 72ed 086b 4948 8545 0080 a225 0889 4823 8c29 021c 8841 a11d 455a 490e 2811",
+          "125": "e7dc 2f6e 6786 2174 1142 69bb 0f49 d878 4066 f7b4 8f9f 5598 3a77 ab60 4afd c3d6",
+          "126": "bffe ffff fd2b d7a8 fd7f 7fde fdbd bdef fd0b ffdd cfd5 fddf f7fe ffff ff9d b79e",
+          "127": "ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff"
+        },
+        "1874999,-1875000": {
+          "0": "ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff",
+          "1": "ffbf fdfe beff 7bdd efbf f7ff dfaf ebfb ffbe aa77 7fff deff 7e7f d7df ff7b eeff",
+          "2": "f7ee 57d9 f3de 43cd 5668 5fa6 def6 59ba ee92 3e75 754e c571 446b 1bde 3c82 36cc",
+          "3": "0d0e 2114 4244 68f4 e42e 2d18 c00f e1b9 88af 5182 5c49 8216 3498 0c45 4389 8912",
+          "4": "8008 b001 8000 4089 8010 9439 c440 3010 8440 0219 0000 884f 2008 220c 00a0 7808",
+          "5": "0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000",
+          "122": "0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000",
+          "123": "0408 40d4 0100 a00a 0284 0168 90c8 0048 0000 0006 9108 83a3 022a 0029 040a 7008",
+          "124": "80ab 1363 4a68 38d9 8634 5202 b8bb a2e5 9bc0 587b 40c1 cc2a 22c0 020c 4000 408a",
+          "125": "ad58 5d58 68f4 6d4a 7d95 f9fe ddb9 c08f ceb7 2b5b 1bfd e387 8dfa f373 d517 78fe",
+          "126": "ff7d f2df cdff fff7 ffb7 ff7f f5af dfc5 fbdf f5fd ffdb 7df2 cdff efdf ff7e d4d7",
+          "127": "ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff"
+        }
+      }
+    },
+    "12345": {
+      "minecraft:overworld": {
+        "0,0": {
+          "-64": "ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff",
+          "-63": "b37f f7fb cfff bedb efd9 6f62 7b3f ebfe bfde f3bb f9fe bd33 7edf 7ffb 7ef5 ff7f",
+          "-62": "b057 f749 cdfb e45a 6bd8 6f6a 5b3e 8afe b49a 73ab 285c bf33 6cdf 7bf2 d6a7 bf4f",
+          "-61": "1053 f40a 8873 e050 0980 6c2a 116f 0a5e e49a 4389 2804 8d20 058e 3ae2 c624 b647",
+          "-60": "5000 840a 8823 8050 0904 402a 0108 015e 242a 41c1 0104 0620 1084 9a60 4638 3686",
+          "-59": "0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000"
+        },
+        "-1,-1": {
+          "-64": "ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff",
+          "-63": "277e fdff 5ffe bffc ffff 997b 7e3f ab9f fbbf ffab f9bd 8ded 77af b6ff ffe7 bfdf",
+          "-62": "0636 e4fa 4ad6 9ffc f76d 99fb 772b ab9c ba1b fea2 f9bc adec 172d b54b bf67 25de",
+          "-61": "0832 c4da 58c4 8eb8 e748 0963 4020 2384 a80b f4a0 ed10 a86c 0320 140b 9c23 a05e",
+          "-60": "0043 c2c8 10c5 08a2 6350 49c0 4000 0604 284a a100 0100 a844 0120 1502 8823 a042",
+          "-59": "0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000"
+        },
+        "7,-3": {
+          "-64": "ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff",
+          "-63": "3dac 57df ddef dfe9 8fa5 fca5 ff7e ffff 77eb fbd6 fbfd ebdf fffb dff7 fd7f 7dff",
+          "-62": "3908 67c6 15df 8fb9 e667 cea7 7e4c 7bee 62ef 83b4 f3ac e8db 952f fff5 e16c 5dfc",
+          "-61": "1988 6244 005c 8e38 6206 ccc0 664c 694a 42eb 82b4 5104 e9db 940a bfa5 e106 48e8",
+          "-60": "2202 8220 03d1 2c08 6740 90aa 0ca5 0480 00f4 0031 4580 0900 140a 8489 8008 03c0",
+          "-59": "0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000"
+        },
+        "1874999,-1875000": {
+          "-64": "ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff",
+          "-63": "b9fa fff9 e7fa d3dd fff7 7fdf fe5e fbdb 37ff bfff f6a3 bbfe 77fe ffcf fefb 7f77",
+          "-62": "2062 db3c f7f2 d258 dff4 1fdb eac6 a8da 34fd bfff deb3 9b56 71f2 ffc7 ec75 edfe",
+          "-61": "8068 12b8 dcd0 4248 555c 1fd9 4ac6 0812 342b 5f6b 958a 8b02 5130 62c6 6e51 11e2",
+          "-60": "1048 92b0 58c0 2000 00d4 0241 0b81 2010 0002 1608 1802 0822 9001 68d6 0810 3048",
+          "-59": "0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000"
+        }
+      },
+      "minecraft:the_nether": {
+        "0,0": {
+          "0": "ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff",
+          "1": "fcf9 ffd7 ffdc 379b 6be7 e7ff fbff fdff 5f8d beff bebf ffbf bdff e7ff fffd 2f77",
+          "2": "1e7d 6b7b f8d2 f1cb e732 32f2 fc87 ef7d 9ab5 96f4 eb3a 3bab 41bb 01d6 a9c4 db52",
+          "3": "4386 cf48 e565 1210 40ca c859 4e41 1194 3211 3d60 3518 65b9 cf03 0116 ac38 c587",
+          "4": "0802 8500 a248 c108 8041 0482 4800 0080 2035 0402 1000 1200 1144 10c8 2608 8484",
+          "5": "0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000",
+          "122": "0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000",
+          "123": "1800 7a00 5820 215b 4200 0c85 7820 0800 0d12 40a0 4880 c004 2080 0020 2924 0020",
+          "124": "0919 0048 2d01 4622 62ca 5965 b133 d261 8432 90c2 1a4a c2c4 2015 6eba 818c 41c1",
+          "125": "1f79 77e7 b7bb 2fa6 7df3 9554 cf7d 37df 7be9 f1f7 7645 467c b659 daa7 5e56 5ffb",
+          "126": "fffd bddd febe b0ef d57e fafe ec3f edff edfd 5ffe fffd ffff fbce aff6 ef7f 8feb",
+          "127": "ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff"
+        },
+        "-1,-1": {
+          "0": "ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff",
+          "1": "7ffe ddfd feef ebdf fefe feff fbd8 fffa fd9c ee2e f4af fe8f e7af e7dd fffe d7ff",
+          "2": "dd36 d4a6 fc9a d351 572b aef9 b2b5 1e97 98ff 7cae d87e cf8d 7dc7 b65f 9cbf fdf8",
+          "3": "0458 9242 39e3 8100 45a8 2a09 924a 4869 4875 0744 b7df 3037 2140 0090 66de 25f3",
+          "4": "4200 1306 0840 2700 c810 0080 2180 8010 0000 0201 3104 9201 0809 2102 0710 0502",
+          "5": "0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000",
+          "122": "0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000",
+          "123": "10d2 4800 4200 4840 2084 1043 000c 0a01 83d0 1170 111c 5330 4a00 a108 882c 00ac",
+          "124": "3491 1301 69ba aee8 dea0 4686 340b 8613 3a33 58c6 a139 1834 a306 d980 b86b 6510",
+          "125": "f6fe efa0 5de7 9af3 5bbb 6dd1 5f65 cb0e c58c b6dc 7dde 4402 15f7 dba9 324b cf9d",
+          "126": "eb6f aff7 ffe7 9fee aedf ffff eefe ffe1 db7f fe7f f9df ffbf 7bff ff5f 7bef 777f",
+          "127": "ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff"
+        },
+        "7,-3": {
+          "0": "ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff",
+          "1": "dfd5 e7f9 bfff fffd fff6 e5bf e6bf eb9e a7ef 77eb bb9b 6f9d dff7 fb0d fdcf ffbf",
+          "2": "d7db 7bd4 0dfb 587b 7d2e fff7 9fdf c9ef a5f3 f345 d2d1 655c a39a c98f a5f5 5c6e",
+          "3": "3840 ce40 6e95 5ea4 0196 9c7c 88b4 544c cf25 4743 dd2f 2769 c822 525a 8965 e1f0",
+          "4": "2000 0041 c882 0748 06a2 8a81 0262 0004 0840 0400 4854 0101 0039 3e10 0400 4318",
+          "5": "0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000",
+          "122": "0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000",
+          "123": "8000 880a 1200 0002 4440 820b 1224 8010 0000 0200 4008 2942 0403 6041 4510 000b",
+          "124": "0936 a50a ac26 1ae3 aea1 1004 4265 cd72 81cc e465 0000 bf11 781d 47a2 0044 8017",
+          "125": "d8eb fd7d 3bfb ffb5 d6d8 ba87 4e9d ae2b 0e18 e935 74f7 cfb8 79da f4bb 9f55 af6b",
+          "126": "e7db 77db ffff efeb feff ffef fb5f 5e7b fe6f ff5f ffff cf33 d7d5 9fef feff e7ef",
+          "127": "ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff"
+        },
+        "1874999,-1875000": {
+          "0": "ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff",
+          "1": "d957 dfdb c7bf fb9a dfff ff37 feff efeb ffef fe3e 7feb 7fbf f7df f7ff eaff fddf",
+          "2": "686f 9be6 caf1 c28a 26b7 e6e5 7f7e bebf bfee 1fa7 e286 ebb0 abbf 7f7e cfbd 9f3e",
+          "3": "5408 a988 f8d0 40dc 8482 425f 2426 77c6 3e05 12c0 7402 336d 2b54 8ca0 1a9a aa76",
+          "4": "0706 0210 0002 000a 4504 c109 b400 1803 8212 1108 8053 0028 2192 0018 0040 0000",
+          "5": "0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000",
+          "122": "0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000",
+          "123": "0005 0008 82a0 8130 8019 8618 52a4 1508 2aa4 0825 0411 4008 0240 4410 0044 8002",
+          "124": "bed8 98cc 5c01 241c 1024 8226 0e3d 90b0 8224 3b58 b4d8 cdc1 b20a c293 91b8 c5de",
+          "125": "0df9 fefc f5db fd76 9c5e f606 dbda 7fdf b8fb 7dba c26f d30f fc8a ecf8 6c22 9dda",
+          "126": "d7dd fd7b 7fff bf3d 7dbf f7fd 6bfb beef bfdf 5fff dffb 6efd afff 47ba c2bb cbf7",
+          "127": "ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff"
+        }
+      }
+    },
+    "-9223372036854775808": {
+      "minecraft:overworld": {
+        "0,0": {
+          "-64": "ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff",
+          "-63": "ff7f fb4d c5ff e6d7 fbdc edff ff7e 1efe b7bb f3ab b8de ffff eeff ffff bfbd bf7f",
+          "-62": "fe77 fb4f c5f3 a052 6bdc 6dfe 7dee 1cfe b4bb 738b 9efc dd6f 6c9f fae6 87b1 37df",
+          "-61": "5871 f94c 81f3 a250 094c 65fc 44e2 1c3c b4af 3089 021c ddce 4416 fae6 c732 020b",
+          "-60": "4861 dc0c a033 4240 0804 e028 0020 140a 84a9 000c 0001 6020 0181 a806 0250 0004",
+          "-59": "0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000"
+        },
+        "-1,-1": {
+          "-64": "ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff",
+          "-63": "6f37 fcff dbdb ffff ffef ffff 76bb ab9f fffb fef0 fffc ff6e 77bf d6db ff47 65bf",
+          "-62": "96f7 e6d8 9ad2 cfbf fbce ed77 7460 a39d b8df fe70 ef76 ff6c 57af 940e 9f47 e5bf",
+          "-61": "50e3 a080 39c7 ceae d300 e676 4000 2218 ac4f 7c70 8c46 7f4c 4520 148e 9f03 653e",
+          "-60": "8003 0000 3c00 c02a 4000 4c08 0100 2004 8840 f040 0800 280e 0020 0484 980a 6037",
+          "-59": "0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000"
+        },
+        "7,-3": {
+          "-64": "ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff",
+          "-63": "7daf efcf f7ff eff9 8e64 ecff 7f7e fbf7 e7ef dfb6 fffc eede d77f fff7 397f 55fb",
+          "-62": "73da 2744 11db 8eb9 8e2c cdf6 7e6c 5f6e 62ea 8b96 e18b e8d9 951f bfb5 a4ef dc56",
+          "-61": "5b5a 0224 005c 883c 0a06 ccd2 14f5 6f0e 43c2 81d0 4104 f093 150e a79c 858e c458",
+          "-60": "4213 2206 0640 4400 0380 c083 8001 2808 0261 0065 6020 00b2 004a 2605 4004 0240",
+          "-59": "0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000"
+        },
+        "1874999,-1875000": {
+          "-64": "ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff",
+          "-63": "effe 7fbd dfbe dbfa fff7 ffdb fad6 d5fb 76ef 7bff fffb bbde fff6 7edf fe5b df7f",
+          "-62": "75cb db74 6fe2 6e52 df1c 1eeb ef6f 2932 7c19 7fed deab 8076 5c71 e5d4 be75 2dde",
+          "-61": "d44a 83b2 1c84 da22 53c4 0f84 0b84 4c10 1447 0c4b 0590 8271 5410 6af2 0f55 95d2",
+          "-60": "1624 8014 9040 6848 1041 1408 0901 a0e2 0820 5422 0c88 3252 1013 0052 2b01 3468",
+          "-59": "0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000"
+        }
+      },
+      "minecraft:the_nether": {
+        "0,0": {
+          "0": "ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff",
+          "1": "7fdf ffbb ebd5 ed7e df7f ffbf cfff fefd 7faf fbdf ffbf eb3f fff6 9fe7 dddf ffef",
+          "2": "1fd3 2d93 eef7 fe9b fdb0 f734 455f e3be bde7 ad82 f122 8e54 db01 e343 a37d 5fa5",
+          "3": "5995 d088 9520 1320 59b1 74d0 1470 6099 df56 9382 bc28 0e75 aea3 008c b93b 2200",
+          "4": "9800 8001 0101 0808 102d 0052 00fc c2e0 0408 8011 0118 1036 7001 320a 8408 1021",
+          "5": "0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000",
+          "122": "0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000",
+          "123": "0020 4100 1041 4808 0800 4105 0082 1292 3c21 8008 b048 81c0 a066 0020 4444 0201",
+          "124": "4421 5b00 0800 9612 6d38 6359 0a97 43ec 3ac8 b2d4 0432 a193 40d8 0c0c 4401 c03d",
+          "125": "bb3b a156 f37c 2f6c f8bc 6226 5e5f 314e 99bf bb92 78ac feea 88e5 b9f1 41df 36a6",
+          "126": "ffc6 3aff 3f7e ffbf 7fef fff7 f6df 7dfb 8efb bfa7 c7ef ffff 7aef 5f9f beef f7fc",
+          "127": "ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff"
+        },
+        "-1,-1": {
+          "0": "ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff",
+          "1": "effb ebfb ff7e dae7 bbfe fdfa f86f f7fe fbd9 7aff fddd ffff ffff bc6f fcbf bfff",
+          "2": "8955 1af0 df30 c4de 49d9 15f6 299f d36b 0918 eecf 74c5 5c9f f8df f6af f456 c77c",
+          "3": "900b 15c8 b132 2740 43c4 09b5 18d1 d283 8582 270c afd1 024d 9612 0c80 02f2 2216",
+          "4": "8000 4840 0040 e1c8 0011 8c40 0801 0106 8010 4a82 6d08 8440 0632 6421 3200 0142",
+          "5": "0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000",
+          "122": "0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000",
+          "123": "4002 0180 5754 0800 0020 0252 3400 3006 4200 82d0 0119 0000 0a46 6064 0410 0041",
+          "124": "2865 2c57 aa76 2074 7840 c34a 20c1 428a 6238 2a90 7201 608d d046 c0c7 2829 00a0",
+          "125": "116f df8c d436 4f6b a9ee eaff d8a5 c6ee 5932 b018 fded ddc9 17f6 7df8 7e36 d54b",
+          "126": "7cd2 7fdf f7cb f3e5 6f9a fbfe fffe dfeb fa7b ff7d e7ff 9fee cfff fffb ff63 babc",
+          "127": "ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff"
+        },
+        "7,-3": {
+          "0": "ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff",
+          "1": "fe7f faae cfe7 da3f bfcf 3ee5 ed5d fb6f 75fd ff7f 7fed ed7f 3fd7 bdbb deb9 7bff",
+          "2": "748b ccf7 f37f 9577 6575 7b69 45f6 fbc5 ec50 17d2 6c7d 901b ff6e f382 d107 bb67",
+          "3": "2908 0921 1d24 0853 0220 c106 5b86 2261 044e 584b cab6 efe3 e26c 1f5c 044d e0c0",
+          "4": "0100 4001 cd80 c434 c108 4801 c084 8000 1100 0022 5007 0011 6a86 1200 4009 0014",
+          "5": "0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000",
+          "122": "0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000",
+          "123": "5023 2204 3031 0002 5445 0160 0000 0004 2582 1440 8b00 008e 6904 0061 0000 4000",
+          "124": "4019 4051 203e 80cc d646 1b4c 145c 49b2 000e 802c c342 2203 8cf4 aa85 c52a b495",
+          "125": "7fde 2ab7 720f cf4f f16d 6b66 5d7f a45f afd8 746a ad9f 5b63 f5ce 5a6b 9b0f a5ea",
+          "126": "3cff f7ff 7ffa f7fe dd7c feef decf deb7 fb5f f3fd a5fe 7adf fbd7 dffd dbf1 6e7f",
+          "127": "ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff"
+        },
+        "1874999,-1875000": {
+          "0": "ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff",
+          "1": "7f5f 9ffd ff6d 6f6f 77cf 5edf dbb9 f5ff efff e6eb fffe befa d7eb be17 5aef fb7f",
+          "2": "b6f9 7caf ff31 efe8 bbe8 76fa bffe 850e bdd7 93f2 ba3d bf56 cbdd 33f2 caf6 d06f",
+          "3": "7f82 0330 29ec 8b03 c570 6ca8 616c a686 6023 4882 7f14 e135 7802 03b6 4402 2285",
+          "4": "4040 1000 3523 6200 4002 0121 0800 a220 0204 0810 0089 1084 2604 3480 0001 0100",
+          "5": "0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000",
+          "122": "0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000",
+          "123": "0008 008e 0052 0840 1140 1b20 4c83 0100 0004 0000 0040 0088 0302 0e05 8088 a8d0",
+          "124": "6516 0c63 2a04 8503 be68 5146 d04d 0b20 101d 24c2 8a79 1608 6e50 ca75 8d24 02c5",
+          "125": "c7df 67be 0fbd df45 9ffc 1edc bff4 ac50 d64b 7717 dcf5 e0f9 6bbd abbb d6ed d72d",
+          "126": "8dfd c6db fdef cf7b f3c9 f7af bdfe f62d e6fd ff95 c776 dfff f67f eff6 ffbc 9fbd",
+          "127": "ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff"
+        }
+      }
+    },
+    "9223372036854775807": {
+      "minecraft:overworld": {
+        "0,0": {
+          "-64": "ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff",
+          "-63": "efbe bfff 6dfb 7b67 fbfd ddff ffff 3fff d6bf ff4b fdbe f3ff ffbe f5ad f3fb 75df",
+          "-62": "c7ba a1fc 4de3 7b45 d8dd 4dff 554f 396b 563c f342 5b38 536f f7be d4ad a353 301f",
+          "-61": "c73a 81fc 45a3 0a44 d8dd 4dfd 5446 3029 163c b202 1a38 504f e036 c425 8b11 0018",
+          "-60": "4022 81f8 45a5 0ac8 00d4 0948 1004 a02a 142c b002 88a8 1023 2090 8408 2011 0000",
+          "-59": "0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000"
+        },
+        "-1,-1": {
+          "-64": "ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff",
+          "-63": "6f5f f759 bcbf 7b5f faff ef9f fbfe a5ff bef5 eff9 ffff ff77 7ebf cdbd bf6d fffb",
+          "-62": "b997 f459 158a 6a47 fade ed95 3934 849f 78f1 ad38 e555 ff65 7637 45b8 8f65 7f0b",
+          "-61": "7197 2104 1182 4846 5a0e e414 b820 809b 3cf0 2818 c455 7f65 7637 44a0 8b44 7f03",
+          "-60": "000f 0100 1000 2046 1004 c810 3000 801a 1850 a80b 4011 2521 3601 26a0 4b44 3f03",
+          "-59": "0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000"
+        },
+        "7,-3": {
+          "-64": "ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff",
+          "-63": "5d33 af6d eb7b f7fe fa7b bfff ffff f77f f5f6 6faf cefa ff4f fbff 7d7b ff7f 7d1f",
+          "-62": "d762 9769 cd3a c678 ebda a9d2 7f7b 9247 7d66 4f26 cad3 ef44 f31f 3d3b 78fb f413",
+          "-61": "d362 1551 0113 c232 9998 a1da 5f32 9246 3522 7948 08c2 8824 d38d 2450 08eb d413",
+          "-60": "5265 0a40 e22c 8230 0320 a0c4 0002 8001 8100 0402 000d c060 820a 1802 0800 3215",
+          "-59": "0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000"
+        },
+        "1874999,-1875000": {
+          "-64": "ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff",
+          "-63": "f67f 9bcd fbfc fbff fefb d77d 7bd9 afef 57fe cffa 9f7d bb7c af5b ff9f f2df fffb",
+          "-62": "b991 eef5 27e2 2f15 c98c 69a6 a5bf 7a38 ed13 fcc5 ebbb 64a7 da2d 8d5a 94ac b2cf",
+          "-61": "cd2e 018a 981c f1ae 22e3 8114 0690 c5cd 02ee 8110 2554 9951 2dca 18ab c393 dc30",
+          "-60": "3000 4910 0062 a004 6802 0002 8108 2000 0504 7400 08a8 0046 0808 8050 0802 2404",
+          "-59": "0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000"
+        }
+      },
+      "minecraft:the_nether": {
+        "0,0": {
+          "0": "ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff",
+          "1": "dfe9 d2ef ceff f4bb ffef 7eff 97bd 6ffd dbfb f3ef bfd3 fdbf affe f277 f753 dffd",
+          "2": "aafb d1dd fd69 61c1 f57e 7270 feb7 51a9 9bfd aeb4 f2b3 ccef b707 aa8b ee30 b179",
+          "3": "8491 5219 7e93 b809 90da 35cb 5084 1164 779c 231c 4493 95b8 c02a 99c6 5930 15a0",
+          "4": "0d01 2255 1840 1201 0916 c2a0 2028 2000 0110 0010 2820 8008 21e0 1005 0221 0800",
+          "5": "0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000",
+          "122": "0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000",
+          "123": "8000 2210 0000 6160 0330 8000 1010 2001 8842 0011 0010 8009 010a 1403 0141 4000",
+          "124": "17b3 1398 4874 9fa1 8a15 c19a 494d 8d32 a091 b301 a22c 4828 6892 222b 4348 9c08",
+          "125": "ad18 b787 d8ae 339d 8e2b 37e4 d427 b09b 6758 4da5 7b09 b6bb e6e0 74bf 799b d5da",
+          "126": "fb3f eaff ffb7 c77b fc8f ff7f fdff ff56 faff aff5 7fde 6dff ddf7 77b9 ffff bfee",
+          "127": "ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff"
+        },
+        "-1,-1": {
+          "0": "ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff",
+          "1": "9af6 7ff7 aef7 dddf bbe7 af7f 9e4b ffda 6f2e 7ffc e359 fefd ef78 ff1b effc fed7",
+          "2": "af31 6c1b baff a6ff 6f5e fa62 2b17 5eff 9397 3a00 e945 098c 99be 471d 36ff 7243",
+          "3": "63c2 0a41 9086 8233 4227 3a43 90f4 7088 f9ae 0810 6284 f60c 5d5f 203e ba56 2485",
+          "4": "2800 0420 0818 0000 818f 2102 0100 0000 0500 0448 0103 0e82 3909 00c5 0e00 5088",
+          "5": "0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000",
+          "122": "0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000",
+          "123": "3220 5000 8402 8100 0e00 2402 1812 0400 4012 0419 8008 4002 1020 1808 0080 4088",
+          "124": "a23b 2463 9736 a8d8 b7a0 3c24 43a9 158b 180a cd73 6d0c e643 1103 1bb2 4414 2281",
+          "125": "3fe6 f716 203c af5c e9a8 afce 2a3e 5f31 6dbb a35f 73d5 5b8c eeed 77c8 dab7 d39f",
+          "126": "bffe ffff fdff 3fd9 bff7 fe6d ffff 5baa d2eb d1fb 7f7d fdff e37f adc7 5bff bbbf",
+          "127": "ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff"
+        },
+        "7,-3": {
+          "0": "ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff",
+          "1": "4ca9 3fe7 d3bf 67ff bffb 5ded ffad deff f6ff ae76 72bd afff addd bff4 27fb 7fef",
+          "2": "34e1 34f1 66bf 7c79 29a7 68e5 3d5d d7af c7d8 f8ff ce3e 3223 cf2f b8ed 36a9 fe19",
+          "3": "7412 2ac0 3039 4041 7627 ec71 c64d 5e8c 6097 5d61 0a13 280d 26c9 28c7 1ac4 ec26",
+          "4": "0414 1840 0014 2282 0f05 6010 0000 0080 0886 0022 4800 3102 8003 c002 2ea0 8511",
+          "5": "0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000",
+          "122": "0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000",
+          "123": "0004 8609 0900 0410 010e 1801 14c3 2402 3411 2806 0821 8662 2010 0802 0a33 49aa",
+          "124": "b049 72ed 086b 4948 8545 0080 a225 0889 4823 8c29 021c 8841 a11d 455a 490e 2811",
+          "125": "e7dc 2f6e 6786 2174 1142 69bb 0f49 d878 4066 f7b4 8f9f 5598 3a77 ab60 4afd c3d6",
+          "126": "bffe ffff fd2b d7a8 fd7f 7fde fdbd bdef fd0b ffdd cfd5 fddf f7fe ffff ff9d b79e",
+          "127": "ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff"
+        },
+        "1874999,-1875000": {
+          "0": "ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff",
+          "1": "ffbf fdfe beff 7bdd efbf f7ff dfaf ebfb ffbe aa77 7fff deff 7e7f d7df ff7b eeff",
+          "2": "f7ee 57d9 f3de 43cd 5668 5fa6 def6 59ba ee92 3e75 754e c571 446b 1bde 3c82 36cc",
+          "3": "0d0e 2114 4244 68f4 e42e 2d18 c00f e1b9 88af 5182 5c49 8216 3498 0c45 4389 8912",
+          "4": "8008 b001 8000 4089 8010 9439 c440 3010 8440 0219 0000 884f 2008 220c 00a0 7808",
+          "5": "0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000",
+          "122": "0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000",
+          "123": "0408 40d4 0100 a00a 0284 0168 90c8 0048 0000 0006 9108 83a3 022a 0029 040a 7008",
+          "124": "80ab 1363 4a68 38d9 8634 5202 b8bb a2e5 9bc0 587b 40c1 cc2a 22c0 020c 4000 408a",
+          "125": "ad58 5d58 68f4 6d4a 7d95 f9fe ddb9 c08f ceb7 2b5b 1bfd e387 8dfa f373 d517 78fe",
+          "126": "ff7d f2df cdff fff7 ffb7 ff7f f5af dfc5 fbdf f5fd ffdb 7df2 cdff efdf ff7e d4d7",
+          "127": "ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff"
+        }
+      }
+    },
+    "2317450": {
+      "minecraft:overworld": {
+        "0,0": {
+          "-64": "ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff",
+          "-63": "f79e b747 ddfd b5d7 f7de 0ddf 7f7f 1bea f3b0 f3ee fb9b f57f ff7a dffd fff9 bfff",
+          "-62": "f71e b345 c5d9 b05f f3dc 2fdf 7d7e 98ef b232 738b 9a9c fd6f ecfe fbc5 a5b1 3f5f",
+          "-61": "d010 b144 c5f1 a050 415c 25dc 5466 182e b032 738b 0a1c d54f 6092 fac4 c531 164b",
+          "-60": "5000 9404 8101 8050 0904 00fc 0440 103c a42a b085 000d c40e 0001 884e 8620 0000",
+          "-59": "0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000"
+        },
+        "-1,-1": {
+          "-64": "ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff",
+          "-63": "d7d5 feff 0f5e 7ff7 fdff fd5f 33bf ff9f ffdf ffb4 fffc f760 f7ff d75f 7f77 c5da",
+          "-62": "9795 e4f8 1a52 47bf f9ef ed7f 7233 a39d b0db be32 fd7c f7e8 57bf f40a 3f47 459a",
+          "-61": "5091 a4d0 18c6 46be d34c e456 7000 a398 b45b b830 ed44 7748 7725 140a 1f46 451a",
+          "-60": "c087 0000 1042 e422 0000 e446 4000 021e 0842 2810 0440 7a00 4100 1402 1102 4052",
+          "-59": "0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000"
+        },
+        "7,-3": {
+          "-64": "ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff",
+          "-63": "ffff 8fd3 e7ff cffd aa26 fcf7 7f76 fe6d afeb df97 ebbc ebf7 df3f 7f5f feff ff3b",
+          "-62": "676a a747 51cb c6b9 8e39 a9f6 5f6e db6f 62e2 cf16 c8bb eecd d713 3ff5 a8eb fc57",
+          "-61": "5b42 0340 015b 8c18 8a06 c8d2 3e34 0a0e 07e2 83d4 0080 e8d9 9507 b391 80e8 9410",
+          "-60": "2200 0022 00c0 2000 67c0 122a 8005 e480 5b34 0265 2400 012b 8048 e4ac c086 4bc0",
+          "-59": "0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000"
+        },
+        "1874999,-1875000": {
+          "-64": "ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff",
+          "-63": "7f7e ff3b ffff d7fa fb7f fd59 faf2 fddb deef 3ffb f7f3 ffff ffd6 77eb f95f ffff",
+          "-62": "39c3 ff74 67f2 ee51 cf1c 3eef af2f 5932 ecf5 6ced fea9 d4f7 f567 d5d5 fcb5 4cde",
+          "-61": "446a 11ba 4c04 d26a 17b4 1cd9 4ac4 8dd0 106c 0f33 0590 9a51 35d2 7ae2 2751 cdf2",
+          "-60": "1264 9084 f040 2808 10c9 1241 0b00 2024 0100 5400 1c8c a800 1002 e946 0014 328c",
+          "-59": "0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000"
+        }
+      },
+      "minecraft:the_nether": {
+        "0,0": {
+          "0": "ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff",
+          "1": "f3ff 5fff 67eb 7afe dbaf fffd f777 ffed f7e5 fbfd fdef edef f2ff faff ffeb b9ed",
+          "2": "ddfe f985 1bcf 32cc beba a69e e7d4 d195 aebc 8cad 4ba5 bd3d 5efd ebf1 bb9e 3a25",
+          "3": "5824 f4e8 7ac4 44ce ee02 1260 2a20 4071 40f2 5fb7 1306 aa81 14e4 1826 dba5 c192",
+          "4": "4d49 0200 8810 4001 2008 0018 0184 3420 0000 4640 a010 1128 0006 0050 404c 1800",
+          "5": "0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000",
+          "122": "0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000",
+          "123": "0040 1002 1024 0681 0c42 0310 c80e 0210 0800 0004 0210 4483 8308 024c 0920 09a1",
+          "124": "aca9 8e17 2011 1a10 c425 1300 eb7c 0429 5138 c839 b095 315e 20dc 4413 45f6 1228",
+          "125": "fb5c 5fd8 dcea bd77 dfbf d56c 687f bf1a efef 1897 2eb0 fa6a a3fd 25fd 4e28 f9bd",
+          "126": "5ddf 9f7f 7af7 ed5c 7dfd fdff adb9 f5bd fe73 df3f ff6f bb6f f97a 7de3 7fbf 7ff7",
+          "127": "ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff"
+        },
+        "-1,-1": {
+          "0": "ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff",
+          "1": "693e 7e3f afef ffaa 97f9 fb7f d7d4 7fff 7ffd 6eff ffff 6eff e7bb effd 27fd fee5",
+          "2": "a649 58fd 7118 5ffe f2f8 7d7e 7a95 6f32 2e3a 5717 577f b6da b47c 72cc ee28 067a",
+          "3": "0f71 d212 50a4 c820 0832 52ee c128 8eb0 2004 1c45 1080 48d5 6a27 b704 e78d 6e0a",
+          "4": "0140 0060 e694 1001 4000 6800 0003 4080 902a 4858 4000 2040 2ba8 0001 0010 4180",
+          "5": "0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000",
+          "122": "0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000",
+          "123": "9100 1a30 8030 6181 2a0b 8211 8810 0100 0000 0080 4885 4180 0000 0680 4888 9044",
+          "124": "6a28 28d4 4d4c 9044 37ca b418 4881 2926 bb50 2805 6d06 4085 6108 14b5 08a0 81f3",
+          "125": "cb61 2b2a 9b7e 7a0d 3ba6 a9ef 2bfa d761 8d5b b4ee 5f0c 3917 f3b2 dd3b 17d7 26f5",
+          "126": "fcfb 8bf9 fbf7 9b7d dbff edbf ffff f9e6 f6fb 3b5b b9eb ee3f fbff 317e fc8d fdf7",
+          "127": "ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff"
+        },
+        "7,-3": {
+          "0": "ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff",
+          "1": "ef3f fe6e fdfe fbbf ff85 bfff f3fe b1ff bdfc ffbf f4ff feaf 7ef7 7afd f5ff f6ff",
+          "2": "bff5 d74a 1bea 99fe c3d7 bfdb 4b87 dfdf 975f b9b7 cfdf 39be 54d8 5faf decc 71e6",
+          "3": "c985 48da 8ad6 7842 cfba a82a b31c 84ac 2102 f7b9 5d56 4c21 d3d2 017c 9a06 9690",
+          "4": "0001 1408 0d50 0104 8000 3608 0d08 44a9 0012 20c0 2100 2314 7100 5444 2401 0414",
+          "5": "0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000",
+          "122": "0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000",
+          "123": "0300 b000 2821 040a 2094 0400 0002 6009 3bc0 0008 2002 d004 9080 a081 0900 6480",
+          "124": "434c e086 4183 ed8d 1903 db93 41a3 4519 b3c0 03d5 24c0 b7c1 e731 0427 21bd b78e",
+          "125": "7c0e 9dfd e66d 5cae e927 8ff5 97fb 4dd9 a951 3bda 1edc b5e2 c76e a1ff edcb fe7a",
+          "126": "ebcf ffff ee72 eaff 7af7 fefd 6efb ef6f ffd3 dbfd ed6b 7fed afa5 5adf 6ffd 7b67",
+          "127": "ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff"
+        },
+        "1874999,-1875000": {
+          "0": "ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff",
+          "1": "efeb ffed feff fb7c 3dff 9ffd 7ffe fff3 be7e ffdd b6b3 bf7e fbec 9fdd 7fd5 7bf9",
+          "2": "f02a 72bb ea33 debf f1c7 04ee f72a ccff dcbe c8fb 5ab6 d5ba 838f f382 ddfc ef13",
+          "3": "8242 1346 49bc 209c 44db 4429 622c 1484 01a2 aa62 9842 2827 eb20 2330 5082 4040",
+          "4": "1140 1102 0628 04d0 4800 0098 c008 1603 0020 80a4 c019 8000 50c2 007f 2001 0012",
+          "5": "0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000",
+          "122": "0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000",
+          "123": "0d02 98b3 0000 20c4 0002 80f0 00a8 b220 1123 0408 1824 2841 a009 2400 0100 0012",
+          "124": "04be 451c 06f1 d342 7384 6080 623b 1898 f100 a1ca 4434 4801 8a04 0819 ca93 5a3e",
+          "125": "8bb8 c399 6eed ee81 3b36 d6f4 e844 eb17 1717 bb67 bf59 fa27 f66e efce b77f 79e0",
+          "126": "7ffe bdb7 ff9e effd 9bd7 bedb beed ffda f5b8 7d6c dfff f5de 99ef f7cc e7ef abdd",
+          "127": "ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff"
+        }
+      }
+    },
+    "8091867987493326313": {
+      "minecraft:overworld": {
+        "0,0": {
+          "-64": "ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff",
+          "-63": "ffef dbfb f7bf cffe ffff fbff fbf8 f6ff ffff 7fff feff feb2 fdfd eb77 9fff effd",
+          "-62": "d76a d3f8 d7b7 8ed6 fddf 69fd 5a60 72bf bffe 32bf 287d fc17 e075 ea73 9eb5 ca39",
+          "-61": "c72a 81f8 c7a7 8ad4 d8df 49fd 5444 6029 1f7c 3216 1839 5407 e034 c261 ca11 4028",
+          "-60": "470a 8008 0023 004c 9884 48bd 1444 000a 0628 0000 0802 002c a0a0 8101 8211 0104",
+          "-59": "0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000"
+        },
+        "-1,-1": {
+          "-64": "ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff",
+          "-63": "beeb 6ffe fff3 9dae 777f dbff ff6f fffd fb7e ffcf 3fbf ffbf dfff ffe7 fbdf bfb7",
+          "-62": "653f 29a6 59f2 ddae 5f0e d07e 7ca9 fa99 fffa fa8d 0c95 7f2d d77f d6e3 dbd6 3f97",
+          "-61": "211b 2904 11a6 4c86 5a0e 8054 b820 d099 79f8 280d 4455 7f25 f635 46a2 cbc6 3f03",
+          "-60": "4183 1000 1002 0002 4802 6804 8012 0005 18d0 a010 4450 7a24 4233 6400 8800 2002",
+          "-59": "0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000"
+        },
+        "7,-3": {
+          "-64": "ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff",
+          "-63": "badc f5bf 1ef6 fbf7 7dff dfbd fabf 7bf2 fe9f fefd f7ff f7be adfd efee 17fe dbfe",
+          "-62": "d44f ff1c 3bd7 1b99 8594 6543 f904 fbfe ba89 fdd2 b9e6 2cb3 65ed c696 b97b dfde",
+          "-61": "d223 1950 0913 5232 999a a1da 5b10 8256 1d20 f108 08c2 0825 e1cd 2450 186b 5613",
+          "-60": "12a2 0240 8208 8626 9302 8082 0000 0205 5860 0308 4810 8468 090a 1c21 0282 4600",
+          "-59": "0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000"
+        },
+        "1874999,-1875000": {
+          "-64": "ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff",
+          "-63": "bb8f effe 9fbf bf37 effd abfe a5bf d7fe ef7f fbfd ffef d6b7 7def 9cf6 dfb7 dffe",
+          "-62": "32f6 fd1d e17a 5cd8 bc3b f67b fb5b b0e7 ba30 72bb de6f bbfd abf6 f78c f07f 6f39",
+          "-61": "cdae 25d8 9c18 b58f 03e2 a914 04a8 d9cd 8a6e 8511 2554 ddd0 35ce 1882 c282 dcb0",
+          "-60": "1800 a852 2061 a001 4808 0002 0101 3204 0400 d400 08ac 0006 1001 0150 0884 a2c8",
+          "-59": "0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000"
+        }
+      },
+      "minecraft:the_nether": {
+        "0,0": {
+          "0": "ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff",
+          "1": "fafa dddf feff e6f9 bfe7 6f6d f7ff dffd d51f fffb fffe aafe 737b ffff bfe7 fffe",
+          "2": "f13d f85d afe4 2775 af7d feee f48f 9883 e5f8 df41 6272 0dd7 befb 4ad8 19c9 2bbf",
+          "3": "925a 6829 d733 90c7 4012 d37e ce80 5894 64f4 4e2d 8b71 0f30 46a0 5c6b 830e 0025",
+          "4": "0888 801c 1010 9406 2003 3001 8801 0043 2000 4000 8020 0142 0100 2000 d202 0242",
+          "5": "0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000",
+          "122": "0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000",
+          "123": "0100 0102 70a0 5205 8085 4001 2920 0404 4c20 4500 4404 2844 0070 1000 0210 0292",
+          "124": "840b 4306 2011 8813 4844 03b8 2fba a464 2941 3c80 b420 9014 a8ad 954f 2c70 590d",
+          "125": "ed3d ee11 9cb7 4ef6 9dea 9f3e f934 fee3 7e51 3f4e f436 db7b 84a8 8efe 95ba d1d9",
+          "126": "ef6f fffe a6db fbbf f7ef 7ffd 7ede 3fff faf7 fff7 f9ff cf7f ffff 1fd9 cfef 37ef",
+          "127": "ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff"
+        },
+        "-1,-1": {
+          "0": "ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff",
+          "1": "fefa fbfe f7da feff fe3f bfee cfef ffff 7de7 6ff6 7fff 7dfd e5be 7fde deff f377",
+          "2": "dd9e eefc 1e2a 72e1 d8fc d620 3fbd 50e2 f938 9727 e0cd befb da29 1dd9 777a 712b",
+          "3": "e4d4 1955 4882 bc71 80e0 49b0 a5b2 3ca1 40f6 4721 315e edc6 fe48 9202 91c6 2d6c",
+          "4": "02ca 9080 0024 0008 60a2 8100 2228 4150 0080 8000 0010 0008 0880 d002 8a0a 2002",
+          "5": "0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000",
+          "122": "0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000",
+          "123": "1141 8381 0011 1000 1042 1029 4064 0001 8401 0001 0209 5014 0840 1480 0004 9100",
+          "124": "1d80 2131 1672 b452 4ce2 5012 a378 526d 8518 4d4a 31e8 6e94 0766 c133 b001 d490",
+          "125": "85ec 3657 9159 abb2 8d0c fce7 ebce f4e9 ee91 9aab cbbf fde7 e713 8bf4 dbdb 15af",
+          "126": "3fbd ff9d fefd 67f5 74ff fdb7 ddbf dffe 7ade fff9 ffff 3efd aeff fbbf 9efb fffe",
+          "127": "ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff"
+        },
+        "7,-3": {
+          "0": "ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff",
+          "1": "bff7 f3ff fbfd ffb3 cdde c7df def5 6ee7 f7ef f77f b7ff ee6f 3fff fe7f ffdf fcff",
+          "2": "b35c d756 eef2 677d a1d5 7efa ff5b c17d b8ce eacd 7ff8 9d56 f808 dfaf df3f ef93",
+          "3": "0210 6a02 43d1 20b3 2200 3020 2619 b16c 0894 1241 0bbb 081f 80a1 ca9a 1463 86fe",
+          "4": "0000 2042 0000 a118 10c4 1414 0081 0180 0020 4e00 4100 0440 5000 0832 3044 8603",
+          "5": "0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000",
+          "122": "0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000",
+          "123": "9542 09a0 0164 1e00 1488 0400 0401 000a 4869 0464 4801 0006 0240 4001 2801 0004",
+          "124": "86bc b882 d5e5 2299 8d3a 1c30 c24d b4c0 8c1a 55f7 9378 dc45 880b cf15 1027 2000",
+          "125": "cfae f571 b5f8 ff77 59a3 caf4 c406 f7dd 53f3 c1ca b80a a268 d3d0 e2ad 3ef4 8bc4",
+          "126": "4ff7 f6df fc5f feef bcf7 efeb ffdb d76f bffb ef7f ef3b fefd dabf cfbe fffb eff7",
+          "127": "ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff"
+        },
+        "1874999,-1875000": {
+          "0": "ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff",
+          "1": "fffb fa7f bfff 6eec faff fd7f d7f7 e7bf c7fb 7799 ffa7 7cff 7f77 f7fe fee9 fffd",
+          "2": "942d eb53 42fc 3945 fe11 9356 cba2 c3fd 8350 6e8f d731 0ba7 e39f a9f6 b26b 3588",
+          "3": "4b31 fc3a 44e4 2181 899b 3681 b6d0 fa5e 0448 4a33 3a58 0a8c 8ba0 154b cf82 4d78",
+          "4": "004e 2008 1208 3100 2005 4021 0800 1109 0090 5882 0600 9810 8008 4282 4c20 5042",
+          "5": "0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000",
+          "122": "0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000",
+          "123": "a780 9041 8830 0080 2a05 4209 4020 a084 9200 8500 0000 2900 0288 2204 0028 201a",
+          "124": "0ae4 5084 d860 1db0 2083 86d4 008a e541 8110 100a 5748 a216 51a1 7012 9807 6cc1",
+          "125": "b94f 37f7 7baf bfc1 d65f ffce e45f bb4e ac32 6f56 6654 b944 eb0d f5eb df30 5f5f",
+          "126": "cf77 ffff 7bfd d85d e9da 77f9 edf5 dbbe ffbd fdff 77fe eff7 7a5f e5e9 b7df ff9f",
+          "127": "ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff"
+        }
+      }
+    },
+    "-6984854390176336655": {
+      "minecraft:overworld": {
+        "0,0": {
+          "-64": "ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff",
+          "-63": "b8f5 7ff7 ffdc ffbb 677b b742 efbf eff5 f9c7 ffff e7fd bfff 7f5b 7ffa 7cef dfee",
+          "-62": "b8e5 5bf3 f79c cfba 677b b342 ebb9 e7f4 b9c7 7cff e5ff beb3 7dd9 6b52 1cef efe8",
+          "-61": "b021 13f0 d794 8e90 455b 2140 4220 62b4 b946 30bf 207d b413 6851 6a50 5ca5 ca28",
+          "-60": "0020 01f0 5784 8a88 0052 0140 4000 a020 1904 b282 80b8 1003 4010 0508 2800 0129",
+          "-59": "0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000"
+        },
+        "-1,-1": {
+          "-64": "ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff",
+          "-63": "fefc fff7 ef7d fffc f575 bffb ffdf fffe f33f 5fef fbef 85db bdcd bbff 77ff dffd",
+          "-62": "6e6c 6bbe ef71 95bc 1535 9afb ffcf ff7c d73e 5fcf 1aaf 859b 9dcd bae7 73df 9fb5",
+          "-61": "a008 29a6 4974 14ad 1504 905a 7c89 fa18 d33a 5a8d 0885 0509 b541 12e3 53d6 1f91",
+          "-60": "300c 2900 0100 2045 100c 8010 3a82 929a 4130 080b 0005 0501 3404 22a2 43c4 1f01",
+          "-59": "0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000"
+        },
+        "7,-3": {
+          "-64": "ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff",
+          "-63": "ffff 7ffe bdcf bfaf f7ff f7ef e7d5 fffd 3fff b3fb fd7f bdf3 ffeb dadf ffff effd",
+          "-62": "a09d 7d3e 3bc5 39a7 95a5 d4ad d0cd 7fbc fa9b b1dd f56c 19fb 2de1 f2ff 977c 1fdc",
+          "-61": "8809 5916 3b47 1880 8587 4421 9014 0abc 9f89 b190 3065 00b1 25c1 c2d4 9068 17d8",
+          "-60": "4045 0800 6824 0010 6820 3044 0042 8011 8110 0402 000d 4000 a200 0002 0800 b015",
+          "-59": "0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000"
+        },
+        "1874999,-1875000": {
+          "-64": "ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff",
+          "-63": "7df3 ff7f 67e3 ff5d ff1e 7def ff7f 7b7f bdd5 feff febf 6def d7bd f7f9 edfd 65df",
+          "-62": "e67e 598b c93d d0ea bf33 de59 fa50 8dd7 12fe 27ba 17f5 bb5e 3fd2 f6ed eb7b 5ff1",
+          "-61": "0982 2d70 0723 9715 0b24 2886 a42e d9d8 ac65 ac15 e2a1 54d4 f4ee 1040 8c80 4cd6",
+          "-60": "2010 4901 0202 8084 2002 8023 8008 0000 4104 2000 0040 0040 0828 8008 1002 0404",
+          "-59": "0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000"
+        }
+      },
+      "minecraft:the_nether": {
+        "0,0": {
+          "0": "ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff",
+          "1": "e773 ffdb bfed 37ef feef e7e7 5f97 fbde 1def 357f fffd ffed cfcd effd fff6 7fef",
+          "2": "f40e 8ae3 dc6a cd45 5ec3 f8f7 b9fb 5f23 17d4 f6de 5176 39bc f8dd 7f6d a337 26dd",
+          "3": "92a4 eecd 9511 8900 5970 2cfb 07b0 9440 7e21 c512 a080 5d81 2351 0044 131c a855",
+          "4": "08c0 4211 a020 6020 00c0 0080 1036 0120 0c80 9440 0112 0020 0005 20a5 9270 0400",
+          "5": "0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000",
+          "122": "0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000",
+          "123": "0080 1200 08c1 a408 4818 0400 9a80 6980 a400 e001 b980 3c20 4205 0100 0009 8c32",
+          "124": "a894 46d9 db46 3649 a897 6052 093d 1a10 4c35 0970 b339 e180 02a2 0364 ef1c 15d8",
+          "125": "ab33 b32b c6e6 929f 3780 66cb bc8b 9f89 1321 b172 5a8f d5f1 fff1 95f3 79cf 6a3c",
+          "126": "f7e6 fa35 ebff f7fe f7fb f6ff fef7 fcef ddbb dbfb 67c7 dfbb ff7d 6fef ddbf dff7",
+          "127": "ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff"
+        },
+        "-1,-1": {
+          "0": "ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff",
+          "1": "f7df feed fdff 7fff aee6 7fef ffff fd4d dfbf b7fb fbff 9edf e5f9 ff89 fd5b f6fe",
+          "2": "03bd 239c 7b3b 69fd f111 7b3d d5bd f3db 6b82 dcb1 be90 ce3f 02d1 4072 aec5 9eb6",
+          "3": "3584 507a d0b2 4400 1225 0621 20a2 8152 6820 4412 8070 be78 503a 0033 10eb 22ae",
+          "4": "0503 0000 84a0 0a18 0720 0850 0000 1012 0008 0840 6080 0214 0220 080c 200a 0084",
+          "5": "0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000",
+          "122": "0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000",
+          "123": "0089 9862 0222 0000 4308 0c28 0000 100e 2240 423c 0009 0005 1208 301a 0420 4481",
+          "124": "6660 6745 fa64 4c90 05c4 024b 8280 0c34 404d 11b0 c883 814c 5080 2488 ddb6 2280",
+          "125": "92ae 39ed fd96 9a03 59d5 0e57 f22f cc0b fff8 33a7 bbf3 f6c9 2073 e796 fd7d ecde",
+          "126": "7bcf cef6 7bef fffd befb aff6 ffff bff3 bbfd ff3a fdff bede fdfd bfdf c7b6 5dff",
+          "127": "ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff"
+        },
+        "7,-3": {
+          "0": "ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff",
+          "1": "d4c8 fff7 e6f3 f7fe fdb7 ffff b1fe f27f 1ff7 8fdf bfef beb7 7fdf b523 e3ff fff7",
+          "2": "4662 47ef d789 bef6 ecf4 659b 37df cbad faa9 7f7b 97f6 cebf d859 a534 138e b756",
+          "3": "1c7d 440c a0c9 1fcb 00e2 862d 89a4 cb66 810d 14fc a232 c9b6 4854 01d3 7b91 f78e",
+          "4": "4018 0021 0006 6012 2058 0508 14c1 c8c2 1004 2015 0002 01ad 0049 0600 d50c 0046",
+          "5": "0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000",
+          "122": "0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000",
+          "123": "0844 9a16 d06b 014a 6040 0801 0021 2422 2b03 0095 2082 8504 0200 212b 58c0 6041",
+          "124": "363c 609a e8b1 c1d2 5272 62c3 8e64 0420 0d16 2722 6d80 a8ac 3e0e a3c8 09f1 f200",
+          "125": "a4c3 d766 b14e ca05 3acf a6c2 3988 93d6 ebdc bf79 df2e f8eb 7c7f 22be 8b7f 6a5d",
+          "126": "efdf ffff fef7 7bf7 b877 fff7 bf7f 4f1f f397 efcf fede d8bb a3ff de6f f7ff ffdf",
+          "127": "ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff"
+        },
+        "1874999,-1875000": {
+          "0": "ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff",
+          "1": "ffff ffe3 dfed faef ffee e77f efeb ff6b 752f ff7f ffff f9df c3fb ebfa 5ddf faec",
+          "2": "7eee ffff d8b3 6c08 f3c9 6f89 ddbf 46f1 bd34 bc7e fafd 89f4 ff1e 7d31 00ff a7df",
+          "3": "3121 c088 5276 25dd 0ca4 5940 3960 3a8c 1c02 970a 05a2 007d a918 0201 a845 4cf0",
+          "4": "2886 060d 4010 0a9c 0001 80a8 0200 85dc 6428 0002 4800 0108 0602 e800 4001 210d",
+          "5": "0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000",
+          "122": "0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000",
+          "123": "5008 0600 084a 4240 8bc1 1019 6501 2520 0a01 8812 0408 0110 04a0 0460 8009 a5a8",
+          "124": "9a20 8044 adfb 54fa c601 cb15 241d f192 0543 566e 60c0 9f0b 940c 080c 85a9 eb15",
+          "125": "93be 913e 8db7 ba7e ad9f f415 fb19 16de c6b7 1c7e 26f5 b0fd 64cb f942 9318 9c3f",
+          "126": "bbff ef9d f3ff ffbd f77b 7fff faff 7af7 e9fd 9fef bd7f ffff f3de f9cb f71f ffbb",
+          "127": "ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff"
+        }
+      }
+    },
+    "3141592653589793238": {
+      "minecraft:overworld": {
+        "0,0": {
+          "-64": "ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff",
+          "-63": "f76b f3fc f7bf beff fdff 7ffd 5e64 fb3e bffe b6bf 3eff fd5f eaf5 ef5f bfb5 eb3b",
+          "-62": "d72a a1fc d7a7 bad5 dcdf 49fd 5646 702b 3f7c b296 3a39 d55f e236 feed af11 c23b",
+          "-61": "472a a09c 0823 3245 d885 48bd 1445 3009 063c 8202 1a00 404c a224 94ad a311 0013",
+          "-60": "8400 2004 0800 3001 0008 0094 0440 1000 0010 0004 1001 400c 9222 4084 8000 02d0",
+          "-59": "0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000"
+        },
+        "-1,-1": {
+          "-64": "ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff",
+          "-63": "f5bf b9af 7bea f5ef 9f8f f47e 7cfb fa9b dffa f8bf 5cf5 7fad f7ff fefb dbfe 7f9f",
+          "-62": "f19f b987 11ea 7eef db8e e456 38b8 d29b 7ff8 a81d 4455 7f65 f677 47bb cbd6 7f0b",
+          "-61": "7197 9001 118a 6a42 ca8e 6404 9030 8083 3cd0 2018 4451 7e65 4237 4498 8800 720b",
+          "-60": "c0c0 1281 000a 4210 8190 2404 0030 0000 0080 0010 0440 5200 4002 0018 0020 4008",
+          "-59": "0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000"
+        },
+        "7,-3": {
+          "-64": "ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff",
+          "-63": "efef dddf fff7 5fdb cfa5 6d76 df3e fbf7 ffa9 fdde bbdd 62bf f7f5 f7b6 19fd b7ff",
+          "-62": "d767 bf59 ef33 d258 8b9a 2953 ff36 9257 bde0 7d72 8ad3 ae25 e3dd 4412 f8fb ff53",
+          "-61": "5662 8751 c13b c27a 1a18 a1da 4f22 9043 3060 584a 8ad2 2b04 c29f 2540 18e3 f003",
+          "-60": "0000 0500 0002 0002 109a 0900 e010 1204 7c80 0b5c 8010 320c 0151 2030 20e2 4000",
+          "-59": "0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000"
+        },
+        "1874999,-1875000": {
+          "-64": "ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff",
+          "-63": "effe 6ffb bfff b7bf ffe7 ea96 96be ffd1 ffff b957 e3f3 ffdf fffe be6f 7fea de77",
+          "-62": "3b95 fe55 636a 2d9d ec3b e3ee b53f 726f ef10 f0dd ee6f ecad 8aad 859e 94ae 222d",
+          "-61": "c43c 008b 981c 61ae 30e3 c514 1290 c4cd 02aa 8112 0554 bb09 2bca 7aab c30a da21",
+          "-60": "0b84 0446 2500 0d10 8009 2804 2402 402c 8010 00c0 e205 2400 4004 05a0 8424 0280",
+          "-59": "0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000"
+        }
+      },
+      "minecraft:the_nether": {
+        "0,0": {
+          "0": "ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff",
+          "1": "dffd ddef fdfb 7efd bc7f bfba fdf7 3fdf fcf0 cff6 7ffd 7ff7 ddff 5fef 3fba 97b7",
+          "2": "e6c1 7bdb 3b46 da3c fe9d a7ab 2e9b 794f 8faf 5f7c 793e 3dab d5de f5b4 559c f6fb",
+          "3": "023e 2892 6891 a80c 8879 e408 5410 1244 812a 495a 2b83 7a59 0077 0b00 c8c1 5981",
+          "4": "0006 0400 0050 1011 0500 2028 0002 0048 0924 0804 1004 4120 8800 2011 4122 1021",
+          "5": "0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000",
+          "122": "0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000",
+          "123": "0082 102c 8208 000a 1000 5502 000b 0010 a460 0000 d020 08c4 4400 2201 8100 6110",
+          "124": "066a 89a0 153a 1a04 5411 863e 75cc e40e 904c 1640 1169 e1ea d2ee 0099 7468 d634",
+          "125": "1e13 bae7 b7d1 dfdb fcd7 1ab5 c61a 1790 f6ef feff 9533 7bbb dfff 6e5e bf97 37a1",
+          "126": "fdfd fffb ffcf 6fb5 f4df 7ffd d71f fffe af5a caff b7ef cfbf bf4e 2f7e fcdf f3fe",
+          "127": "ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff"
+        },
+        "-1,-1": {
+          "0": "ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff",
+          "1": "fbef dfd7 bb73 eee5 7afd dfbc e7fe def7 6e6e f6f8 eff7 ffee 37b5 7bfc 9fff fe33",
+          "2": "59de fe9a 61d6 1f4f d1fb ba6c c8ac 7ce5 3760 f568 90fb abcf f75d 3db3 ffbb f6e9",
+          "3": "4546 5260 2604 40b0 1283 74bc 2a00 f520 3d62 04c0 8144 311b 10a3 347a b02f 8768",
+          "4": "0002 1810 8884 1048 2200 0800 6000 0071 0bec 6000 0190 2808 000c 1110 0421 5100",
+          "5": "0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000",
+          "122": "0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000",
+          "123": "5024 4109 1000 15cc 00a2 1220 a024 0001 2054 1000 9000 c010 8450 f011 a001 2800",
+          "124": "0d02 0886 046e 6250 6811 aa1e 0e02 1184 32c1 e00a c4c7 bdc6 ba50 00e4 20e8 1a67",
+          "125": "76d9 5fd9 ead2 f4f8 d77f fffd 89fb eeff 3eb4 13c0 b976 4ab1 bd5d e6f6 9e7b cfff",
+          "126": "fa39 efde ffff fdbd 2ffa aff6 7fd1 fff7 fffb fbfe 7a5d 7efc 5ffd 5bfd ff7f ffeb",
+          "127": "ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff"
+        },
+        "7,-3": {
+          "0": "ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff",
+          "1": "f7ef f67f 3fff ffbb 7b6f ffe7 fddf eaef ffff fbb7 f3ff b64f fe9d feff dff7 fdff",
+          "2": "c9ff d9ff 8c73 a67d b96f bcbe aeda 7fee aea3 97fb 3dae 48ae 71f2 3174 34ef f4b4",
+          "3": "3812 a17e 01e8 9cf0 6a41 813c 7420 3faa 5005 91a0 ac44 3c88 a092 e10e 4462 ac40",
+          "4": "2001 0004 009b 00c4 0193 2900 8c03 8042 0600 8642 000c 2250 4108 0047 1210 010a",
+          "5": "0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000",
+          "122": "0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000",
+          "123": "42a1 4e00 34cc 8028 010c 082a 0104 8002 5041 4814 1800 2924 a801 4224 8802 0a19",
+          "124": "720c 0e96 83c0 6bab 20bc cc01 0345 94de e104 1691 0921 5613 1389 d29b c57b a2d5",
+          "125": "cfe5 bfe4 dcef dd30 a42e aed7 5eb3 75ca 55af 7e8d 6635 31fe 07fe b60d b93f 3bfe",
+          "126": "f7ff 9adb ba7f 3fba feef dfef 67d7 9dff ffdd 6fe7 dfff 9ffe eaa7 9bff 9aed c3f7",
+          "127": "ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff"
+        },
+        "1874999,-1875000": {
+          "0": "ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff",
+          "1": "fafd ffbf ee75 efbf ebde afde c7f4 dfff ef9f fdff bfef bdff dbbf ffff efff fd77",
+          "2": "c4fb 3c70 fb3d 68d6 2bdb f983 bac7 fd37 6e85 de4e efa7 fd8b b1f7 0eac 93e3 9df7",
+          "3": "0f9c 81dd 9f2e ca58 00b0 9074 4216 2823 0020 6068 4112 a436 3a83 3943 0406 8530",
+          "4": "0020 8000 1688 5800 0c40 1242 3110 0002 0040 1441 0016 1910 1090 0285 0207 0402",
+          "5": "0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000",
+          "122": "0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000 0000",
+          "123": "2240 4400 5100 1a09 000c 8004 a000 8104 0b14 1211 0005 0044 8002 50a0 4061 8100",
+          "124": "b0a8 4ef0 2142 4581 3414 610e 80b5 020a 9950 33d9 8ec0 30c1 4988 3a7c 3226 f79a",
+          "125": "03bf 871c ee7b 9db8 3f80 cacf 1dce d721 2d93 febf fbbe 30a9 47d6 7686 8363 eb05",
+          "126": "3efb ffff 69fd ffff effa fdbe fdff fda7 adff e3d7 7ffe 3f7f 5cff fff7 b9f5 ffee",
+          "127": "ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff"
+        }
+      }
+    }
+  }
+}
