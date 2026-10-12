@@ -309,6 +309,17 @@ final class BedrockOracle {
         }
         root.addProperty("parse_seed_format", "[typed text, WorldOptions.parseSeed(text) or null for a random seed]");
         root.add("parse_seed", parsed);
+
+        JsonArray hashed = new JsonArray();
+        for (long seed : Oracle.SEEDS) {
+            hashed.add(longs(seed, BiomeManager.obfuscateSeed(seed)));
+        }
+        for (int i = 0; i < 200; i++) {
+            long seed = list.nextLong();
+            hashed.add(longs(seed, BiomeManager.obfuscateSeed(seed)));
+        }
+        root.addProperty("hashed_seed_format", "[world seed, BiomeManager.obfuscateSeed(world seed)], the value servers send to clients");
+        root.add("hashed_seed", hashed);
         return root;
     }
 

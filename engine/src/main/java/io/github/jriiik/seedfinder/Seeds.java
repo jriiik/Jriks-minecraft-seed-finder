@@ -1,7 +1,13 @@
 package io.github.jriiik.seedfinder;
 
 import io.github.jriiik.seedfinder.rng.JavaRandom;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
+import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Collection;
+import java.util.LinkedHashSet;
+import java.util.List;
 import java.util.OptionalLong;
 
 /** Helpers for world seeds as players see them. */
@@ -65,6 +71,55 @@ public final class Seeds {
     public static OptionalLong textSeedCandidate(long structureSeed) {
         long candidate = (structureSeed << 16) >> 16;
         return candidate == (int) candidate ? OptionalLong.of(candidate) : OptionalLong.empty();
+    }
+
+    /**
+     * The "hashed seed" Minecraft sends to every player when they join or change dimension
+     * ({@code BiomeManager.obfuscateSeed}): the first 8 bytes of the SHA-256 hash of the world seed, both read in
+     * little-endian byte order. The game uses it to blend biomes smoothly; the seed can't be computed back from it,
+     * but each candidate seed can be checked against it.
+     */
+    public static long hashedSeed(long worldSeed) {
+        return hashedSeed(sha256(), worldSeed);
+    }
+
+    /**
+     * The world seeds with one of these structure seeds whose hashed seed is the given one: normally exactly one, or
+     * none when the server sent a different value. Checks 65,536 seeds per structure seed.
+     */
+    public static long[] withHashedSeed(Collection<Long> structureSeeds, long hashedSeed) {
+        MessageDigest digest = sha256();
+        List<Long> found = new ArrayList<>();
+        for (long structureSeed : new LinkedHashSet<>(structureSeeds)) {
+            for (long upper = 0; upper < 1 << 16; upper++) {
+                long worldSeed = upper << STRUCTURE_SEED_BITS | structureSeed(structureSeed);
+                if (hashedSeed(digest, worldSeed) == hashedSeed) {
+                    found.add(worldSeed);
+                }
+            }
+        }
+        return found.stream().mapToLong(Long::longValue).toArray();
+    }
+
+    private static long hashedSeed(MessageDigest digest, long worldSeed) {
+        byte[] bytes = new byte[8];
+        for (int i = 0; i < 8; i++) {
+            bytes[i] = (byte) (worldSeed >>> (8 * i));
+        }
+        byte[] hash = digest.digest(bytes);
+        long value = 0;
+        for (int i = 7; i >= 0; i--) {
+            value = (value << 8) | (hash[i] & 0xFF);
+        }
+        return value;
+    }
+
+    private static MessageDigest sha256() {
+        try {
+            return MessageDigest.getInstance("SHA-256");
+        } catch (NoSuchAlgorithmException e) {
+            throw new IllegalStateException("Every Java runtime has SHA-256", e);
+        }
     }
 
     /**

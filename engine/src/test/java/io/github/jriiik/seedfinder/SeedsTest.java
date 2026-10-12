@@ -81,6 +81,27 @@ class SeedsTest {
     }
 
     @Test
+    void hashedSeedMatchesTheGame() {
+        int checked = 0;
+        for (JsonElement element : RANDOM_SEEDS.getAsJsonArray("hashed_seed")) {
+            long worldSeed = Long.parseLong(element.getAsJsonArray().get(0).getAsString());
+            long hashed = Long.parseLong(element.getAsJsonArray().get(1).getAsString());
+            assertEquals(hashed, Seeds.hashedSeed(worldSeed), Long.toString(worldSeed));
+            checked++;
+        }
+        assertEquals(210, checked);
+    }
+
+    @Test
+    void theHashedSeedPicksTheFullSeed() {
+        long worldSeed = 8091867987493326313L;
+        long[] found = Seeds.withHashedSeed(java.util.List.of(12345L, Seeds.structureSeed(worldSeed)), Seeds.hashedSeed(worldSeed));
+        assertEquals(1, found.length);
+        assertEquals(worldSeed, found[0]);
+        assertEquals(0, Seeds.withHashedSeed(java.util.List.of(12345L), Seeds.hashedSeed(worldSeed)).length);
+    }
+
+    @Test
     void multiplierInverseUndoesOneStep() {
         assertEquals(1L, (JavaRandom.MULTIPLIER * JavaRandom.MULTIPLIER_INVERSE) & JavaRandom.MASK);
     }
