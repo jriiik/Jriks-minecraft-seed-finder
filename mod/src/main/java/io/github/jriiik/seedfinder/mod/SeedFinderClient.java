@@ -45,6 +45,8 @@ public final class SeedFinderClient implements ClientModInitializer {
     private static SearchRunner runner;
     /** The current world's notes; only touched on the game's main thread. */
     private static WorldSession session;
+    private static StructureRecognition recognition;
+    private static boolean wasCollecting;
     private static int ticks;
 
     @Override
@@ -82,8 +84,24 @@ public final class SeedFinderClient implements ClientModInitializer {
         if (!Objects.equals(world, session == null ? null : session.world())) {
             save();
             session = world == null ? null : WorldSession.load(folder(), world);
+            recognition = world == null ? null : new StructureRecognition(data());
+            wasCollecting = false;
         }
         return session;
+    }
+
+    /** Forgets all notes of the current world and starts recognizing structures afresh (main thread). */
+    static void startOver() {
+        if (session != null) {
+            session.clearAll();
+            recognition = new StructureRecognition(data());
+            wasCollecting = false;
+        }
+    }
+
+    /** Automatic structure recognition in the current world (main thread). */
+    static StructureRecognition recognition() {
+        return recognition;
     }
 
     static SearchRunner runner() {
@@ -99,7 +117,12 @@ public final class SeedFinderClient implements ClientModInitializer {
                 if (ticks % LOADED_CHUNK_SCAN_TICKS == 0) {
                     scanLoadedChunks(minecraft, current);
                 }
+                if (!wasCollecting) {
+                    recognition.scanAllLoaded();
+                }
+                recognition.tick(minecraft, current);
             }
+            wasCollecting = current.collecting();
             runner.tick(current);
             if (ticks % SAVE_EVERY_TICKS == 0) {
                 save();
@@ -126,6 +149,7 @@ public final class SeedFinderClient implements ClientModInitializer {
         WorldSession current = session(Minecraft.getInstance());
         if (current != null && current.collecting()) {
             bedrockDimension(level, current).ifPresent(dimension -> BedrockScanner.scan(dimension, chunk).ifPresent(current::offerBedrock));
+            recognition.chunkLoaded(level, chunk);
         }
     }
 

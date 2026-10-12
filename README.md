@@ -6,8 +6,9 @@ Minecraft version (**26.3**).
 
 > **Work in progress.** From about six structure positions the finder works out the world's *structure seed* (the
 > part of the seed that decides where structures go), usually in under a second, and names the likely full seed.
-> With the bedrock floor of one chunk added, it finds the full seed for certain. The Minecraft mod is next. See the
-> [roadmap](docs/ROADMAP.md).
+> With the bedrock floor of one chunk added, it finds the full seed for certain. A Fabric mod does all of this while
+> you play, and recognizes villages, outposts, trial chambers, ancient cities, trail ruins and camps by itself. See
+> the [roadmap](docs/ROADMAP.md).
 
 *Not an official Minecraft product. Not approved by or associated with Mojang or Microsoft.*
 
@@ -22,7 +23,8 @@ Minecraft version (**26.3**).
 | Find the full seed for certain from the bedrock floor (`seedfinder full-seed`, or bedrock notes in `find`) | ✅ done |
 | `seedfinder bedrock`: show the bedrock floor of a seed you know | ✅ done |
 | Fabric client mod: notes structures and bedrock while you play and finds the seed by itself | ✅ first version |
-| The mod recognizes structures by itself | ⏳ next |
+| The mod recognizes villages, pillager outposts, trial chambers, ancient cities, trail ruins and camps by itself | ✅ done |
+| The mod recognizes the other structures (temples, igloos, shipwrecks, ...) by itself | ⏳ next |
 | Full seed from biomes, structure seed from nether bedrock alone | 🔜 later |
 
 ## Trying the command-line app
@@ -143,11 +145,25 @@ itself. It needs Minecraft **26.3** with **Fabric Loader** (0.19.5 or newer) and
    the mod notes nothing.
 4. Play. The mod then:
    - reads the bedrock floor of chunks around you (overworld and nether);
+   - recognizes **villages, pillager outposts, trial chambers, ancient cities, trail ruins and camps** you come
+     near, from their blocks, and notes the chunk where each one starts (see below);
    - notes the answer when you use `/locate structure ...` (if you are allowed to use it);
    - notes structures you mark: stand in the chunk where a structure starts and press **Add a structure here**;
    - uses the "hashed seed" that Minecraft sends to every player, which settles the full seed as soon as the
      structure seed is known.
 5. The status shows in the top-left corner and on the mod's screen; **Copy seed** copies the result.
+
+**How structures are recognized.** The mod compares the blocks around you with the game's own blueprints of each
+structure's first piece (it reads them from the Minecraft you are running; nothing of Minecraft is copied into the
+mod). The game puts that piece exactly on the corner of the chunk where the structure starts, so a match that
+doesn't sit on a chunk corner is thrown away. A structure is only noted when at least 70% of its blueprint is
+there, including 70% of the built blocks (not just ground). Tested against worlds made by the game's own code
+(204 structures, with trees, ores and other decoration): it never named a wrong chunk. Some structures are
+not recognized, which only means they don't count: a village whose centre was overbuilt by its own farm streets
+or a sand patch, a rare zombie village centre, or anything players have taken apart. Underground structures (trial
+chambers, ancient cities, trail ruins) can only be seen where the server sends the real underground blocks; servers
+that hide them (anti-xray) simply mean they are not found. If a recognized structure looks wrong to you, remove it
+on the mod's screen; it won't be noted again.
 
 The notes are saved in `config/jriksseedfinder/` inside your Minecraft folder: a `.txt` file per world that the
 command-line app reads too (`seedfinder find --file <that file>`).

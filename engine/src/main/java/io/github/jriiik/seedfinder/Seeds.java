@@ -9,6 +9,7 @@ import java.util.Collection;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.OptionalLong;
+import java.util.Set;
 
 /** Helpers for world seeds as players see them. */
 public final class Seeds {
@@ -85,20 +86,52 @@ public final class Seeds {
 
     /**
      * The world seeds with one of these structure seeds whose hashed seed is the given one: normally exactly one, or
-     * none when the server sent a different value. Checks 65,536 seeds per structure seed.
+     * none when the server sent a different value (or the structure seeds are wrong). Tries the seeds people
+     * normally end up with first ({@link #likelyWithHashedSeed}), then all 65,536 seeds of each structure seed.
      */
     public static long[] withHashedSeed(Collection<Long> structureSeeds, long hashedSeed) {
+        long[] likely = likelyWithHashedSeed(structureSeeds, hashedSeed);
+        if (likely.length > 0) {
+            return likely;
+        }
         MessageDigest digest = sha256();
         List<Long> found = new ArrayList<>();
-        for (long structureSeed : new LinkedHashSet<>(structureSeeds)) {
+        for (long structureSeed : distinct(structureSeeds)) {
             for (long upper = 0; upper < 1 << 16; upper++) {
-                long worldSeed = upper << STRUCTURE_SEED_BITS | structureSeed(structureSeed);
+                long worldSeed = upper << STRUCTURE_SEED_BITS | structureSeed;
                 if (hashedSeed(digest, worldSeed) == hashedSeed) {
                     found.add(worldSeed);
                 }
             }
         }
         return found.stream().mapToLong(Long::longValue).toArray();
+    }
+
+    /**
+     * The quick part of {@link #withHashedSeed}: only the one to three seeds per structure seed that Minecraft picks
+     * by itself ({@link #randomSeedCandidates}) or that typed text or a short number gives ({@link #textSeedCandidate}).
+     */
+    public static long[] likelyWithHashedSeed(Collection<Long> structureSeeds, long hashedSeed) {
+        MessageDigest digest = sha256();
+        List<Long> found = new ArrayList<>();
+        for (long structureSeed : distinct(structureSeeds)) {
+            Set<Long> likely = new LinkedHashSet<>();
+            Arrays.stream(randomSeedCandidates(structureSeed)).forEach(likely::add);
+            textSeedCandidate(structureSeed).ifPresent(likely::add);
+            for (long worldSeed : likely) {
+                if (hashedSeed(digest, worldSeed) == hashedSeed) {
+                    found.add(worldSeed);
+                }
+            }
+        }
+        return found.stream().mapToLong(Long::longValue).toArray();
+    }
+
+    /** The structure seeds (lowest 48 bits) without repeats, even when the same one is given in two forms. */
+    private static Set<Long> distinct(Collection<Long> structureSeeds) {
+        Set<Long> seeds = new LinkedHashSet<>();
+        structureSeeds.forEach(seed -> seeds.add(structureSeed(seed)));
+        return seeds;
     }
 
     private static long hashedSeed(MessageDigest digest, long worldSeed) {

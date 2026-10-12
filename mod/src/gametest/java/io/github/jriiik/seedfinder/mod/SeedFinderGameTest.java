@@ -1,22 +1,35 @@
 package io.github.jriiik.seedfinder.mod;
 
 import com.mojang.blaze3d.platform.InputConstants;
+import com.mojang.datafixers.util.Pair;
 import io.github.jriiik.seedfinder.Seeds;
 import io.github.jriiik.seedfinder.bedrock.BedrockEvidence;
 import io.github.jriiik.seedfinder.finder.ObservationReader;
 import io.github.jriiik.seedfinder.finder.WorldSeedSearch;
+import io.github.jriiik.seedfinder.recognize.RecognizedStarts;
+import io.github.jriiik.seedfinder.structure.StructureSet;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.ArrayList;
 import java.util.List;
 import net.fabricmc.fabric.api.client.gametest.v1.FabricClientGameTest;
 import net.fabricmc.fabric.api.client.gametest.v1.context.ClientGameTestContext;
 import net.fabricmc.fabric.api.client.gametest.v1.context.TestSingleplayerContext;
 import net.minecraft.client.KeyMapping;
+import net.minecraft.client.gui.screens.ConfirmScreen;
 import net.minecraft.client.gui.screens.worldselection.WorldCreationUiState;
+import net.minecraft.core.BlockPos;
 import net.minecraft.core.Holder;
+import net.minecraft.core.HolderSet;
+import net.minecraft.core.Registry;
 import net.minecraft.core.registries.Registries;
+import net.minecraft.resources.Identifier;
+import net.minecraft.server.level.ServerLevel;
+import net.minecraft.world.level.ChunkPos;
+import net.minecraft.world.level.chunk.status.ChunkStatus;
 import net.minecraft.world.level.levelgen.presets.WorldPreset;
 import net.minecraft.world.level.levelgen.presets.WorldPresets;
+import net.minecraft.world.level.levelgen.structure.Structure;
 
 /**
  * Runs inside a real Minecraft client (on a virtual display) and uses the mod the way a player would. Prints
@@ -39,6 +52,86 @@ public class SeedFinderGameTest implements FabricClientGameTest {
         if (!ok) {
             throw new AssertionError(what);
         }
+    }
+
+    /**
+     * Automatic recognition: the player visits the nearest structure of each type the mod recognizes (found with
+     * the game's own /locate search); the mod must recognize its start chunk from the blocks alone. Every start it
+     * recognized on the way must be a real start in the game's own records, and the seed must still come out right.
+     */
+    static void recognizesStructures(ClientGameTestContext context, TestSingleplayerContext world) {
+        context.runOnClient(client -> client.options.renderDistance().set(8));
+        world.getServer().runCommand("gamemode spectator @a");
+        for (String set : StartPieceLibrary.SETS) {
+            ChunkPos start = world.getServer().computeOnServer(server -> nearestStart(server.overworld(), set));
+            check(start != null, "the game has a " + set + " start to visit");
+            world.getServer().runCommand("tp @a " + (start.getMinBlockX() + 8) + " 160 " + (start.getMinBlockZ() + 8));
+            RecognizedStarts.Start expected = new RecognizedStarts.Start(set, start.x(), start.z());
+            boolean found = false;
+            for (int wait = 0; wait < 20 * 120 && !found; wait += 20) {
+                context.waitTicks(20);
+                found = context.computeOnClient(client -> SeedFinderClient.recognition().starts().contains(expected));
+            }
+            check(found, "recognized " + set + " starting in chunk " + start.x() + ", " + start.z() + " from its blocks");
+        }
+
+        List<RecognizedStarts.Start> recognized = context.computeOnClient(client -> SeedFinderClient.recognition().starts());
+        log("recognized: " + recognized);
+        for (RecognizedStarts.Start start : recognized) {
+            List<String> real = world.getServer().computeOnServer(server -> realStarts(server.overworld(), start.chunkX(), start.chunkZ()));
+            List<String> inSet = SeedFinderClient.data().structureSet(start.structureSet()).orElseThrow().structures().stream()
+                .map(StructureSet.Entry::structure).toList();
+            check(real.stream().anyMatch(inSet::contains), start + " is a real start (the game has " + real + " there)");
+            check(context.computeOnClient(client -> SeedFinderClient.session(client).structures().stream().anyMatch(s -> s.set().equals(start.structureSet())
+                && Math.floorDiv(s.x(), 16) == start.chunkX() && Math.floorDiv(s.z(), 16) == start.chunkZ())), start + " is in the notes");
+        }
+
+        context.waitFor(client -> {
+            WorldSession session = SeedFinderClient.session(client);
+            return session.resultIsCurrent() && session.result() != null;
+        }, 20 * 180);
+        WorldSeedSearch.Result result = context.computeOnClient(client -> SeedFinderClient.session(client).result());
+        check(result.stage() == WorldSeedSearch.Stage.WORLD_SEED && result.worldSeed().getAsLong() == SEED,
+            "with the recognized structures the seed is still " + SEED);
+        context.getInput().pressKey(SeedFinderClient.openKey);
+        context.waitForScreen(SeedFinderScreen.class);
+        context.takeScreenshot("seedfinder-recognized");
+
+        // "Remove all notes" forgets everything; recognition then notes the structure around the player again.
+        context.clickScreenButton("gui.jriksseedfinder.remove_structure");
+        context.waitForScreen(RemoveStructureScreen.class);
+        context.clickScreenButton("gui.jriksseedfinder.start_over");
+        context.waitForScreen(ConfirmScreen.class);
+        context.clickScreenButton("gui.yes");
+        context.waitForScreen(SeedFinderScreen.class);
+        check(context.computeOnClient(client -> SeedFinderClient.session(client).structures().stream()
+            .noneMatch(s -> s.source().equals("from /locate"))), "Remove all notes removed the notes");
+        context.waitFor(client -> SeedFinderClient.session(client).structures().stream()
+            .anyMatch(s -> s.source().equals(StructureRecognition.SOURCE)), 20 * 60);
+        check(true, "after starting over the structure nearby was recognized again");
+        context.clickScreenButton("gui.jriksseedfinder.close");
+        context.waitForScreen(null);
+    }
+
+    /** The start chunk of the nearest structure of a set to the world's centre, with the search /locate uses. */
+    static ChunkPos nearestStart(ServerLevel level, String set) {
+        Registry<Structure> registry = level.registryAccess().lookupOrThrow(Registries.STRUCTURE);
+        List<Holder<Structure>> structures = new ArrayList<>();
+        for (StructureSet.Entry entry : SeedFinderClient.data().structureSet(set).orElseThrow().structures()) {
+            structures.add(registry.get(Identifier.parse(entry.structure())).orElseThrow());
+        }
+        Pair<BlockPos, Holder<Structure>> found = level.getChunkSource().getGenerator()
+            .findNearestMapStructure(level, HolderSet.direct(structures), BlockPos.ZERO, 100, false);
+        return found == null ? null : ChunkPos.containing(found.getFirst());
+    }
+
+    /** The structures that really start in a chunk, from the game's own records. */
+    static List<String> realStarts(ServerLevel level, int chunkX, int chunkZ) {
+        Registry<Structure> structures = level.registryAccess().lookupOrThrow(Registries.STRUCTURE);
+        return level.getChunk(chunkX, chunkZ, ChunkStatus.STRUCTURE_STARTS, true).getAllStarts().entrySet().stream()
+            .filter(entry -> entry.getValue().isValid())
+            .map(entry -> String.valueOf(structures.getKey(entry.getKey())))
+            .toList();
     }
 
     @Override
@@ -129,6 +222,8 @@ public class SeedFinderGameTest implements FabricClientGameTest {
             String base = WorldSession.fileName(session.world());
             check(Files.isRegularFile(folder.resolve(base + ".json")) && Files.isRegularFile(folder.resolve(base + ".txt")),
                 "the notes were saved in " + folder);
+
+            recognizesStructures(context, world);
         }
         log("ALL CHECKS PASSED");
     }

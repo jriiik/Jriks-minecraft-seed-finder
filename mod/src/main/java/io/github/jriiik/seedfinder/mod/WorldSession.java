@@ -39,7 +39,11 @@ final class WorldSession {
     private boolean collecting;
     private boolean showStatus = true;
     private OptionalLong hashedSeed = OptionalLong.empty();
+    /** True when the server sent a different hashed seed than the one stored with these notes (this session). */
+    private boolean hashedSeedChanged;
     private final List<NotedStructure> structures = new ArrayList<>();
+    /** Structures the player removed; automatic recognition doesn't add them again. */
+    private final List<NotedStructure> removed = new ArrayList<>();
     private final List<ScannedChunk> bedrock = new ArrayList<>();
 
     /** Increases with every change, so a search result can tell whether it is still up to date. */
@@ -81,9 +85,18 @@ final class WorldSession {
 
     void setHashedSeed(long value) {
         if (hashedSeed.isEmpty() || hashedSeed.getAsLong() != value) {
+            hashedSeedChanged |= hashedSeed.isPresent();
             hashedSeed = OptionalLong.of(value);
             version++;
         }
+    }
+
+    /**
+     * Whether the hashed seed changed while these notes were kept: the world behind this address may have been reset
+     * or replaced, and then the older notes belong to a different world.
+     */
+    boolean hashedSeedChanged() {
+        return hashedSeedChanged;
     }
 
     List<NotedStructure> structures() {
@@ -102,9 +115,25 @@ final class WorldSession {
         return true;
     }
 
+    /** Removes a structure the player picked; recognition will not note it again. */
     void removeStructure(int index) {
-        structures.remove(index);
+        removed.add(structures.remove(index));
         version++;
+    }
+
+    /** Adds a structure recognized automatically, unless the player removed it before. */
+    boolean addRecognized(NotedStructure structure) {
+        boolean wasRemoved = removed.stream().anyMatch(s -> s.set().equals(structure.set())
+            && Math.floorDiv(s.x(), 16) == Math.floorDiv(structure.x(), 16) && Math.floorDiv(s.z(), 16) == Math.floorDiv(structure.z(), 16));
+        return !wasRemoved && addStructure(structure);
+    }
+
+    /** Removes a structure noted from the given source in that chunk, if there is one. */
+    void removeStructure(String set, int x, int z, String source) {
+        if (structures.removeIf(s -> s.set().equals(set) && s.source().equals(source)
+            && Math.floorDiv(s.x(), 16) == Math.floorDiv(x, 16) && Math.floorDiv(s.z(), 16) == Math.floorDiv(z, 16))) {
+            version++;
+        }
     }
 
     List<ScannedChunk> bedrock() {
@@ -126,9 +155,13 @@ final class WorldSession {
         return true;
     }
 
+    /** Forgets everything noted in this world (collecting stays as it is); for a world that was reset or replaced. */
     void clearAll() {
         structures.clear();
+        removed.clear();
         bedrock.clear();
+        hashedSeed = OptionalLong.empty();
+        hashedSeedChanged = false;
         version++;
     }
 
@@ -198,16 +231,8 @@ final class WorldSession {
         json.addProperty("collecting", collecting);
         json.addProperty("show_status", showStatus);
         hashedSeed.ifPresent(value -> json.addProperty("hashed_seed", Long.toString(value)));
-        JsonArray structureArray = new JsonArray();
-        for (NotedStructure structure : structures) {
-            JsonObject s = new JsonObject();
-            s.addProperty("set", structure.set());
-            s.addProperty("x", structure.x());
-            s.addProperty("z", structure.z());
-            s.addProperty("source", structure.source());
-            structureArray.add(s);
-        }
-        json.add("structures", structureArray);
+        json.add("structures", structuresJson(structures));
+        json.add("removed_structures", structuresJson(removed));
         JsonArray bedrockArray = new JsonArray();
         for (ScannedChunk chunk : bedrock) {
             JsonObject c = new JsonObject();
@@ -230,6 +255,29 @@ final class WorldSession {
         savedVersion = version;
     }
 
+    private static JsonArray structuresJson(List<NotedStructure> list) {
+        JsonArray array = new JsonArray();
+        for (NotedStructure structure : list) {
+            JsonObject s = new JsonObject();
+            s.addProperty("set", structure.set());
+            s.addProperty("x", structure.x());
+            s.addProperty("z", structure.z());
+            s.addProperty("source", structure.source());
+            array.add(s);
+        }
+        return array;
+    }
+
+    private static void readStructures(JsonObject json, String key, List<NotedStructure> into) {
+        if (!json.has(key)) {
+            return;
+        }
+        for (JsonElement element : json.getAsJsonArray(key)) {
+            JsonObject s = element.getAsJsonObject();
+            into.add(new NotedStructure(s.get("set").getAsString(), s.get("x").getAsInt(), s.get("z").getAsInt(), s.get("source").getAsString()));
+        }
+    }
+
     /** Loads what was saved for this world, or starts empty (collecting switched off). */
     static WorldSession load(Path folder, String world) {
         WorldSession session = new WorldSession(world);
@@ -244,11 +292,8 @@ final class WorldSession {
             if (json.has("hashed_seed")) {
                 session.hashedSeed = OptionalLong.of(Long.parseLong(json.get("hashed_seed").getAsString()));
             }
-            for (JsonElement element : json.getAsJsonArray("structures")) {
-                JsonObject s = element.getAsJsonObject();
-                session.structures.add(new NotedStructure(s.get("set").getAsString(), s.get("x").getAsInt(), s.get("z").getAsInt(),
-                    s.get("source").getAsString()));
-            }
+            readStructures(json, "structures", session.structures);
+            readStructures(json, "removed_structures", session.removed);
             for (JsonElement element : json.getAsJsonArray("bedrock")) {
                 JsonObject c = element.getAsJsonObject();
                 Map<Integer, List<String>> layers = new LinkedHashMap<>();

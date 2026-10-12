@@ -18,7 +18,10 @@ import java.util.OptionalLong;
  */
 public final class WorldSeedSearch {
 
-    /** Checking the hashed seed costs about 30 ms per structure seed; above this many it is skipped. */
+    /**
+     * Checking all 65,536 seeds of a structure seed against the hashed seed takes 5 to 30 ms; above this many
+     * structure seeds only the likely seeds (random or typed) are checked.
+     */
     public static final int MAX_HASHED_SEED_CHECKS = 500;
 
     /** How far the search got. */
@@ -109,15 +112,19 @@ public final class WorldSeedSearch {
         }
 
         boolean hashedSeedFitsNone = false;
-        if (hashedSeed.isPresent() && structureSeeds.size() <= MAX_HASHED_SEED_CHECKS) {
-            long[] matches = Seeds.withHashedSeed(structureSeeds, hashedSeed.getAsLong());
+        if (hashedSeed.isPresent()) {
+            long[] matches = Seeds.likelyWithHashedSeed(structureSeeds, hashedSeed.getAsLong());
+            boolean checkedAll = matches.length == 0 && structureSeeds.size() <= MAX_HASHED_SEED_CHECKS;
+            if (checkedAll) {
+                matches = Seeds.withHashedSeed(structureSeeds, hashedSeed.getAsLong());
+            }
             if (matches.length == 1) {
                 long worldSeed = matches[0];
                 boolean disagrees = bedrockProblems.isEmpty() && !evidence.mismatchesOf(worldSeed).isEmpty();
                 return new Result(Stage.WORLD_SEED, plan, structureSeeds, OptionalLong.of(worldSeed), Optional.of(Proof.HASHED_SEED),
                     false, Optional.empty(), bedrockProblems, disagrees, List.of());
             }
-            hashedSeedFitsNone = matches.length == 0;
+            hashedSeedFitsNone = checkedAll && matches.length == 0;
         }
 
         Optional<FullSeedFinder.Result> bedrock = Optional.empty();

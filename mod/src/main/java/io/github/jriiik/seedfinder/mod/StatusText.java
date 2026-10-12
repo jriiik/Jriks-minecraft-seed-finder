@@ -23,11 +23,20 @@ final class StatusText {
             return lines;
         }
         List<WorldSession.NotedStructure> structures = session.structures();
+        long recognized = structures.stream().filter(s -> s.source().equals(StructureRecognition.SOURCE)).count();
         lines.add("Structures: " + structures.size() + (structures.isEmpty() ? "" : " (" + structures.stream()
-            .map(WorldSession.NotedStructure::set).distinct().collect(Collectors.joining(", ")) + ")"));
+            .map(WorldSession.NotedStructure::set).distinct().collect(Collectors.joining(", ")) + ")")
+            + (recognized > 0 ? ", " + recognized + " recognized automatically" : ""));
+        if (StructureRecognition.failed()) {
+            lines.add("Automatic structure recognition could not start (see the game log); you can still note structures yourself.");
+        }
         lines.add("Bedrock: " + chunks(session.bedrockChunks("minecraft:overworld"), "overworld") + ", "
             + chunks(session.bedrockChunks("minecraft:the_nether"), "nether"));
         lines.add("Hashed seed from the server: " + (session.hashedSeed().isPresent() ? "received" : "not yet"));
+        if (session.hashedSeedChanged()) {
+            lines.add("The hashed seed changed since these notes were started. If the world was reset or this address now leads to");
+            lines.add("another world, the older notes don't fit it: \"Remove a structure\" -> \"Remove all notes\" starts over.");
+        }
         lines.add("");
         if (runner.running()) {
             lines.add("Searching..." + (runner.percent() >= 0 ? " " + runner.percent() + "%" : ""));
@@ -40,7 +49,8 @@ final class StatusText {
         WorldSeedSearch.Result result = session.result();
         if (result == null) {
             lines.add(structures.isEmpty()
-                ? "Note structures you find: stand in the chunk where one starts and press \"Add a structure here\". Answers to /locate (if you may use it) are noted automatically."
+                ? "Villages, outposts, trial chambers, ancient cities, trail ruins and camps are recognized when you come near. For other"
+                    + " structures, stand in the chunk where one starts and press \"Add a structure here\". Answers to /locate (if you may use it) are noted too."
                 : "About to search...");
             return lines;
         }

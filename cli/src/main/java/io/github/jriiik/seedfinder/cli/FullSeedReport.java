@@ -39,8 +39,12 @@ final class FullSeedReport {
     static boolean run(PrintWriter out, VersionData data, List<Long> foundSeeds, BedrockEvidence evidence, OptionalLong hashedSeed,
                        int threads) {
         List<Long> structureSeeds = new ArrayList<>(new LinkedHashSet<>(foundSeeds));
-        if (hashedSeed.isPresent() && structureSeeds.size() <= WorldSeedSearch.MAX_HASHED_SEED_CHECKS) {
-            long[] matches = Seeds.withHashedSeed(structureSeeds, hashedSeed.getAsLong());
+        if (hashedSeed.isPresent()) {
+            long[] matches = Seeds.likelyWithHashedSeed(structureSeeds, hashedSeed.getAsLong());
+            boolean checkedAll = matches.length == 0 && structureSeeds.size() <= WorldSeedSearch.MAX_HASHED_SEED_CHECKS;
+            if (checkedAll) {
+                matches = Seeds.withHashedSeed(structureSeeds, hashedSeed.getAsLong());
+            }
             if (matches.length == 1) {
                 out.println("Found the full seed: " + matches[0]);
                 out.println("It is the only seed with these structures whose hash is the hashed seed in your notes.");
@@ -51,8 +55,10 @@ final class FullSeedReport {
                 }
                 return true;
             }
-            out.println("None of the possible seeds has the hashed seed in your notes (the server may send a different value),");
-            out.println("so it is not used.");
+            if (checkedAll) {
+                out.println("None of the possible seeds has the hashed seed in your notes (the server may send a different value,");
+                out.println("or a structure is noted in the wrong place), so it is not used.");
+            }
         }
         if (!evidence.structureSeedObservations().isEmpty()) {
             structureSeeds = narrowByNether(out, structureSeeds, evidence);

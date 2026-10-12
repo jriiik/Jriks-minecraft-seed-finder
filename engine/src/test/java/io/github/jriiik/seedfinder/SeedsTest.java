@@ -1,5 +1,6 @@
 package io.github.jriiik.seedfinder;
 
+import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -99,6 +100,22 @@ class SeedsTest {
         assertEquals(1, found.length);
         assertEquals(worldSeed, found[0]);
         assertEquals(0, Seeds.withHashedSeed(java.util.List.of(12345L), Seeds.hashedSeed(worldSeed)).length);
+    }
+
+    @Test
+    void theHashedSeedCheckFindsEachKindOfSeedOnce() {
+        long random = 8091867987493326313L;
+        long text = "Jrik's seed finder".hashCode();
+        long typed = 1234567890123456789L;
+        assertTrue(Seeds.couldBeRandomSeed(random) && !Seeds.couldBeRandomSeed(typed) && typed != (int) typed);
+        for (long worldSeed : new long[] {random, text, typed}) {
+            long hashed = Seeds.hashedSeed(worldSeed);
+            // The same structure seed given twice, once as a full seed: still one answer.
+            long[] found = Seeds.withHashedSeed(java.util.List.of(Seeds.structureSeed(worldSeed), worldSeed, 12345L), hashed);
+            assertArrayEquals(new long[] {worldSeed}, found, Long.toString(worldSeed));
+            long[] likely = Seeds.likelyWithHashedSeed(java.util.List.of(Seeds.structureSeed(worldSeed)), hashed);
+            assertArrayEquals(worldSeed == typed ? new long[0] : new long[] {worldSeed}, likely, Long.toString(worldSeed));
+        }
     }
 
     @Test
