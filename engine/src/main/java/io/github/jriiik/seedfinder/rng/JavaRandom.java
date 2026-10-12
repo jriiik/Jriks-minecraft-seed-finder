@@ -8,9 +8,11 @@ package io.github.jriiik.seedfinder.rng;
  * to the internal 48-bit state, and because this class has to behave exactly like Minecraft's
  * {@code LegacyRandomSource}, including the order in which values are drawn.
  */
-public final class JavaRandom {
+public final class JavaRandom implements RandomSource {
 
     public static final long MULTIPLIER = 0x5DEECE66DL;
+    /** {@link #MULTIPLIER} times this is 1 (mod 2^48), so it undoes a multiplication: one step backwards. */
+    public static final long MULTIPLIER_INVERSE = 0xDFE05BCB1365L;
     public static final long ADDEND = 0xBL;
     /** The generator only keeps 48 bits of state. */
     public static final long MASK = (1L << 48) - 1;
@@ -45,11 +47,13 @@ public final class JavaRandom {
         return (int) (state >>> (48 - bits));
     }
 
+    @Override
     public int nextInt() {
         return next(32);
     }
 
     /** A value in {@code [0, bound)}, drawn exactly like {@code java.util.Random#nextInt(int)}. */
+    @Override
     public int nextInt(int bound) {
         if (bound <= 0) {
             throw new IllegalArgumentException("bound must be positive, got " + bound);
@@ -66,20 +70,29 @@ public final class JavaRandom {
         return value;
     }
 
+    @Override
     public long nextLong() {
         return ((long) next(32) << 32) + next(32);
     }
 
+    @Override
     public boolean nextBoolean() {
         return next(1) != 0;
     }
 
+    @Override
     public float nextFloat() {
         return next(24) * 0x1.0p-24f;
     }
 
+    @Override
     public double nextDouble() {
         return (((long) next(26) << 27) + next(27)) * 0x1.0p-53;
+    }
+
+    @Override
+    public LegacyPositionalFactory forkPositional() {
+        return new LegacyPositionalFactory(nextLong());
     }
 
     /**

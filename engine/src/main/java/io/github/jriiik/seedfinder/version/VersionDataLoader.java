@@ -4,6 +4,8 @@ import com.google.gson.JsonArray;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
+import io.github.jriiik.seedfinder.bedrock.BedrockDimension;
+import io.github.jriiik.seedfinder.bedrock.BedrockRule;
 import io.github.jriiik.seedfinder.structure.ConcentricRingsPlacement;
 import io.github.jriiik.seedfinder.structure.DimensionOriginPlacement;
 import io.github.jriiik.seedfinder.structure.ExclusionZone;
@@ -42,7 +44,26 @@ public final class VersionDataLoader {
         JsonObject structureSets = readResource(base + "structure_sets.json").getAsJsonObject("structure_sets");
         JsonObject structures = readResource(base + "structures.json").getAsJsonObject("structures");
         JsonObject dimensions = readResource(base + "dimensions.json").getAsJsonObject("dimensions");
-        return new VersionData(version, parseStructureSets(structureSets), parseStructures(structures), parseDimensions(dimensions));
+        JsonObject bedrock = readResource(base + "bedrock.json").getAsJsonObject("dimensions");
+        return new VersionData(version, parseStructureSets(structureSets), parseStructures(structures), parseDimensions(dimensions),
+            parseBedrock(bedrock));
+    }
+
+    static Map<String, BedrockDimension> parseBedrock(JsonObject byId) {
+        Map<String, BedrockDimension> dimensions = new LinkedHashMap<>();
+        for (Map.Entry<String, JsonElement> entry : byId.entrySet()) {
+            String id = normalizeId(entry.getKey());
+            JsonObject json = entry.getValue().getAsJsonObject();
+            List<BedrockRule> rules = new ArrayList<>();
+            for (JsonElement element : json.getAsJsonArray("bedrock_rules")) {
+                JsonObject rule = element.getAsJsonObject();
+                rules.add(new BedrockRule(normalizeId(rule.get("random_name").getAsString()), rule.get("true_at_and_below").getAsInt(),
+                    rule.get("false_at_and_above").getAsInt(), rule.get("inverted").getAsBoolean()));
+            }
+            dimensions.put(id, new BedrockDimension(id, json.get("legacy_random_source").getAsBoolean(), json.get("min_y").getAsInt(),
+                json.get("height").getAsInt(), rules));
+        }
+        return dimensions;
     }
 
     static Map<String, Set<String>> parseDimensions(JsonObject byId) {
