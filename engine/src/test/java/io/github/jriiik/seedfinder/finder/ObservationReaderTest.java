@@ -51,6 +51,37 @@ class ObservationReaderTest {
     }
 
     @Test
+    void forgivingHeadersAndRows() {
+        List<BedrockObservation> expected = read("bedrock-heights 0 0", "0123").bedrock();
+        assertEquals(expected, read("bedrock heights 0 0", "0123").bedrock());
+        assertEquals(expected, read("bedrock-heights 0 0   # my base", "0123   # first row").bedrock());
+        assertEquals(expected, read("bedrock-heights 0 0", "-60, -61, -62, -63,").bedrock());
+        assertEquals(read("bedrock-heights nether 0 0", "3").bedrock(), read("bedrock-heights minecraft:the_nether 0 0", "3").bedrock());
+        assertEquals(read("not-bedrock 1 -61 2").bedrock(), read("Not Bedrock 1 -61 2").bedrock());
+    }
+
+    @Test
+    void clearMessagesForCommonMistakes() {
+        assertTrue(message("bedrock-heights 12.300 -59.000 45.700", "0").contains("not a whole block coordinate"));
+        assertTrue(message("bedrock 30000001 -61 0").contains("outside the world"));
+        assertTrue(message("bedrock 99999999999 -61 0").contains("outside the world"));
+        ObservationReader.LineException rowAfterBlank = assertThrows(ObservationReader.LineException.class,
+            () -> read("bedrock-heights 0 0", "0123", "", "1230"));
+        assertEquals(3, rowAfterBlank.lineIndex());
+        assertTrue(rowAfterBlank.getMessage().contains("right below a bedrock-heights"), rowAfterBlank.getMessage());
+        ObservationReader.LineException badFirstRow = assertThrows(ObservationReader.LineException.class,
+            () -> read("bedrock-heights 0 0", "01x3"));
+        assertEquals(1, badFirstRow.lineIndex());
+        ObservationReader.LineException badLaterRow = assertThrows(ObservationReader.LineException.class,
+            () -> read("bedrock-layer 0 -61 0", "B..B", "B.,B"));
+        assertEquals(2, badLaterRow.lineIndex());
+    }
+
+    private static String message(String... lines) {
+        return assertThrows(ObservationReader.LineException.class, () -> read(lines)).getMessage();
+    }
+
+    @Test
     void netherHeightsUseTheNetherFloor() {
         assertEquals(List.of(block(NETHER, 5, 3, 7, true), block(NETHER, 5, 4, 7, false)), read("bedrock-heights nether 5 7", "3").bedrock());
     }

@@ -3,6 +3,10 @@ package io.github.jriiik.seedfinder.cli;
 import io.github.jriiik.seedfinder.finder.ObservationReader;
 import io.github.jriiik.seedfinder.version.VersionData;
 import java.io.IOException;
+import java.nio.ByteBuffer;
+import java.nio.charset.CharacterCodingException;
+import java.nio.charset.Charset;
+import java.nio.charset.CodingErrorAction;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -20,13 +24,13 @@ import picocli.CommandLine;
 record ObservationInput(Path file, List<String> lines, int fromFile) {
 
     /** Lines that belong to bedrock notes, for which the structure hint would not help. */
-    private static final Pattern BEDROCK_LINE = Pattern.compile("(?i)\\s*((not-|no-)?bedrock.*|[0-9?bB.,;\\s-]+)");
+    private static final Pattern BEDROCK_LINE = Pattern.compile("(?i)\\s*((not[- ]|no[- ])?bedrock.*|[0-9?bB.,;\\s-]+)");
 
     static ObservationInput of(CommandLine commandLine, Path file, List<String> arguments) {
         List<String> lines = new ArrayList<>();
         if (file != null) {
             try {
-                lines.addAll(Files.readAllLines(file, StandardCharsets.UTF_8));
+                lines.addAll(decode(Files.readAllBytes(file)).lines().toList());
             } catch (IOException e) {
                 throw new CommandLine.ParameterException(commandLine, "Can't read the file " + file + " (" + e.getMessage() + ")");
             }
@@ -34,6 +38,29 @@ record ObservationInput(Path file, List<String> lines, int fromFile) {
         int fromFile = lines.size();
         lines.addAll(arguments);
         return new ObservationInput(file, lines, fromFile);
+    }
+
+    /**
+     * Text files come in several encodings: UTF-8 (with or without the marker Notepad adds), UTF-16 (what Windows
+     * PowerShell writes when output is saved with '>'), or the old Windows encoding.
+     */
+    static String decode(byte[] bytes) {
+        if (bytes.length >= 2 && (bytes[0] & 0xFF) == 0xFF && (bytes[1] & 0xFF) == 0xFE) {
+            return new String(bytes, 2, bytes.length - 2, StandardCharsets.UTF_16LE);
+        }
+        if (bytes.length >= 2 && (bytes[0] & 0xFF) == 0xFE && (bytes[1] & 0xFF) == 0xFF) {
+            return new String(bytes, 2, bytes.length - 2, StandardCharsets.UTF_16BE);
+        }
+        int start = bytes.length >= 3 && (bytes[0] & 0xFF) == 0xEF && (bytes[1] & 0xFF) == 0xBB && (bytes[2] & 0xFF) == 0xBF ? 3 : 0;
+        try {
+            return StandardCharsets.UTF_8.newDecoder()
+                .onMalformedInput(CodingErrorAction.REPORT)
+                .onUnmappableCharacter(CodingErrorAction.REPORT)
+                .decode(ByteBuffer.wrap(bytes, start, bytes.length - start))
+                .toString();
+        } catch (CharacterCodingException notUtf8) {
+            return new String(bytes, Charset.forName("windows-1252"));
+        }
     }
 
     boolean isEmpty() {

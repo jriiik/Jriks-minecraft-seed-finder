@@ -388,7 +388,10 @@ final class BedrockOracle {
 
     /**
      * Generates chunks the way a server does (ChunkMap / ChunkStatusTasks), without a server: BIOMES for the chunk and
-     * its neighbours, then TERRAIN. No structures are placed; they come later and don't change these steps' output.
+     * its neighbours, then TERRAIN. On a server, structure starts come first and the noise fill adapts the terrain
+     * around them (the "beardifier"); this harness leaves structures out. That is fine for the bedrock layers (with
+     * real structures, 0 blocks changed at y=-64..-59 in the research runs), but not for other blocks: don't record
+     * other terrain with it without adding real structures.
      */
     static final class ChunkHarness {
         final NoiseBasedChunkGenerator generator;

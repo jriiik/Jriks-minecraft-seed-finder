@@ -73,9 +73,12 @@ final class FindCommand implements Callable<Integer> {
         ObservationReader.Observations read = input.read(commandLine, data);
         List<StructureObservation> observations = read.structures();
         BedrockEvidence bedrock = new BedrockEvidence(read.bedrock());
-        int threadCount = threads > 0 ? threads : Runtime.getRuntime().availableProcessors();
+        int threadCount = Threads.resolve(commandLine, threads);
+        if (observations.isEmpty() && read.bedrock().isEmpty()) {
+            throw new CommandLine.ParameterException(commandLine, "Tell me which structures you saw, for example: seedfinder find igloo:48,208 village:336,80");
+        }
         if (observations.isEmpty()) {
-            out.println("The file has bedrock notes but no structures. Bedrock alone can't find the structure seed yet:");
+            out.println("There are bedrock notes but no structures. Bedrock alone can't find the structure seed yet:");
             out.println("add about 6 structures, or if you know the structure seed, use 'seedfinder full-seed <structure seed>'.");
             return 1;
         }
@@ -114,14 +117,16 @@ final class FindCommand implements Callable<Integer> {
             return 1;
         }
         out.println();
+        boolean named = false;
         if (found.size() <= FullSeedFinder.MAX_STRUCTURE_SEEDS) {
-            FullSeedReport.run(out, data, found, bedrock, threadCount);
+            named = FullSeedReport.run(out, data, found, bedrock, threadCount);
         } else if (!read.bedrock().isEmpty()) {
             out.println("Too many structure seeds to check the bedrock against; add more structures first.");
         }
         out.println();
         out.println("To compare with a world whose seed you know: seedfinder structure-seed <that world's seed>");
-        return 0;
+        // Without bedrock, finding the structure seed is the result; with bedrock, the full seed has to come out too.
+        return read.bedrock().isEmpty() || named ? 0 : 1;
     }
 
     private static void report(PrintWriter out, List<Long> found, List<String> suggestions) {

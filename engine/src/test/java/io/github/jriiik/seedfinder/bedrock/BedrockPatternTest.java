@@ -107,6 +107,18 @@ class BedrockPatternTest {
     }
 
     @Test
+    void thereIsNoBedrockOutsideTheGeneratedWorld() {
+        BedrockPattern nether = new BedrockPattern(DATA.bedrockDimension("nether").orElseThrow(), 12345L);
+        BedrockPattern overworld = new BedrockPattern(DATA.bedrockDimension("overworld").orElseThrow(), 12345L);
+        for (int x = 0; x < 16; x++) {
+            assertTrue(nether.isBedrock(x, 127, 0), "the nether roof");
+            assertFalse(nether.isBedrock(x, 128, 0), "air above the nether roof (checked in real chunks during the review)");
+            assertFalse(nether.isBedrock(x, -1, 0));
+            assertFalse(overworld.isBedrock(x, -65, 0));
+        }
+    }
+
+    @Test
     void floorTopIsTheHighestBedrockBlock() {
         BedrockPattern pattern = new BedrockPattern(DATA.bedrockDimension("overworld").orElseThrow(), 8091867987493326313L);
         for (int x = -20; x < 20; x++) {

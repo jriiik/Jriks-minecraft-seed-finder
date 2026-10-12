@@ -44,6 +44,6 @@ public final class BedrockText {
     }
 
     private static String dimensionWord(BedrockDimension dimension) {
-        return dimension.id().equals("minecraft:overworld") ? "" : " " + dimension.shortName().replaceFirst("^the_", "");
+        return dimension.id().equals("minecraft:overworld") ? "" : " " + dimension.displayName();
     }
 }

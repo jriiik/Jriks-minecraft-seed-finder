@@ -8,6 +8,7 @@ import io.github.jriiik.seedfinder.version.VersionData;
 import java.io.PrintWriter;
 import java.nio.file.Path;
 import java.util.ArrayList;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.concurrent.Callable;
 import picocli.CommandLine;
@@ -73,6 +74,7 @@ final class FullSeedCommand implements Callable<Integer> {
                     + Seeds.STRUCTURE_SEED_MASK + ". For a world seed you know, use 'seedfinder structure-seed'.");
             }
         }
+        structureSeeds = new ArrayList<>(new LinkedHashSet<>(structureSeeds));
         if (structureSeeds.size() > FullSeedFinder.MAX_STRUCTURE_SEEDS) {
             throw new CommandLine.ParameterException(commandLine, "Give at most " + FullSeedFinder.MAX_STRUCTURE_SEEDS + " structure seeds.");
         }
@@ -85,7 +87,7 @@ final class FullSeedCommand implements Callable<Integer> {
             evidence.problems().forEach(problem -> out.println("Can't use the bedrock notes: " + problem + "."));
             return 1;
         }
-        int threadCount = threads > 0 ? threads : Runtime.getRuntime().availableProcessors();
+        int threadCount = Threads.resolve(commandLine, threads);
         return FullSeedReport.run(out, data, structureSeeds, evidence, threadCount) ? 0 : 1;
     }
 }

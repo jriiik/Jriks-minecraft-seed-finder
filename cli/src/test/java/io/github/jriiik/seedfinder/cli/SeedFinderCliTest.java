@@ -116,7 +116,7 @@ class SeedFinderCliTest {
         assertEquals(17, lines.size(), bedrock.out());
         assertEquals("bedrock-heights 0 0", lines.get(0));
         java.nio.file.Path file = folder.resolve("world.txt");
-        java.nio.file.Files.write(file, lines);
+        java.nio.file.Files.writeString(file, bedrock.out()); // the whole output is a valid notes file
 
         Result result = run(find(java.util.stream.Stream.concat(java.util.stream.Stream.of("--file", file.toString()),
             java.util.Arrays.stream(EXAMPLE)).toArray(String[]::new)));
@@ -135,7 +135,7 @@ class SeedFinderCliTest {
     void fullSeedPointsAtBlocksThatDontFit(@org.junit.jupiter.api.io.TempDir java.nio.file.Path folder) throws java.io.IOException {
         List<String> lines = new java.util.ArrayList<>(run("bedrock", "--seed", "-4964420948893066024").out().lines()
             .dropWhile(line -> !line.startsWith("bedrock-heights")).toList());
-        char[] row = lines.get(5).toCharArray();
+        char[] row = lines.get(5).toCharArray(); // row z=4
         row[3] = row[3] == '0' ? '1' : '0';
         lines.set(5, new String(row));
         java.nio.file.Path file = folder.resolve("bedrock.txt");
@@ -149,8 +149,7 @@ class SeedFinderCliTest {
     @Test
     void fullSeedWithASmallPatchSaysWhereToDig(@org.junit.jupiter.api.io.TempDir java.nio.file.Path folder) throws java.io.IOException {
         java.nio.file.Path file = folder.resolve("bedrock.txt");
-        java.nio.file.Files.write(file, run("bedrock", "--seed", "-5090009733490601899", "--at", "1000,-2000", "--size", "4").out().lines()
-            .dropWhile(line -> !line.startsWith("bedrock-heights")).toList());
+        java.nio.file.Files.writeString(file, run("bedrock", "--seed", "-5090009733490601899", "--at", "1000,-2000", "--size", "4").out());
         Result result = run("full-seed", "183745344901205", "--file", file.toString());
         assertEquals(0, result.exitCode(), result.err());
         assertTrue(result.out().contains("8 world seeds fit all of your bedrock:"), result.out());
@@ -172,6 +171,70 @@ class SeedFinderCliTest {
         Result impossible = run("full-seed", "12345", "--file", file.toString());
         assertEquals(1, impossible.exitCode());
         assertTrue(impossible.out().contains("the overworld always has bedrock at y=-64"), impossible.out());
+    }
+
+    @Test
+    void notesFilesInOtherEncodingsWork(@org.junit.jupiter.api.io.TempDir java.nio.file.Path folder) throws java.io.IOException {
+        String notes = run("bedrock", "--seed", "12345").out().replace("\n", "\r\n");
+        java.nio.file.Path bom = folder.resolve("bom.txt");
+        java.nio.file.Files.write(bom, ("\uFEFF" + notes).getBytes(java.nio.charset.StandardCharsets.UTF_8));
+        java.nio.file.Path utf16 = folder.resolve("utf16.txt");
+        java.nio.file.Files.write(utf16, ("\uFEFF" + notes).getBytes(java.nio.charset.StandardCharsets.UTF_16LE));
+        java.nio.file.Path ansi = folder.resolve("ansi.txt");
+        java.nio.file.Files.write(ansi, ("# B\u00e4ume\r\n" + notes).getBytes(java.nio.charset.Charset.forName("windows-1252")));
+        for (java.nio.file.Path file : List.of(bom, utf16, ansi)) {
+            Result result = run("full-seed", "12345", "--threads", "2", "--file", file.toString());
+            assertTrue(result.out().contains("Found the full seed: 12345\n"), file + ": " + result.out() + result.err());
+        }
+    }
+
+    @Test
+    void netherBedrockPicksTheStructureSeed(@org.junit.jupiter.api.io.TempDir java.nio.file.Path folder) throws java.io.IOException {
+        java.nio.file.Path file = folder.resolve("nether.txt");
+        java.nio.file.Files.writeString(file, run("bedrock", "--seed", "12345", "--dimension", "nether").out());
+        Result result = run("full-seed", "25357015387625", "12345", "--file", file.toString());
+        assertEquals(0, result.exitCode(), result.out() + result.err());
+        assertTrue(result.out().contains("Nether bedrock: of the 2 structure seeds, only 12345 fits all"), result.out());
+        assertTrue(result.out().contains("it is 5794443870565576761."), result.out());
+
+        java.nio.file.Files.write(file, List.of("bedrock-heights nether 0 0", "01234"));
+        Result wrong = run("full-seed", "12345", "--file", file.toString());
+        assertEquals(1, wrong.exitCode(), wrong.out());
+        assertTrue(wrong.out().contains("Your nether bedrock doesn't fit"), wrong.out());
+        assertTrue(wrong.out().contains(" in the nether, this seed says"), wrong.out());
+        assertFalse(wrong.out().contains("it is 5794443870565576761"), "no seed may be named when the nether notes don't fit");
+    }
+
+    @Test
+    void likelySeedsForSpecialCases() {
+        Result twice = run("full-seed", "12345", "12345");
+        assertEquals(0, twice.exitCode(), twice.out());
+        assertTrue(twice.out().contains("it is 5794443870565576761."), twice.out());
+        // 0 can be typed and is also a seed Minecraft can pick by itself.
+        Result zero = run("full-seed", "0");
+        assertTrue(zero.out().contains("(Minecraft then picks one), it is 0"), zero.out());
+        assertTrue(zero.out().contains("or as a short number, it is 0."), zero.out());
+    }
+
+    @Test
+    void findNeedsSomethingToWorkWith(@org.junit.jupiter.api.io.TempDir java.nio.file.Path folder) throws java.io.IOException {
+        java.nio.file.Path comments = folder.resolve("comments.txt");
+        java.nio.file.Files.write(comments, List.of("# my world", "# nothing yet"));
+        assertEquals(2, run(find("--file", comments.toString())).exitCode());
+        assertEquals(2, run(find("# hi")).exitCode());
+        assertEquals(2, run(find("--threads", "40000", "igloo:48,208")).exitCode());
+        assertEquals(2, run("full-seed", "12345", "--threads", "40000").exitCode());
+    }
+
+    @Test
+    void findFailsWhenTheBedrockDoesNotFit(@org.junit.jupiter.api.io.TempDir java.nio.file.Path folder) throws java.io.IOException {
+        java.nio.file.Path file = folder.resolve("other-world.txt");
+        java.nio.file.Files.writeString(file, run("bedrock", "--seed", "999").out());
+        Result result = run(find(java.util.stream.Stream.concat(java.util.stream.Stream.of("--file", file.toString()),
+            java.util.Arrays.stream(EXAMPLE)).toArray(String[]::new)));
+        assertEquals(1, result.exitCode(), result.out());
+        assertTrue(result.out().contains("Found the structure seed: 12345\n"), result.out());
+        assertTrue(result.out().contains("No world seed fits"), result.out());
     }
 
     @Test

@@ -6,6 +6,6 @@ public record BedrockObservation(BedrockDimension dimension, int x, int y, int z
     @Override
     public String toString() {
         return (bedrock ? "bedrock" : "no bedrock") + " at (" + x + ", " + y + ", " + z + ")"
-            + (dimension.id().equals("minecraft:overworld") ? "" : " in " + dimension.shortName());
+            + (dimension.id().equals("minecraft:overworld") ? "" : " in the " + dimension.displayName());
     }
 }

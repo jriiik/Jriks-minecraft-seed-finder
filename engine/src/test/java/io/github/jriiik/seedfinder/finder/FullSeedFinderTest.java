@@ -170,6 +170,47 @@ class FullSeedFinderTest {
         assertTrue(FullSeedFinder.expectedFalseFits(633) < 0.02, "a whole chunk of heights must count as certain");
     }
 
+    /** The search skips work with limits shared between threads; it must still give exactly the best seeds. */
+    @Test
+    void theSearchGivesExactlyTheBestSeedsOfABruteForceCheck() {
+        long seed = 8091867987493326313L;
+        List<BedrockObservation> observations = new ArrayList<>(heights(seed, 40, -70, 4));
+        observations.addAll(ObservationReader.read(DATA, BedrockText.heights(new BedrockPattern(NETHER, seed), 0, 0, 2, 2)).bedrock());
+        BedrockEvidence evidence = new BedrockEvidence(observations);
+        List<Long> structureSeeds = List.of(Seeds.structureSeed(seed) ^ 5, Seeds.structureSeed(seed), 12345L);
+        List<FullSeedFinder.Candidate> all = new ArrayList<>();
+        for (long structureSeed : structureSeeds) {
+            int nether = evidence.structureSeedMismatches(structureSeed);
+            for (long upper = 0; upper < 1 << 16; upper++) {
+                long worldSeed = upper << 48 | structureSeed;
+                all.add(new FullSeedFinder.Candidate(worldSeed, nether + evidence.fullSeedMismatches(worldSeed, Integer.MAX_VALUE),
+                    FullSeedFinder.originOf(worldSeed)));
+            }
+        }
+        all.sort(java.util.Comparator.comparingInt(FullSeedFinder.Candidate::mismatches)
+            .thenComparing(FullSeedFinder.Candidate::origin).thenComparingLong(FullSeedFinder.Candidate::worldSeed));
+        for (int threads : new int[] {1, 3, 8}) {
+            FullSeedFinder.Result result = new FullSeedFinder(structureSeeds, evidence).search(threads);
+            assertEquals(all.subList(0, FullSeedFinder.MAX_CANDIDATES), result.candidates(), threads + " threads");
+            assertEquals(all.stream().filter(c -> c.mismatches() == 0).count(), result.perfectFits());
+        }
+    }
+
+    @Test
+    void notesOutsideTheGeneratedWorld() {
+        BedrockEvidence aboveTheNether = new BedrockEvidence(List.of(new BedrockObservation(NETHER, 0, 128, 0, false)));
+        assertEquals(List.of(), aboveTheNether.problems(), "y=128 is air above the nether roof");
+        BedrockEvidence wrong = new BedrockEvidence(List.of(
+            new BedrockObservation(NETHER, 0, 200, 0, true),
+            new BedrockObservation(OVERWORLD, 0, -65, 0, false),
+            new BedrockObservation(OVERWORLD, 1, -61, 1, true),
+            new BedrockObservation(OVERWORLD, 1, -61, 1, false),
+            new BedrockObservation(OVERWORLD, 1, -61, 1, false)));
+        assertEquals(3, wrong.problems().size(), wrong.problems().toString());
+        assertTrue(wrong.problems().get(0).contains("the nether never has bedrock at y=200"), wrong.problems().toString());
+        assertTrue(wrong.problems().get(1).contains("below the bottom of the overworld"), wrong.problems().toString());
+    }
+
     @Test
     void impossibleNotesAreReported() {
         List<BedrockObservation> observations = List.of(

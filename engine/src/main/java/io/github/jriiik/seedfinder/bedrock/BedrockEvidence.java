@@ -5,9 +5,11 @@ import io.github.jriiik.seedfinder.rng.WorldgenSeeds;
 import io.github.jriiik.seedfinder.rng.XoroshiroRandom;
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 /**
  * Bedrock observations prepared for checking many seeds quickly.
@@ -42,22 +44,32 @@ public final class BedrockEvidence {
     public BedrockEvidence(List<BedrockObservation> observations) {
         this.all = List.copyOf(observations);
         Map<String, BedrockObservation> seen = new LinkedHashMap<>();
+        Set<String> reported = new HashSet<>();
         int problemCount = 0;
         List<String> names = new ArrayList<>();
         List<BedrockRule> fullSeedRules = new ArrayList<>();
         for (BedrockObservation observation : all) {
             String key = observation.dimension().id() + " " + observation.x() + " " + observation.y() + " " + observation.z();
             BedrockObservation earlier = seen.putIfAbsent(key, observation);
+            String at = "(" + observation.x() + ", " + observation.y() + ", " + observation.z() + ")";
             if (earlier != null) {
-                if (earlier.bedrock() != observation.bedrock()) {
-                    problemCount = addProblem(problemCount, "the block at (" + observation.x() + ", " + observation.y() + ", "
-                        + observation.z() + ") is marked both as bedrock and as not bedrock");
+                if (earlier.bedrock() != observation.bedrock() && reported.add(key)) {
+                    problemCount = addProblem(problemCount, "the block at " + at + " is marked both as bedrock and as not bedrock");
                 }
+                continue;
+            }
+            BedrockDimension dimension = observation.dimension();
+            if (observation.y() < dimension.minY()) {
+                problemCount = addProblem(problemCount, "y=" + observation.y() + " is below the bottom of the " + dimension.displayName()
+                    + " (y=" + dimension.minY() + "), so " + at + " can't be noted");
                 continue;
             }
             List<BedrockRule> random = new ArrayList<>();
             boolean certainBedrock = false;
-            for (BedrockRule rule : observation.dimension().rules()) {
+            for (BedrockRule rule : dimension.rules()) {
+                if (!dimension.isGenerated(observation.y())) {
+                    break; // above the generated part: never bedrock
+                }
                 if (rule.isRandomAt(observation.y())) {
                     random.add(rule);
                 } else if (rule.fixedBedrockAt(observation.y())) {
@@ -67,9 +79,9 @@ public final class BedrockEvidence {
             if (certainBedrock || random.isEmpty()) {
                 uninformative++;
                 if (certainBedrock != observation.bedrock()) {
-                    problemCount = addProblem(problemCount, "the " + observation.dimension().shortName() + (certainBedrock ? " always" : " never")
-                        + " has bedrock at y=" + observation.y() + ", but the block at (" + observation.x() + ", " + observation.y() + ", "
-                        + observation.z() + ") is marked as " + (observation.bedrock() ? "bedrock" : "not bedrock"));
+                    problemCount = addProblem(problemCount, "the " + dimension.displayName() + (certainBedrock ? " always" : " never")
+                        + " has bedrock at y=" + observation.y() + ", but the block at " + at + " is marked as "
+                        + (observation.bedrock() ? "bedrock" : "not bedrock"));
                 }
             } else if (random.size() > 1) {
                 throw new IllegalArgumentException("Overlapping bedrock rules at y=" + observation.y() + " are not supported");

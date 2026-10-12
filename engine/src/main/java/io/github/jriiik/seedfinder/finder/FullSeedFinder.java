@@ -14,6 +14,7 @@ import java.util.List;
 import java.util.OptionalLong;
 import java.util.Set;
 import java.util.concurrent.ForkJoinPool;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.stream.IntStream;
 
 /**
@@ -31,8 +32,13 @@ import java.util.stream.IntStream;
  */
 public final class FullSeedFinder {
 
-    /** Checking all upper bits takes a few milliseconds per structure seed; more than this many is too slow. */
+    /**
+     * Checking all 65,536 seeds of one structure seed against a chunk of bedrock takes about 0.05 to 0.15 seconds of
+     * CPU time (less when the nether notes rule the structure seed out); more structure seeds than this is too slow.
+     */
     public static final int MAX_STRUCTURE_SEEDS = 1000;
+    /** ForkJoinPool can't use more threads than this. */
+    private static final int MAX_THREADS = 32_767;
     /** How many of the best seeds are kept. */
     public static final int MAX_CANDIDATES = 20;
     private static final int UPPER_VALUES = 1 << 16;
@@ -51,6 +57,14 @@ public final class FullSeedFinder {
 
     /** A possible world seed and how many observations it gets wrong. */
     public record Candidate(long worldSeed, int mismatches, Origin origin) {
+
+        /**
+         * True when typing text or a short number can give this seed. That can be true for a {@link Origin#RANDOM} seed
+         * too: a few short numbers, 0 among them, are also seeds Minecraft can pick by itself.
+         */
+        public boolean couldBeTyped() {
+            return worldSeed == (int) worldSeed;
+        }
     }
 
     /**
@@ -130,6 +144,13 @@ public final class FullSeedFinder {
         }
         int blocksPerSeed = UPPER_VALUES / BLOCK_SIZE;
         int[] structureMismatches = structureSeeds.stream().mapToInt(evidence::structureSeedMismatches).toArray();
+        // Structure seeds the nether notes fit best go first, so the shared limit below gets tight early.
+        int[] order = IntStream.range(0, structureSeeds.size()).boxed()
+            .sorted(Comparator.comparingInt(index -> structureMismatches[index]))
+            .mapToInt(Integer::intValue).toArray();
+        // Any block whose list of best candidates is full proves that the overall best list can't contain a candidate
+        // with more mismatches than its worst one, so all blocks may skip such candidates.
+        AtomicInteger sharedLimit = new AtomicInteger(Integer.MAX_VALUE);
         List<Set<Long>> randomSeeds = structureSeeds.stream()
             .map(seed -> {
                 Set<Long> set = new HashSet<>();
@@ -139,14 +160,14 @@ public final class FullSeedFinder {
                 return set;
             })
             .toList();
-        ForkJoinPool pool = new ForkJoinPool(Math.max(1, threads));
+        ForkJoinPool pool = new ForkJoinPool(Math.clamp(threads, 1, MAX_THREADS));
         try {
             List<BlockResult> blocks = pool.submit(() -> IntStream.range(0, structureSeeds.size() * blocksPerSeed).parallel()
                 .mapToObj(block -> {
-                    int seedIndex = block / blocksPerSeed;
+                    int seedIndex = order[block / blocksPerSeed];
                     long structureSeed = structureSeeds.get(seedIndex);
                     int firstUpper = (block % blocksPerSeed) * BLOCK_SIZE;
-                    return searchBlock(structureSeed, structureMismatches[seedIndex], randomSeeds.get(seedIndex), firstUpper);
+                    return searchBlock(structureSeed, structureMismatches[seedIndex], randomSeeds.get(seedIndex), firstUpper, sharedLimit);
                 })
                 .toList()).join();
             List<Candidate> merged = blocks.stream()
@@ -165,13 +186,15 @@ public final class FullSeedFinder {
     }
 
     /** The best {@link #MAX_CANDIDATES} seeds among one block of upper-bit values. */
-    private BlockResult searchBlock(long structureSeed, int structureMismatches, Set<Long> randomSeeds, int firstUpper) {
+    private BlockResult searchBlock(long structureSeed, int structureMismatches, Set<Long> randomSeeds, int firstUpper,
+                                    AtomicInteger sharedLimit) {
         OptionalLong text = Seeds.textSeedCandidate(structureSeed);
         List<Candidate> best = new ArrayList<>(MAX_CANDIDATES + 1);
         long perfectFits = 0;
         for (int upper = firstUpper; upper < firstUpper + BLOCK_SIZE; upper++) {
             long worldSeed = (long) upper << 48 | structureSeed;
-            int limit = best.size() < MAX_CANDIDATES ? Integer.MAX_VALUE : best.get(best.size() - 1).mismatches();
+            int ownLimit = best.size() < MAX_CANDIDATES ? Integer.MAX_VALUE : best.get(best.size() - 1).mismatches();
+            int limit = Math.min(ownLimit, sharedLimit.get());
             if (structureMismatches > limit) {
                 break;
             }
@@ -194,6 +217,9 @@ public final class FullSeedFinder {
                 best.add(position, candidate);
                 if (best.size() > MAX_CANDIDATES) {
                     best.remove(best.size() - 1);
+                }
+                if (best.size() == MAX_CANDIDATES) {
+                    sharedLimit.accumulateAndGet(best.get(MAX_CANDIDATES - 1).mismatches(), Math::min);
                 }
             }
         }

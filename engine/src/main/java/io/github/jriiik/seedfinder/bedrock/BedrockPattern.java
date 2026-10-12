@@ -28,6 +28,9 @@ public final class BedrockPattern {
     }
 
     public boolean isBedrock(int x, int y, int z) {
+        if (!dimension.isGenerated(y)) {
+            return false;
+        }
         for (int i = 0; i < factories.length; i++) {
             if (rules.get(i).isBedrock(factories[i], x, y, z)) {
                 return true;

@@ -25,6 +25,11 @@ public record BedrockDimension(String id, boolean legacyRandomSource, int minY, 
         return !legacyRandomSource;
     }
 
+    /** True when the game generates blocks at this height (outside of it there is nothing, or only air above). */
+    public boolean isGenerated(int y) {
+        return y >= minY && y < minY + height;
+    }
+
     /** True when some bedrock rule makes the block at this height random. */
     public boolean isRandomAt(int y) {
         return rules.stream().anyMatch(rule -> rule.isRandomAt(y));
@@ -38,5 +43,10 @@ public record BedrockDimension(String id, boolean legacyRandomSource, int minY, 
     /** A short name for messages: "overworld", "the_nether"... */
     public String shortName() {
         return id.startsWith("minecraft:") ? id.substring("minecraft:".length()) : id;
+    }
+
+    /** The name people use: "overworld", "nether", "end". */
+    public String displayName() {
+        return shortName().replaceFirst("^the_", "");
     }
 }

@@ -49,10 +49,15 @@ public final class ObservationReader {
         }
     }
 
-    private static final Pattern HEADER = Pattern.compile("(?i)(bedrock-heights|bedrock-layer|not-bedrock|no-bedrock|bedrock)(?=$|[\\s:,(\\[])(.*)");
+    private static final Pattern HEADER = Pattern.compile(
+        "(?i)(bedrock[- ]heights|bedrock[- ]layer|not[- ]bedrock|no[- ]bedrock|bedrock)(?=$|[\\s:,(\\[])(.*)");
     private static final Pattern NUMBER_ROW = Pattern.compile("(?:-?\\d+|\\?)(?:[\\s,;]+(?:-?\\d+|\\?))*");
     private static final Pattern DIGIT_ROW = Pattern.compile("[0-9?]+");
     private static final Pattern LAYER_ROW = Pattern.compile("[bB.?]+");
+    /** Lines made only of grid characters: rows of bedrock notes. */
+    private static final Pattern ROW_LIKE = Pattern.compile("[0-9?.\\-,;\\s]+|[bB.?\\s]+");
+    /** Minecraft's world border. */
+    private static final int WORLD_LIMIT = 30_000_000;
 
     private ObservationReader() {
     }
@@ -63,14 +68,18 @@ public final class ObservationReader {
         int i = 0;
         while (i < lines.size()) {
             String text = lines.get(i).strip();
-            Matcher header = HEADER.matcher(text);
+            Matcher header = HEADER.matcher(withoutComment(text));
             try {
                 if (!header.matches()) {
+                    if (!text.startsWith("#") && ROW_LIKE.matcher(withoutComment(text)).matches()) {
+                        throw new IllegalArgumentException("this line has no structure name. If it is a row of bedrock notes, it "
+                            + "must be right below a bedrock-heights or bedrock-layer line (an empty line ends the rows)");
+                    }
                     ObservationParser.parseLine(data, text).ifPresent(structures::add);
                     i++;
                     continue;
                 }
-                String keyword = header.group(1).toLowerCase(Locale.ROOT);
+                String keyword = header.group(1).toLowerCase(Locale.ROOT).replace(' ', '-');
                 Arguments arguments = arguments(data, header.group(2));
                 switch (keyword) {
                     case "bedrock", "not-bedrock", "no-bedrock" -> {
@@ -100,10 +109,33 @@ public final class ObservationReader {
         return new Observations(structures, bedrock);
     }
 
+    /** A bedrock line without a trailing "# comment" (structure lines keep theirs: /locate output can contain '#'). */
+    private static String withoutComment(String text) {
+        int hash = text.indexOf('#');
+        return hash < 0 ? text : text.substring(0, hash).strip();
+    }
+
+    /**
+     * Whether a line that is not a valid row ends the grid. The first line below a header must be a row, and a line
+     * made of grid characters is a broken row, so mistakes there are reported instead of ending the grid silently.
+     */
+    private static boolean endsGrid(String row, boolean valid, int rowsSoFar, int index, String example) {
+        if (valid) {
+            return false;
+        }
+        if (rowsSoFar == 0 && !row.isEmpty()) {
+            throw new LineException(index, "expected a row like " + example + " here");
+        }
+        if (!row.isEmpty() && ROW_LIKE.matcher(row).matches()) {
+            throw new LineException(index, "this row has a character that doesn't belong in it; use " + example);
+        }
+        return true;
+    }
+
     private static int readHeights(List<String> lines, int headerIndex, Arguments arguments, List<BedrockObservation> out) {
         BedrockDimension dimension = arguments.dimension;
         BedrockRule floor = dimension.floor().orElseThrow(() ->
-            new IllegalArgumentException("the " + dimension.shortName() + " has no random bedrock floor"));
+            new IllegalArgumentException("the " + dimension.displayName() + " has no random bedrock floor"));
         int lowest = floor.trueAtAndBelow();
         int highest = floor.falseAtAndAbove() - 1;
         int x0 = arguments.numbers.get(0);
@@ -111,14 +143,14 @@ public final class ObservationReader {
         int row = 0;
         int i = headerIndex + 1;
         for (; i < lines.size(); i++) {
-            String text = lines.get(i).strip();
-            if (text.startsWith("#")) {
+            if (lines.get(i).strip().startsWith("#")) {
                 continue;
             }
+            String text = withoutComment(lines.get(i).strip()).replaceFirst("[\\s,;]+$", "");
             // Either full heights with a minus sign ("-60 -61 ?"), or one last digit per column ("01?2", "0 1 ? 2").
             boolean numbers = text.contains("-") && NUMBER_ROW.matcher(text).matches();
             String compact = text.replaceAll("[\\s,;]+", "");
-            if (text.isEmpty() || !numbers && !DIGIT_ROW.matcher(compact).matches()) {
+            if (endsGrid(text, numbers || !compact.isEmpty() && DIGIT_ROW.matcher(compact).matches(), row, i, "0120 (digits 0-4)")) {
                 break;
             }
             List<String> cells = numbers ? List.of(text.split("[\\s,;]+")) : compact.chars().mapToObj(Character::toString).toList();
@@ -135,7 +167,7 @@ public final class ObservationReader {
                     throw new LineException(i, e instanceof NumberFormatException ? "'" + cell + "' is not a height" : e.getMessage());
                 }
                 if (top < lowest || top > highest) {
-                    throw new LineException(i, "a top bedrock height of " + top + " is impossible; the " + dimension.shortName()
+                    throw new LineException(i, "a top bedrock height of " + top + " is impossible; the " + dimension.displayName()
                         + " bedrock floor is between y=" + lowest + " and y=" + highest);
                 }
                 int x = x0 + column;
@@ -174,12 +206,12 @@ public final class ObservationReader {
         int row = 0;
         int i = headerIndex + 1;
         for (; i < lines.size(); i++) {
-            String text = lines.get(i).strip();
-            if (text.startsWith("#")) {
+            if (lines.get(i).strip().startsWith("#")) {
                 continue;
             }
+            String text = withoutComment(lines.get(i).strip());
             String compact = text.replaceAll("\\s+", "");
-            if (compact.isEmpty() || !LAYER_ROW.matcher(compact).matches()) {
+            if (endsGrid(text, !compact.isEmpty() && LAYER_ROW.matcher(compact).matches(), row, i, "B..B (B = bedrock, . = anything else)")) {
                 break;
             }
             for (int column = 0; column < compact.length(); column++) {
@@ -207,26 +239,34 @@ public final class ObservationReader {
     }
 
     private static Arguments arguments(VersionData data, String text) {
-        String[] tokens = text.replaceAll("[\\[\\]():]", " ").strip().split("[\\s,;]+");
+        String[] tokens = text.replaceAll("[\\[\\]()]", " ").strip().split("[\\s,;]+");
         BedrockDimension dimension = null;
         List<Integer> numbers = new ArrayList<>();
-        for (String token : tokens) {
+        for (String raw : tokens) {
+            String token = raw.replaceAll("^:+|:+$", "");
             if (token.isEmpty() || token.equals("~")) {
                 continue;
             }
-            if (numbers.isEmpty() && dimension == null && !token.matches("-?\\d+")) {
+            if (numbers.isEmpty() && dimension == null && token.matches(".*[A-Za-z].*")) {
                 dimension = data.bedrockDimension(token).orElseThrow(() ->
                     new IllegalArgumentException("unknown dimension '" + token + "' (use overworld or nether)"));
                 if (dimension.rules().isEmpty()) {
-                    throw new IllegalArgumentException("the " + dimension.shortName() + " has no random bedrock");
+                    throw new IllegalArgumentException("the " + dimension.displayName() + " has no random bedrock");
                 }
                 continue;
             }
-            try {
-                numbers.add(Integer.parseInt(token));
-            } catch (NumberFormatException e) {
+            if (token.matches("-?\\d*[.]\\d+|-?\\d+[.]\\d*")) {
+                throw new IllegalArgumentException("'" + token + "' is not a whole block coordinate; use the block's position "
+                    + "(F3 shows it as \"Targeted Block\")");
+            }
+            if (!token.matches("-?\\d+")) {
                 throw new IllegalArgumentException("'" + token + "' is not a whole number");
             }
+            long value = token.length() > 12 ? Long.MAX_VALUE : Long.parseLong(token);
+            if (Math.abs(value) > WORLD_LIMIT) {
+                throw new IllegalArgumentException(token + " is outside the world (coordinates go from -30000000 to 30000000)");
+            }
+            numbers.add((int) value);
         }
         if (dimension == null) {
             dimension = data.bedrockDimension("overworld").orElseThrow();

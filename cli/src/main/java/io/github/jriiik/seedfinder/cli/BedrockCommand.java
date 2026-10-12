@@ -17,7 +17,8 @@ import picocli.CommandLine.Command;
     name = "bedrock",
     mixinStandardHelpOptions = true,
     description = {
-        "Show the bedrock floor a world should have, in the format 'find' and 'full-seed' read.",
+        "Show the bedrock floor a world should have, in the format 'find' and 'full-seed' read (the explanation lines start "
+            + "with #, so the whole output can be saved as a notes file).",
         "Handy to check your notes against a world whose seed you know, or to see what the bedrock notes look like.",
     },
     footer = {
@@ -78,16 +79,16 @@ final class BedrockCommand implements Runnable {
         long worldSeed = parsed.getAsLong();
         BedrockPattern pattern = new BedrockPattern(bedrock, worldSeed);
 
-        out.printf("Bedrock floor of the %s for seed %d (Minecraft %s), %d x %d columns from block (%d, %d).%n",
+        out.printf("# Bedrock floor of the %s for seed %d (Minecraft %s), %d x %d columns from block (%d, %d).%n",
             dimension.displayName(), worldSeed, data.version(), size, size, corner[0], corner[1]);
         List<String> digits = new ArrayList<>();
         for (int y = floor.falseAtAndAbove() - 1; y >= floor.trueAtAndBelow(); y--) {
             digits.add(Math.abs(y) % 10 + " = y " + y);
         }
-        out.println("Each digit is the last digit of the height of the top bedrock block: " + String.join(", ", digits) + ".");
-        out.println("Rows go from north to south (z), each row from west to east (x).");
+        out.println("# Each digit is the last digit of the height of the top bedrock block: " + String.join(", ", digits) + ".");
+        out.println("# Rows go from north to south (z), each row from west to east (x).");
         if (!bedrock.dependsOnFullSeed()) {
-            out.println("Bedrock here only depends on the structure seed, " + Seeds.structureSeed(worldSeed) + ".");
+            out.println("# Bedrock here only depends on the structure seed, " + Seeds.structureSeed(worldSeed) + ".");
         }
         out.println();
         BedrockText.heights(pattern, corner[0], corner[1], size, size).forEach(out::println);
