@@ -17,7 +17,11 @@ anti-cheat evasion, hiding the mod from servers, or bypassing server-side seed p
   - `rng/`: `JavaRandom` (exact java.util.Random / LegacyRandomSource LCG with state access), `WorldgenSeeds`.
   - `structure/`: placements, `StructureLocator` (placement + frequency + exclusion zones; no biome checks yet).
   - `version/`: `MinecraftVersion` enum, data loaded from `src/main/resources/io/github/jriiik/seedfinder/versions/<v>/`.
-- `cli/`: picocli app `seedfinder` (`locate`, `structures`, `versions`).
+  - `finder/`: Phase 2 structure-seed search. `StructureSeedFinder` (plan + search), `ObservationCheck` (low-bit
+    lifting, fast checks, twin probabilities), `TopBitsSolver` (solves bits 35..47), `ObservationParser`.
+    The plan's wrong-seed estimate uses factors measured with probes (`SHARED_LOW_BITS_FACTOR`, linked temples);
+    `StructureSeedFinderTest.theWrongSeedEstimateMatchesReality` guards it. Re-measure if the search changes.
+- `cli/`: picocli app `seedfinder` (`find`, `structure-seed`, `locate`, `structures`, `versions`).
 - `tools/oracle/`: `run-oracle.sh <version>` downloads the official server jar into `tools/oracle/build/` and runs
   `Oracle.java` against the game's own code to write version data and test fixtures
   (`engine/src/test/resources/fixtures/<v>/`). Output is deterministic; rerunning must not change existing files.

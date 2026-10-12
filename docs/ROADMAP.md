@@ -24,19 +24,48 @@
 |---|---|---|
 | 0 | Project setup: Gradle build, engine + CLI modules, README, automatic builds | ✅ |
 | 1 | Engine basics for 26.3: Java's RNG, Minecraft's seeding helpers, structure placement (frequency rolls and exclusion zones included), checked against the real game | ✅ |
-| 2 | Find the 48-bit structure seed from a list of structure observations | ⏳ next |
-| 3 | Find the full 64-bit seed: the `nextLong()` shortcut first, then 26.3 biome generation | 🔜 |
-| 4 | CLI: observations file in, candidate seeds out, plus a `verify` command | 🔜 |
+| 2 | Find the 48-bit structure seed from a list of structure observations (`seedfinder find`) | ✅ |
+| 3 | Find the full 64-bit seed: the `nextLong()` shortcut first, then 26.3 biome generation | ⏳ next |
+| 4 | CLI polish: a `verify` command, saving results | 🔜 |
 | 5 | Fabric client mod: detects structures while you explore, shows progress, turned on per server | 🔜 |
 | 6 | Extras: more data sources (End pillars, other features), older versions, GPU speed-up | 🔜 |
 
-### Phase 2 plan
+### Phase 2: how the structure seed search works
 
-- Input: structure type plus chunk position (what `/locate` or F3 shows), for example "village at chunk (-88, -79)".
-- Each observation pins down roughly 9 to 10 bits of the 48-bit structure seed, so about 5 to 8 structures are enough.
-- Start with a correct, simple search (bit by bit where possible, multithreaded), then speed it up with lattice
-  reduction (solving the generator's equations directly).
-- Test it like Phase 1: pick seeds, take structure positions from the oracle, and require the search to find them.
+Each structure tries to start once per square region of the world; which chunk it picks comes from
+`nextInt(n)` on a seed made of the structure seed, the region and a per-structure "salt".
+
+1. **Low bits first.** When n is even (temples: 24 = 8 x 3, villages: 26 = 2 x 13...), the lowest bits of the
+   result only depend on the lowest 18 to 20 bits of the structure seed. All combinations of those are tried
+   (about a million) and only the few that fit every observation are kept.
+2. **Top bits solved, not searched.** Minecraft scrambles the seed with a 35-bit constant, so the top 13 bits pass
+   straight through. For each combination of the remaining middle bits, the top 13 bits that fit one observation
+   follow from a small modular equation (`TopBitsSolver`), instead of trying all 8192.
+3. **Check and confirm.** Every candidate gets fast position checks for all observations on all CPU cores, and
+   every hit is confirmed with the engine's complete rules (frequency rolls, exclusion zones).
+
+Typical searches take well under a second. Villages-only searches need more structures and can take a minute.
+
+**What we learned while testing:**
+
+- *Look-alike seeds.* Seeds that share the true seed's low bits shift every structure's roll in related ways, so
+  structures whose region sizes share odd factors (3 for temples and outposts, 13 for villages, 5 for shipwrecks)
+  tend to agree on them. Six structures of those kinds still leave about 3 look-alikes on average; one ruined
+  portal (25), abandoned camp (29), trial chamber (11) or ancient city (16) removes nearly all of them. The finder
+  names these types when several seeds fit.
+- *Linked temples.* Desert pyramids, igloos, jungle temples and swamp huts use the same grid with salts 1 apart,
+  so two of them in the same region are nearly the same roll: the second adds about 4 bits of information
+  instead of 9.
+- The planner's estimate of how many seeds will fit is calibrated against hundreds of real searches.
+
+### Phase 3 plan
+
+- **The `nextLong()` shortcut.** Worlds created without typing a seed get one from Java's random generator, so
+  their seed is a `nextLong()` output. For a given structure seed, only about one such world seed exists, and it
+  can be computed directly (65,536 quick checks). This gives the full seed for most worlds instantly.
+- **Biomes.** For typed seeds, or to be certain, the remaining 16 bits are checked against biomes, which needs a
+  port of 26.3's biome generation (with oracle tests, like everything else).
+- Phase 3 also resolves look-alike structure seeds, since only the true one will match the biomes.
 
 ## Things that can't work
 
