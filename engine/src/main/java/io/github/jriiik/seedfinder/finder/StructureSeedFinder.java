@@ -94,7 +94,7 @@ public final class StructureSeedFinder {
         Queue<Long> found = new ConcurrentLinkedQueue<>();
         AtomicInteger foundCount = new AtomicInteger();
         AtomicLong blocksDone = new AtomicLong();
-        ForkJoinPool pool = new ForkJoinPool(threads);
+        ForkJoinPool pool = new ForkJoinPool(Math.clamp(threads, 1, 32_767));
         try {
             pool.submit(() -> LongStream.range(0, totalBlocks).parallel().forEach(block -> {
                 long low = lowCandidates[(int) (block / blocksPerLowCandidate)];

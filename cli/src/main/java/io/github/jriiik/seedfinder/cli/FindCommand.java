@@ -1,14 +1,13 @@
 package io.github.jriiik.seedfinder.cli;
 
-import io.github.jriiik.seedfinder.finder.ObservationParser;
+import io.github.jriiik.seedfinder.bedrock.BedrockEvidence;
+import io.github.jriiik.seedfinder.finder.FullSeedFinder;
+import io.github.jriiik.seedfinder.finder.ObservationReader;
 import io.github.jriiik.seedfinder.finder.SearchPlan;
 import io.github.jriiik.seedfinder.finder.StructureObservation;
 import io.github.jriiik.seedfinder.finder.StructureSeedFinder;
 import io.github.jriiik.seedfinder.version.VersionData;
-import java.io.IOException;
 import java.io.PrintWriter;
-import java.nio.charset.StandardCharsets;
-import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
@@ -21,11 +20,13 @@ import picocli.CommandLine.Command;
     name = "find",
     mixinStandardHelpOptions = true,
     description = {
-        "Work out a world's structure seed from structures you have seen in it.",
+        "Work out a world's seed from structures you have seen in it, and optionally its bedrock.",
         "Give each structure's type and the block position of the chunk where it starts: /locate shows exactly that. "
             + "About 6 structures of mixed types are usually enough: at least one temple, pillager outpost, shipwreck, "
             + "ocean ruin or village to start the search, plus a ruined portal, abandoned camp, trial chamber or ancient "
             + "city to rule out look-alike seeds.",
+        "The structures give the structure seed (the last 48 bits of the world seed). For the full seed, add the bedrock "
+            + "floor of one chunk to the file (see 'seedfinder full-seed --help'); without it, the likely full seeds are named.",
     },
     footer = {
         "",
@@ -34,6 +35,7 @@ import picocli.CommandLine.Command;
         "  seedfinder find --file my-structures.txt",
         "",
         "In a file, write one structure per line (\"igloo 48 208\"). Lines copied from /locate work too.",
+        "Bedrock notes can go in the same file.",
     }
 )
 final class FindCommand implements Callable<Integer> {
@@ -64,8 +66,22 @@ final class FindCommand implements Callable<Integer> {
         CommandLine commandLine = spec.commandLine();
         PrintWriter out = commandLine.getOut();
         VersionData data = version.resolve(commandLine).data();
-        List<StructureObservation> observations = readObservations(commandLine, data);
-        int threadCount = threads > 0 ? threads : Runtime.getRuntime().availableProcessors();
+        ObservationInput input = ObservationInput.of(commandLine, file, observationTexts);
+        if (input.isEmpty()) {
+            throw new CommandLine.ParameterException(commandLine, "Tell me which structures you saw, for example: seedfinder find igloo:48,208 village:336,80");
+        }
+        ObservationReader.Observations read = input.read(commandLine, data);
+        List<StructureObservation> observations = read.structures();
+        BedrockEvidence bedrock = new BedrockEvidence(read.bedrock());
+        int threadCount = Threads.resolve(commandLine, threads);
+        if (observations.isEmpty() && read.bedrock().isEmpty()) {
+            throw new CommandLine.ParameterException(commandLine, "Tell me which structures you saw, for example: seedfinder find igloo:48,208 village:336,80");
+        }
+        if (observations.isEmpty()) {
+            out.println("There are bedrock notes but no structures. Bedrock alone can't find the structure seed yet:");
+            out.println("add about 6 structures, or if you know the structure seed, use 'seedfinder full-seed <structure seed>'.");
+            return 1;
+        }
 
         StructureSeedFinder finder = new StructureSeedFinder(data, observations);
         SearchPlan plan = finder.plan();
@@ -75,9 +91,16 @@ final class FindCommand implements Callable<Integer> {
                 observation.set().shortId(), observation.chunk().minBlockX(), observation.chunk().minBlockZ());
         }
         out.println();
+        int bedrockBlocks = bedrock.fullSeedObservations().size() + bedrock.structureSeedObservations().size();
+        if (!read.bedrock().isEmpty()) {
+            out.printf(Locale.ROOT, "And %,d bedrock block%s that can help find the full seed.%n%n", bedrockBlocks, bedrockBlocks == 1 ? "" : "s");
+        }
         plan.warnings().forEach(warning -> out.println("Note: " + warning));
+        bedrock.problems().forEach(problem -> out.println("Can't search yet: " + problem + "."));
         if (!plan.canSearch()) {
             plan.problems().forEach(problem -> out.println("Can't search yet: " + problem));
+        }
+        if (!plan.canSearch() || !bedrock.problems().isEmpty()) {
             return 1;
         }
 
@@ -90,38 +113,20 @@ final class FindCommand implements Callable<Integer> {
         double seconds = (System.nanoTime() - start) / 1e9;
         out.printf("Done in %s.%n%n", duration(seconds));
         report(out, found, plan.suggestedStructures());
-        return found.isEmpty() ? 1 : 0;
-    }
-
-    private List<StructureObservation> readObservations(CommandLine commandLine, VersionData data) {
-        List<String> lines = new ArrayList<>();
-        if (file != null) {
-            try {
-                lines.addAll(Files.readAllLines(file, StandardCharsets.UTF_8));
-            } catch (IOException e) {
-                throw new CommandLine.ParameterException(commandLine, "Can't read the file " + file + " (" + e.getMessage() + ")");
-            }
+        if (found.isEmpty()) {
+            return 1;
         }
-        int fromFile = lines.size();
-        lines.addAll(observationTexts);
-        if (lines.stream().allMatch(String::isBlank)) {
-            throw new CommandLine.ParameterException(commandLine, "Tell me which structures you saw, for example: seedfinder find igloo:48,208 village:336,80");
+        out.println();
+        boolean named = false;
+        if (found.size() <= FullSeedFinder.MAX_STRUCTURE_SEEDS) {
+            named = FullSeedReport.run(out, data, found, bedrock, threadCount);
+        } else if (!read.bedrock().isEmpty()) {
+            out.println("Too many structure seeds to check the bedrock against; add more structures first.");
         }
-        try {
-            List<StructureObservation> observations = new ArrayList<>();
-            for (int i = 0; i < lines.size(); i++) {
-                String where = i < fromFile ? "line " + (i + 1) + " of " + file : "'" + lines.get(i) + "'";
-                try {
-                    ObservationParser.parseLine(data, lines.get(i)).ifPresent(observations::add);
-                } catch (IllegalArgumentException e) {
-                    throw new IllegalArgumentException(where + ": " + e.getMessage(), e);
-                }
-            }
-            return observations;
-        } catch (IllegalArgumentException e) {
-            throw new CommandLine.ParameterException(commandLine, e.getMessage()
-                + ". Write each structure as its name and the block x and z of its start chunk, like igloo:48,208.");
-        }
+        out.println();
+        out.println("To compare with a world whose seed you know: seedfinder structure-seed <that world's seed>");
+        // Without bedrock, finding the structure seed is the result; with bedrock, the full seed has to come out too.
+        return read.bedrock().isEmpty() || named ? 0 : 1;
     }
 
     private static void report(PrintWriter out, List<Long> found, List<String> suggestions) {
@@ -143,10 +148,6 @@ final class FindCommand implements Callable<Integer> {
                 ? "To tell them apart, add a few more structures, ideally of types you haven't used yet."
                 : "To tell them apart, add a structure of one of these types: " + String.join(", ", suggestions) + ".");
         }
-        out.println();
-        out.println("A structure seed is the last 48 bits of the world seed. It alone decides where structures can");
-        out.println("generate, and 65,536 different world seeds share it. Finding the full world seed is the next step.");
-        out.println("To compare with a world whose seed you know: seedfinder structure-seed <that world's seed>");
     }
 
     private static String duration(double seconds) {

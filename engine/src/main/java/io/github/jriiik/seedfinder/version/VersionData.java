@@ -1,5 +1,6 @@
 package io.github.jriiik.seedfinder.version;
 
+import io.github.jriiik.seedfinder.bedrock.BedrockDimension;
 import io.github.jriiik.seedfinder.structure.StructureInfo;
 import io.github.jriiik.seedfinder.structure.StructureSet;
 import java.util.ArrayList;
@@ -19,13 +20,15 @@ public final class VersionData {
     private final Map<String, StructureSet> structureSets;
     private final Map<String, StructureInfo> structures;
     private final Map<String, Set<String>> dimensionBiomes;
+    private final Map<String, BedrockDimension> bedrock;
 
     /**
      * @param dimensionBiomes for each dimension id (e.g. {@code minecraft:the_nether}), the biomes it can contain
+     * @param bedrock         for each dimension id, how it places its random bedrock
      */
     public VersionData(
         String version, Map<String, StructureSet> structureSets, Map<String, StructureInfo> structures,
-        Map<String, Set<String>> dimensionBiomes
+        Map<String, Set<String>> dimensionBiomes, Map<String, BedrockDimension> bedrock
     ) {
         this.version = version;
         this.structureSets = Collections.unmodifiableMap(new LinkedHashMap<>(structureSets));
@@ -33,6 +36,7 @@ public final class VersionData {
         Map<String, Set<String>> dimensions = new LinkedHashMap<>();
         dimensionBiomes.forEach((dimension, biomes) -> dimensions.put(dimension, Set.copyOf(biomes)));
         this.dimensionBiomes = Collections.unmodifiableMap(dimensions);
+        this.bedrock = Collections.unmodifiableMap(new LinkedHashMap<>(bedrock));
     }
 
     /**
@@ -84,5 +88,23 @@ public final class VersionData {
 
     public Optional<StructureInfo> structure(String id) {
         return Optional.ofNullable(structures.get(VersionDataLoader.normalizeId(id)));
+    }
+
+    /** How each dimension places its random bedrock, by dimension id. */
+    public Map<String, BedrockDimension> bedrock() {
+        return bedrock;
+    }
+
+    /**
+     * Finds a dimension's bedrock rules by id or by a short name people type: {@code overworld}, {@code nether} or
+     * {@code end} (with or without {@code the_} and the {@code minecraft:} prefix).
+     */
+    public Optional<BedrockDimension> bedrockDimension(String name) {
+        String id = VersionDataLoader.normalizeId(name.trim().toLowerCase(Locale.ROOT));
+        if (bedrock.containsKey(id)) {
+            return Optional.of(bedrock.get(id));
+        }
+        String path = id.substring(id.indexOf(':') + 1);
+        return Optional.ofNullable(bedrock.get(id.substring(0, id.indexOf(':') + 1) + "the_" + path));
     }
 }

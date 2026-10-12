@@ -1,0 +1,44 @@
+{
+  "minecraft_version": "26.3",
+  "generated_by": "tools/oracle (calls the official Minecraft server code)",
+  "dimensions": {
+    "minecraft:overworld": {
+      "legacy_random_source": false,
+      "min_y": -64,
+      "height": 384,
+      "bedrock_rules": [
+        {
+          "random_name": "minecraft:bedrock_floor",
+          "true_at_and_below": -64,
+          "false_at_and_above": -59,
+          "inverted": false
+        }
+      ]
+    },
+    "minecraft:the_end": {
+      "legacy_random_source": true,
+      "min_y": 0,
+      "height": 128,
+      "bedrock_rules": []
+    },
+    "minecraft:the_nether": {
+      "legacy_random_source": true,
+      "min_y": 0,
+      "height": 128,
+      "bedrock_rules": [
+        {
+          "random_name": "minecraft:bedrock_floor",
+          "true_at_and_below": 0,
+          "false_at_and_above": 5,
+          "inverted": false
+        },
+        {
+          "random_name": "minecraft:bedrock_roof",
+          "true_at_and_below": 122,
+          "false_at_and_above": 127,
+          "inverted": true
+        }
+      ]
+    }
+  }
+}

@@ -36,4 +36,14 @@ public final class WorldgenSeeds {
     public static long feature(long decorationSeed, int index, int step) {
         return decorationSeed + index + 10000 * step;
     }
+
+    /**
+     * A number for one block position ({@code Mth.getSeed}), used by {@link PositionalRandomFactory#at}. The x part is
+     * multiplied as a 32-bit int (it wraps around); the z part as a 64-bit long.
+     */
+    public static long positional(int x, int y, int z) {
+        long seed = (long) (x * 3129871) ^ (long) z * 116129781L ^ (long) y;
+        seed = seed * seed * 42317861L + seed * 11L;
+        return seed >> 16;
+    }
 }
