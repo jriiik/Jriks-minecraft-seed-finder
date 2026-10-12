@@ -24,6 +24,88 @@ class SeedFinderCliTest {
         return new Result(exitCode, out.toString(), err.toString());
     }
 
+    /** Structure spots of seed 12345 (from 'seedfinder locate --seed 12345'), the example in the help text. */
+    private static final String[] EXAMPLE = {
+        "desert_pyramid:272,80", "swamp_hut:256,-144", "village:336,80", "shipwreck:-128,32", "ruined_portal:16,0", "trial_chamber:0,224",
+    };
+
+    private static String[] find(String... args) {
+        String[] all = new String[args.length + 3];
+        all[0] = "find";
+        all[1] = "--threads";
+        all[2] = "2";
+        System.arraycopy(args, 0, all, 3, args.length);
+        return all;
+    }
+
+    @Test
+    void findWorksOutTheStructureSeedOfTheExample() {
+        Result result = run(find(EXAMPLE));
+        assertEquals(0, result.exitCode(), result.err());
+        assertTrue(result.out().contains("Minecraft 26.3, 6 structures:"), result.out());
+        assertTrue(result.out().contains("Found the structure seed: 12345\n"), result.out());
+    }
+
+    @Test
+    void findListsEverySeedThatFitsAndSuggestsWhatToAdd() {
+        Result result = run(find(java.util.Arrays.copyOf(EXAMPLE, 5)));
+        assertEquals(0, result.exitCode(), result.err());
+        assertTrue(result.out().contains("structure seeds that fit everything you entered"), result.out());
+        assertTrue(result.out().contains("  12345\n"), result.out());
+        assertTrue(result.out().contains("add a structure of one of these types: abandoned_camp, trial_chambers, ancient_cities"), result.out());
+    }
+
+    @Test
+    void findReadsAFileIncludingLinesPastedFromLocate(@org.junit.jupiter.api.io.TempDir java.nio.file.Path folder) throws java.io.IOException {
+        java.nio.file.Path file = folder.resolve("structures.txt");
+        java.nio.file.Files.writeString(file, String.join("\n",
+            "# My world",
+            "desert_pyramid 272 80",
+            "swamp_hut: 256, -144",
+            "The nearest minecraft:village_plains is at [336, ~, 80] (345 blocks away)",
+            "shipwreck -128 63 32",
+            "",
+            "ruined_portal 16 0",
+            "trial_chamber 0 224"));
+        Result result = run(find("--file", file.toString()));
+        assertEquals(0, result.exitCode(), result.err());
+        assertTrue(result.out().contains("Found the structure seed: 12345\n"), result.out());
+    }
+
+    @Test
+    void findExplainsWhatIsMissing() {
+        Result tooFew = run(find("igloo:48,208", "village:336,80"));
+        assertEquals(1, tooFew.exitCode());
+        assertTrue(tooFew.out().contains("Can't search yet: With this information about"), tooFew.out());
+
+        Result noStart = run(find("ruined_portal:16,0", "ruined_portal:700,700", "abandoned_camp:80,144"));
+        assertEquals(1, noStart.exitCode());
+        assertTrue(noStart.out().contains("add at least one of these structures: desert_pyramids"), noStart.out());
+
+        Result impossible = run(find("village:500,80", "igloo:48,208"));
+        assertEquals(1, impossible.exitCode());
+        assertTrue(impossible.out().contains("never start in that chunk"), impossible.out());
+    }
+
+    @Test
+    void findRejectsBadInputWithAShortMessage() {
+        Result unknown = run(find("castle:1,2"));
+        assertEquals(2, unknown.exitCode());
+        assertTrue(unknown.err().contains("'castle:1,2': unknown structure 'castle'"), unknown.err());
+        assertFalse(unknown.err().contains("Usage:"));
+
+        assertEquals(2, run(find("village:1")).exitCode());
+        assertEquals(2, run(find()).exitCode());
+        assertEquals(2, run(find("--file", "does-not-exist.txt")).exitCode());
+    }
+
+    @Test
+    void structureSeedShowsTheLowest48Bits() {
+        assertEquals("World seed 12345 has structure seed 12345.\n", run("structure-seed", "12345").out());
+        assertEquals("World seed -1 has structure seed 281474976710655.\n", run("structure-seed", "-1").out());
+        assertTrue(run("structure-seed", "Jrik").out().contains("(text, which Minecraft turns into 2317450) has structure seed 2317450."));
+    }
+
     @Test
     void locateListsAVillageTheGameAlsoPutsThere() {
         // Minecraft 26.3 picks chunk (-88, -79) for villages in region (-3, -3) of seed 12345 (see the oracle
