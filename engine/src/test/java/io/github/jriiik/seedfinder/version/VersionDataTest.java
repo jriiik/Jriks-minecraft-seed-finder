@@ -93,6 +93,19 @@ class VersionDataTest {
     }
 
     @Test
+    void findsStructureSetsByTheNamesPeopleUse() {
+        assertEquals("minecraft:villages", DATA.findStructureSet("village").orElseThrow().id());
+        assertEquals("minecraft:villages", DATA.findStructureSet("Village_Desert").orElseThrow().id());
+        assertEquals("minecraft:villages", DATA.findStructureSet("minecraft:villages").orElseThrow().id());
+        assertEquals("minecraft:desert_pyramids", DATA.findStructureSet("desert_pyramid").orElseThrow().id());
+        assertEquals("minecraft:ancient_cities", DATA.findStructureSet("ancient_city").orElseThrow().id());
+        assertEquals("minecraft:nether_complexes", DATA.findStructureSet("fortress").orElseThrow().id());
+        assertEquals("minecraft:nether_complexes", DATA.findStructureSet("bastion_remnant").orElseThrow().id());
+        assertEquals("minecraft:abandoned_camp", DATA.findStructureSet("abandoned_camp_meadow").orElseThrow().id());
+        assertTrue(DATA.findStructureSet("castle").isEmpty());
+    }
+
+    @Test
     void normalizesIds() {
         assertEquals("minecraft:villages", VersionDataLoader.normalizeId("villages"));
         assertEquals("pack:thing", VersionDataLoader.normalizeId("pack:thing"));

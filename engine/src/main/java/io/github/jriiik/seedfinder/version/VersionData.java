@@ -2,10 +2,12 @@ package io.github.jriiik.seedfinder.version;
 
 import io.github.jriiik.seedfinder.structure.StructureInfo;
 import io.github.jriiik.seedfinder.structure.StructureSet;
+import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
@@ -57,6 +59,27 @@ public final class VersionData {
     /** Finds a structure set by id; the {@code minecraft:} prefix may be left out. */
     public Optional<StructureSet> structureSet(String id) {
         return Optional.ofNullable(structureSets.get(VersionDataLoader.normalizeId(id)));
+    }
+
+    /**
+     * Finds the structure set for a name people are likely to type: a set id ({@code villages}), the id of one
+     * structure in it ({@code village_desert}, {@code desert_pyramid}) or a singular form ({@code village},
+     * {@code ancient_city}). The {@code minecraft:} prefix is optional and case does not matter.
+     */
+    public Optional<StructureSet> findStructureSet(String name) {
+        String id = VersionDataLoader.normalizeId(name.trim().toLowerCase(Locale.ROOT));
+        List<String> candidates = new ArrayList<>(List.of(id, id + "s"));
+        if (id.endsWith("y")) {
+            candidates.add(id.substring(0, id.length() - 1) + "ies");
+        }
+        for (String candidate : candidates) {
+            if (structureSets.containsKey(candidate)) {
+                return Optional.of(structureSets.get(candidate));
+            }
+        }
+        return structureSets.values().stream()
+            .filter(set -> set.structures().stream().anyMatch(entry -> entry.structure().equals(id)))
+            .findFirst();
     }
 
     public Optional<StructureInfo> structure(String id) {

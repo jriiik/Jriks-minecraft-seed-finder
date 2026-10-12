@@ -26,4 +26,11 @@ class SeedsTest {
     void blankMeansRandom() {
         assertEquals(OptionalLong.empty(), Seeds.parse("   "));
     }
+
+    @Test
+    void structureSeedKeepsTheLowest48Bits() {
+        assertEquals(12345L, Seeds.structureSeed(12345L));
+        assertEquals((1L << 48) - 1, Seeds.structureSeed(-1L));
+        assertEquals(Seeds.structureSeed(42L), Seeds.structureSeed(42L + (7L << 48)), "the top 16 bits don't matter");
+    }
 }
