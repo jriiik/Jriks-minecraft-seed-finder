@@ -3,6 +3,7 @@ package io.github.jriiik.seedfinder.cli;
 import io.github.jriiik.seedfinder.Seeds;
 import io.github.jriiik.seedfinder.finder.ObservationReader;
 import io.github.jriiik.seedfinder.finder.SeedCheck;
+import io.github.jriiik.seedfinder.finder.StructureObservation;
 import io.github.jriiik.seedfinder.finder.TypedSeedSearch;
 import io.github.jriiik.seedfinder.version.VersionData;
 import java.io.PrintWriter;
@@ -101,14 +102,35 @@ final class TypedSeedCommand implements Callable<Integer> {
         }
         long worldSeed = outcome.seed().getAsLong();
         Optional<SeedCheck> check = notes.map(read -> SeedCheck.of(data, read.structures(), read.bedrock(), worldSeed));
+        check.ifPresent(found -> found.bedrockProblems().forEach(problem ->
+            out.println("Left out of the check, because it is wrong whatever the seed: " + problem + ".")));
         if (check.isPresent() && check.get().verdict() == SeedCheck.Verdict.CONTRADICTED) {
-            out.println("The hashed seed is the one of the typed seed " + worldSeed + ", but the notes don't fit that seed (" + misfits(check.get()) + ").");
-            if (check.get().bedrockMismatches() > 0) {
+            SeedCheck contradicted = check.get();
+            out.println("The hashed seed is the one of the typed seed " + worldSeed + ", but the notes don't fit that seed (" + misfits(contradicted) + ").");
+            if (contradicted.bedrockMostlyFits()) {
+                out.println("Most of the overworld bedrock fits it, though (a wrong seed gets about a third of it wrong), so these blocks were");
+                out.println("probably noted wrong:");
+                contradicted.overworld().examples().forEach(observation -> out.println("  " + FullSeedReport.mistake(observation)));
+                out.println("Check them in the game, fix them and run this again.");
+            } else if (contradicted.overworld().mismatches() > 0) {
                 out.println("The server probably sends a made-up hashed seed, so this is not the world's seed. Use 'seedfinder find' with the");
                 out.println("structures and bedrock instead.");
             } else {
-                out.println("The server may send a made-up hashed seed, or place structures differently. Bedrock notes from the overworld");
-                out.println("would tell which.");
+                List<String> otherwise = new ArrayList<>();
+                if (contradicted.nether().mismatches() > 0) {
+                    otherwise.add("those nether chunks were made by Minecraft 1.17 or older");
+                }
+                if (!contradicted.misfits().isEmpty()) {
+                    boolean one = contradicted.misfits().size() == 1;
+                    otherwise.add((one ? "the structure was" : "the structures were") + " noted in the wrong place or " + (one ? "doesn't" : "don't")
+                        + " follow the seed (older chunks, a command, a copy, or a server that places structures differently)");
+                }
+                out.println("Either the server sends a made-up hashed seed, or " + String.join(" and ", otherwise)
+                    + ". Bedrock notes from the overworld would tell which.");
+                if (!contradicted.misfits().isEmpty()) {
+                    out.println("Structures that don't fit: " + names(contradicted.misfits()) + ". If one was noted in the wrong place, fix it and"
+                        + " run this again.");
+                }
             }
             return 1;
         }
@@ -118,18 +140,20 @@ final class TypedSeedCommand implements Callable<Integer> {
         if (check.isEmpty()) {
             out.println("This is right unless the server sends a made-up hashed seed. To check it, give the notes with --file.");
         } else if (check.get().verdict() == SeedCheck.Verdict.UNCONFIRMED) {
-            out.println("This is right unless the server sends a made-up hashed seed: the notes don't have enough structures or bedrock");
-            out.println("yet to confirm it.");
+            out.println("This is right unless the server sends a made-up hashed seed: the notes don't have enough structures or overworld");
+            out.println("bedrock yet to confirm it.");
         } else {
             SeedCheck confirmed = check.get();
             out.println("The notes confirm it: " + fits(confirmed) + " fit it.");
             if (!confirmed.misfits().isEmpty()) {
-                out.println("These structures in the notes don't fit it: " + String.join(", ", confirmed.misfits().stream().map(Object::toString).toList())
-                    + ". The server may place structures differently, or they come from an older Minecraft version, a command or a copy.");
+                boolean one = confirmed.misfits().size() == 1;
+                out.println((one ? "This structure in the notes doesn't fit it: " : "These structures in the notes don't fit it: ")
+                    + names(confirmed.misfits()) + ". The server may place structures differently, or " + (one ? "it comes" : "they come")
+                    + " from an older Minecraft version, a command or a copy (or " + (one ? "was" : "were") + " noted in the wrong place).");
             }
-            if (confirmed.bedrockMismatches() > 0) {
-                out.println(confirmed.bedrockMismatches() + " of the " + confirmed.bedrockBlocks() + " bedrock blocks in the notes don't fit it "
-                    + "(the server may change blocks it sends).");
+            if (confirmed.nether().mismatches() > 0) {
+                out.println(confirmed.nether().mismatches() + " of the " + confirmed.nether().blocks() + " nether bedrock blocks in the notes don't fit it: "
+                    + "nether chunks made by Minecraft 1.17 or older don't follow the seed.");
             }
         }
         return 0;
@@ -159,26 +183,36 @@ final class TypedSeedCommand implements Callable<Integer> {
         }
     }
 
-    /** What fits, e.g. "3 structures and 630 bedrock blocks". */
+    private static String names(List<StructureObservation> structures) {
+        return String.join(", ", structures.stream().map(Object::toString).toList());
+    }
+
+    /** What fits, e.g. "3 structures and 630 overworld bedrock blocks". */
     private static String fits(SeedCheck check) {
         List<String> parts = new ArrayList<>();
         if (!check.fitting().isEmpty()) {
             parts.add(check.fitting().size() + " structure" + (check.fitting().size() == 1 ? "" : "s"));
         }
-        if (check.bedrockBlocks() > 0 && check.bedrockMismatches() == 0) {
-            parts.add(check.bedrockBlocks() + " bedrock blocks");
+        if (check.overworld().fits()) {
+            parts.add(check.overworld().blocks() + " overworld bedrock blocks");
+        }
+        if (check.nether().fits()) {
+            parts.add(check.nether().blocks() + " nether bedrock blocks");
         }
         return String.join(" and ", parts);
     }
 
-    /** What doesn't fit, e.g. "structures that don't fit: 2 of 5, bedrock blocks that don't fit: 410 of 630". */
+    /** What doesn't fit, e.g. "structures that don't fit: 2 of 5, overworld bedrock blocks that don't fit: 410 of 630". */
     private static String misfits(SeedCheck check) {
         List<String> parts = new ArrayList<>();
         if (!check.misfits().isEmpty()) {
             parts.add("structures that don't fit: " + check.misfits().size() + " of " + (check.fitting().size() + check.misfits().size()));
         }
-        if (check.bedrockMismatches() > 0) {
-            parts.add("bedrock blocks that don't fit: " + check.bedrockMismatches() + " of " + check.bedrockBlocks());
+        if (check.overworld().mismatches() > 0) {
+            parts.add("overworld bedrock blocks that don't fit: " + check.overworld().mismatches() + " of " + check.overworld().blocks());
+        }
+        if (check.nether().mismatches() > 0) {
+            parts.add("nether bedrock blocks that don't fit: " + check.nether().mismatches() + " of " + check.nether().blocks());
         }
         return String.join(", ", parts);
     }

@@ -3,8 +3,11 @@ package io.github.jriiik.seedfinder.mod;
 import io.github.jriiik.seedfinder.finder.TypedSeedSearch;
 import java.util.OptionalLong;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.Executor;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.function.BooleanSupplier;
+import java.util.function.Consumer;
 import net.minecraft.client.Minecraft;
 
 /**
@@ -14,6 +17,12 @@ import net.minecraft.client.Minecraft;
  * it was next time. Whether the seed found fits the notes is checked by the {@link SearchRunner}.
  */
 final class TypedSeedRunner {
+
+    /** The search as the runner calls it ({@link TypedSeedSearch#search}; a stand-in in tests). */
+    @FunctionalInterface
+    interface Search {
+        TypedSeedSearch.Outcome run(long hashedSeed, int fromPiece, int threads, BooleanSupplier stop, TypedSeedSearch.Progress progress);
+    }
 
     /** Save the progress every 30 seconds while it runs. */
     private static final int CHECKPOINT_TICKS = 600;
@@ -25,11 +34,13 @@ final class TypedSeedRunner {
         return thread;
     });
 
+    /** Where results are handed over: the game's main thread. */
+    private final Executor mainThread;
+    private final Consumer<WorldSession> saveIfLeft;
+    private final Search search;
     /** A quarter of the CPU threads (at least one): the search takes minutes, and the game should stay smooth. */
     private final int threads = Math.max(1, Runtime.getRuntime().availableProcessors() / 4);
     private WorldSession runningFor;
-    /** The notes' generation when the search started: after "Remove all notes" its results are dropped. */
-    private int generation;
     private volatile boolean stop;
     /** Pieces checked (for the percentage) and where the search can safely resume (every piece before it is checked). */
     private volatile int checked;
@@ -37,6 +48,21 @@ final class TypedSeedRunner {
     private int ticks;
     /** A world whose search failed (see the game log): not tried again until the player comes back to it. */
     private WorldSession failed;
+
+    TypedSeedRunner() {
+        this(task -> Minecraft.getInstance().execute(task), SeedFinderClient::saveIfLeft, TypedSeedSearch::search);
+    }
+
+    /**
+     * @param mainThread runs the hand-over of results on the game's main thread
+     * @param saveIfLeft saves the notes of a world the player has left meanwhile
+     * @param search     the search
+     */
+    TypedSeedRunner(Executor mainThread, Consumer<WorldSession> saveIfLeft, Search search) {
+        this.mainThread = mainThread;
+        this.saveIfLeft = saveIfLeft;
+        this.search = search;
+    }
 
     /** Whether the search runs for these notes. */
     boolean runningFor(WorldSession session) {
@@ -59,7 +85,7 @@ final class TypedSeedRunner {
         boolean wanted = current != null && current.collecting() && current.hashedSeed().isPresent() && !current.typedSeedSearchDone()
             && current.worldSeed().isEmpty() && current != failed;
         if (runningFor != null) {
-            if (runningFor != current || !wanted || runningFor.generation() != generation) {
+            if (runningFor != current || !wanted) {
                 stop = true;
             } else if (ticks % CHECKPOINT_TICKS == 0) {
                 runningFor.setTypedSeedSearch(new TypedSeedSearch.Outcome(OptionalLong.empty(), resumeFrom));
@@ -73,15 +99,13 @@ final class TypedSeedRunner {
 
     private void start(WorldSession session) {
         runningFor = session;
-        int startedIn = session.generation();
-        generation = startedIn;
         stop = false;
         int from = session.typedSeedPieces();
         checked = from;
         resumeFrom = from;
         long hashedSeed = session.hashedSeed().getAsLong();
         CompletableFuture
-            .supplyAsync(() -> TypedSeedSearch.search(hashedSeed, from, threads, () -> stop, (count, safe) -> {
+            .supplyAsync(() -> search.run(hashedSeed, from, threads, () -> stop, (count, safe) -> {
                 checked = count;
                 resumeFrom = safe;
             }), WORKER)
@@ -92,12 +116,9 @@ final class TypedSeedRunner {
                     failed = session;
                     return;
                 }
-                if (session.generation() != startedIn) {
-                    return; // all notes were removed meanwhile
-                }
                 session.setTypedSeedSearch(outcome);
                 outcome.seed().ifPresent(seed -> SeedFinderClient.LOG.info("The hashed seed is the one of the typed seed {}", seed));
-                SeedFinderClient.saveIfLeft(session);
-            }, Minecraft.getInstance());
+                saveIfLeft.accept(session);
+            }, mainThread);
     }
 }

@@ -149,9 +149,10 @@ class WorldSessionTest {
         later.save(folder);
         assertEquals(OptionalLong.of(12345L), WorldSession.load(folder, WORLD).typedSeed());
 
+        // "Remove all notes" keeps it: it depends only on the hashed seed, which is part of these notes' key.
         later.clearAll();
-        assertEquals(OptionalLong.empty(), later.typedSeed());
-        assertEquals(0, later.typedSeedPieces());
+        assertEquals(OptionalLong.of(12345L), later.typedSeed());
+        assertEquals(37, later.typedSeedPieces());
     }
 
     @Test
@@ -172,14 +173,16 @@ class WorldSessionTest {
         assertEquals(OptionalLong.empty(), session.worldSeed());
         assertTrue(session.notesLines().stream().anyMatch(line -> line.contains("these notes don't fit that seed")));
 
-        // A check of another seed (one started before "Remove all notes") changes nothing.
+        // A check of another seed changes nothing.
         session.setTypedSeedCheck(SeedCheck.of(data, List.of(), List.of(), 999L));
         assertEquals(OptionalLong.empty(), session.worldSeed());
 
-        int generation = session.generation();
+        // "Remove all notes" drops the check (it was about the notes), not the typed seed.
+        session.setTypedSeedCheck(SeedCheck.of(data, List.of(), List.of(), 12345L));
         session.clearAll();
-        assertEquals(generation + 1, session.generation());
         assertEquals(java.util.Optional.empty(), session.typedSeedCheck());
+        assertEquals(OptionalLong.of(12345L), session.typedSeed());
+        assertEquals(OptionalLong.empty(), session.worldSeed(), "shown again once the remaining notes are checked");
     }
 
     @Test

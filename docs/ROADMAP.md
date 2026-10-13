@@ -101,19 +101,28 @@ Typical searches take well under a second. Villages-only searches need more stru
 - **Typed seeds from the hashed seed alone.** A seed typed as text becomes its 32-bit `hashCode()`, and short typed
   numbers are 32-bit too, so all typed seeds are among the 2^32 `int` values. Checking all of them against the hashed
   seed takes 2^32 SHA-256 hashes: about 60 ns each per CPU thread with SHA instructions (4.5 minutes on one thread,
-  a little over a minute on four) and about 290 ns without them (about 21 minutes on one thread). The values are
+  a little over a minute on four), about 290 ns without them (about 21 minutes on one thread), and about 430 ns on
+  CPUs that also lack AVX2 (about 31 minutes). The values are
   checked smallest numbers first, so a typed number like 12345 comes out at once. The search runs in 1024 pieces and
   saves where it can resume: the first piece not yet fully checked, so a slow thread never leaves a gap. The mod runs
   it in the background with a quarter of the CPU threads until the seed is known.
 - **Checking a seed found from the hashed seed alone.** A server may send a made-up hashed seed; if that value is the
   hash of some typed seed, the typed search finds the wrong seed. So the seed is checked against the notes: whether
   it puts each noted structure's start in its chunk, and whether it gives the noted bedrock. It is confirmed when a
-  wrong seed would fit what fits with a chance of at most 1 in 1,000: one chunk of overworld bedrock (using the
-  measured false-fit rate), or two structures (a wrong seed has a start in a given chunk about 1 time in 150 to 900,
-  depending on the kind; end cities 1 in 23, so it takes three of those; mineshafts, buried treasure and nether
-  fossils don't count). Notes that disagree without such a confirmation mean it is not the world's seed. Strong
-  evidence of one kind outweighs disagreeing notes of the other (bedrock outweighs structures a server places
-  differently; several structures outweigh bedrock a server changes).
+  wrong seed would fit the notes at least as well with a chance of at most 1 in 1,000:
+  - Structures: a wrong seed has a start in a given chunk about 1 time in 150 to 900, depending on the kind (end
+    cities 1 in 23; mineshafts, buried treasure and nether fossils don't count). What counts is the chance of
+    fitting at least as many of all the notes as this seed does, so with many notes a few chance fits confirm
+    nothing. Notes whose random numbers are related (the same region of sets with nearly the same salt: the four
+    temples, ocean monuments and end cities, or one set twice) count once. Measured: random typed seeds checked
+    against 30, 60 and 100 notes of one world were confirmed 5, 60 and 26 times in 100,000.
+  - Overworld bedrock that fits completely: the measured false-fit rate times 10, because single worlds were measured
+    up to about 6 times worse than the average for small notes (so bedrock alone needs about 75 informative blocks;
+    the mod notes thousands).
+  Any overworld bedrock that doesn't fit means it is not the world's seed. Nether bedrock and structures that don't
+  fit only count against it when nothing confirms it: nether chunks made by Minecraft 1.17 or older have bedrock that
+  doesn't follow the seed, a server may place structures differently, and older chunks or commands leave structures
+  that don't follow it either. Bedrock notes that break the game's rules are left out and reported.
 - **Bedrock from loaded chunks.** The mod reads the random bedrock layers of up to four chunks per dimension and
   skips anything that isn't natural stone, so player-made holes and structures count as unknown, not as "no
   bedrock". The in-game test checks thousands of blocks read this way against the engine's prediction.

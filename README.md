@@ -99,8 +99,10 @@ text seeds you get the number Minecraft made of the text, not the text itself.
 
 Some servers send a made-up hashed seed to protect their seed. If that made-up value happens to be the fingerprint of
 a typed seed, the search finds that seed, but it isn't the world's. So the seed found is checked against the
-structures and bedrock in the notes: when they fit, it is certain; when they don't, it is not presented as the world
-seed. With nothing noted yet, it is shown as "not confirmed yet". (In a single-player world the game makes the hashed
+structures and bedrock in the notes: when they fit (and a wrong seed would fit them only by a chance below 1 in
+1,000), it is certain; when they don't, it is not presented as the world seed. A few structures that don't fit, or
+nether bedrock from chunks made by Minecraft 1.17 or older, are listed but don't stop a seed that the rest confirms;
+overworld bedrock always has to fit. With nothing noted yet, the seed is shown as "not confirmed yet". (In a single-player world the game makes the hashed
 seed itself, so there the seed found is always the world's.)
 
 **Bedrock, to be sure.** The bottom of the overworld (y = -64 to -60) is a random-looking bedrock pattern that
@@ -167,9 +169,9 @@ itself. It needs Minecraft **26.3** with **Fabric Loader** (0.19.5 or newer) and
    - uses the "hashed seed" that Minecraft sends to every player, which settles the full seed as soon as the
      structure seed is known;
    - checks in the background whether the seed was typed (as text or a number from -2147483648 to 2147483647): then
-     the hashed seed alone gives it, without any structures. That takes from a few minutes to about 20 minutes of
-     background work, depending on the computer (a moment for a small typed number like 12345), using a quarter of
-     your CPU threads; it continues where it was when you come back. The seed found is checked against the bedrock
+     the hashed seed alone gives it, without any structures. That takes from a few minutes to half an hour or more
+     of background work on older computers (a moment for a small typed number like 12345), using a quarter of your CPU
+     threads; it continues where it was when you come back. The seed found is checked against the bedrock
      and structures noted (see "The hashed seed" above).
 5. The status shows in the top-left corner and on the mod's screen; **Copy seed** copies the result.
 

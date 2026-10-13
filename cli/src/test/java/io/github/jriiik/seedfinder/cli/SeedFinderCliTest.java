@@ -345,10 +345,10 @@ class SeedFinderCliTest {
         assertEquals(0, result.exitCode(), result.err());
         assertTrue(result.out().contains("Found the world seed: -7\n"), result.out());
 
-        // find points to it when the notes have a hashed seed but no structures.
+        // find points to it when the notes have a hashed seed but no structures (with the file, so the notes check the seed).
         result = run(find("--file", notes.toString()));
         assertEquals(1, result.exitCode(), result.err());
-        assertTrue(result.out().contains("seedfinder typed-seed " + io.github.jriiik.seedfinder.Seeds.hashedSeed(-7L)), result.out());
+        assertTrue(result.out().contains("seedfinder typed-seed --file " + notes), result.out());
     }
 
     @Test
@@ -381,7 +381,96 @@ class SeedFinderCliTest {
         result = run("typed-seed", "--threads", "2", "--file", notes.toString());
         assertEquals(1, result.exitCode(), result.err());
         assertFalse(result.out().contains("Found the world seed"), result.out());
-        assertTrue(result.out().contains("the notes don't fit that seed (bedrock blocks that don't fit: "), result.out());
+        assertTrue(result.out().contains("the notes don't fit that seed (overworld bedrock blocks that don't fit: "), result.out());
+    }
+
+    /** A notes file with the hashed seed of 12345 and the given lines. */
+    private static java.nio.file.Path notes12345(java.nio.file.Path folder, List<String> lines) throws java.io.IOException {
+        java.nio.file.Path file = folder.resolve("notes-" + Integer.toHexString(lines.hashCode()) + ".txt");
+        List<String> all = new java.util.ArrayList<>();
+        all.add("hashed-seed " + io.github.jriiik.seedfinder.Seeds.hashedSeed(12345L));
+        all.addAll(lines);
+        java.nio.file.Files.write(file, all);
+        return file;
+    }
+
+    private static List<String> bedrockLines(String dimension, long worldSeed) {
+        var data = io.github.jriiik.seedfinder.version.MinecraftVersion.V26_3.data();
+        return io.github.jriiik.seedfinder.bedrock.BedrockText.heights(
+            new io.github.jriiik.seedfinder.bedrock.BedrockPattern(data.bedrockDimension(dimension).orElseThrow(), worldSeed), 0, 0, 16, 16);
+    }
+
+    private static Result typedSeed(java.nio.file.Path notes) {
+        return run("typed-seed", "--threads", "2", "--file", notes.toString());
+    }
+
+    @Test
+    void typedSeedExplainsEachVerdict(@org.junit.jupiter.api.io.TempDir java.nio.file.Path folder) throws java.io.IOException {
+        // One structure: not enough to confirm.
+        Result result = typedSeed(notes12345(folder, List.of("village 336 80")));
+        assertEquals(0, result.exitCode(), result.err());
+        assertTrue(result.out().contains("This is right unless the server sends a made-up hashed seed: the notes don't have enough structures"
+            + " or overworld\nbedrock yet to confirm it."), result.out());
+
+        // A structure noted one chunk off: the seed is not presented, and the likeliest causes are named.
+        result = typedSeed(notes12345(folder, List.of("village 336 96")));
+        assertEquals(1, result.exitCode(), result.err());
+        assertFalse(result.out().contains("Found the world seed"), result.out());
+        assertTrue(result.out().contains("the notes don't fit that seed (structures that don't fit: 1 of 1).\nEither the server sends a made-up"
+            + " hashed seed, or the structure was noted in the wrong place or doesn't follow the seed (older chunks, a command, a copy, or a"
+            + " server that places structures differently). Bedrock notes from the overworld would tell which.\nStructures that don't fit:"
+            + " villages at block (336, 96). If one was noted in the wrong place, fix it and run this again."), result.out());
+
+        // Two structures confirm it; the third is listed.
+        result = typedSeed(notes12345(folder, List.of("village 336 96", "desert_pyramid 272 80", "trial_chamber 0 224")));
+        assertEquals(0, result.exitCode(), result.err());
+        assertTrue(result.out().contains("Found the world seed: 12345\n"), result.out());
+        assertTrue(result.out().contains("The notes confirm it: 2 structures fit it.\nThis structure in the notes doesn't fit it: villages at"
+            + " block (336, 96). The server may place structures differently, or it comes from an older Minecraft version, a command or a"
+            + " copy (or was noted in the wrong place)."), result.out());
+
+        // Overworld bedrock confirms it; nether bedrock from chunks made by Minecraft 1.17 or older doesn't follow the seed.
+        List<String> lines = new java.util.ArrayList<>(bedrockLines("overworld", 12345L));
+        lines.add("");
+        lines.addAll(bedrockLines("nether", 999L));
+        result = typedSeed(notes12345(folder, lines));
+        assertEquals(0, result.exitCode(), result.err());
+        assertTrue(result.out().matches("(?s).*The notes confirm it: \\d+ overworld bedrock blocks fit it\\.\n\\d+ of the \\d+ nether bedrock"
+            + " blocks in the notes don't fit it: nether chunks made by Minecraft 1\\.17 or older don't follow the seed\\..*"), result.out());
+
+        // A note that is wrong whatever the seed is left out; the rest still confirms it.
+        lines = new java.util.ArrayList<>(bedrockLines("overworld", 12345L));
+        lines.add("");
+        lines.add("not-bedrock 5 -64 5");
+        result = typedSeed(notes12345(folder, lines));
+        assertEquals(0, result.exitCode(), result.err());
+        assertTrue(result.out().contains("Left out of the check, because it is wrong whatever the seed: "), result.out());
+        assertTrue(result.out().contains("The notes confirm it: "), result.out());
+    }
+
+    @Test
+    void typedSeedPointsAtMistypedBedrock(@org.junit.jupiter.api.io.TempDir java.nio.file.Path folder) throws java.io.IOException {
+        // One digit of the heights changed: two blocks are wrong, which a wrong seed (about a third wrong) can't explain.
+        List<String> lines = new java.util.ArrayList<>(bedrockLines("overworld", 12345L));
+        String row = lines.get(1);
+        char first = row.charAt(0);
+        lines.set(1, (first == '3' ? '1' : '3') + row.substring(1));
+        Result result = typedSeed(notes12345(folder, lines));
+        assertEquals(1, result.exitCode(), result.err());
+        assertFalse(result.out().contains("Found the world seed"), result.out());
+        assertTrue(result.out().contains("Most of the overworld bedrock fits it, though (a wrong seed gets about a third of it wrong), so these"
+            + " blocks were\nprobably noted wrong:\n  your notes say "), result.out());
+        assertTrue(result.out().contains("Check them in the game, fix them and run this again."), result.out());
+        assertFalse(result.out().contains("made-up"), result.out());
+    }
+
+    @Test
+    void typedSeedNeedsAHashedSeedInTheNotes(@org.junit.jupiter.api.io.TempDir java.nio.file.Path folder) throws java.io.IOException {
+        java.nio.file.Path notes = folder.resolve("no-hash.txt");
+        java.nio.file.Files.writeString(notes, "village 336 80\n");
+        Result result = typedSeed(notes);
+        assertEquals(2, result.exitCode());
+        assertTrue(result.err().contains("has no 'hashed-seed' line"), result.err());
     }
 
     @Test

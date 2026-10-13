@@ -16,7 +16,7 @@ final class ObservationCheck {
     private static final int OUTPUT_SHIFT = 17;
 
     /** Sets on the same grid with salts this close behave almost the same in the same region (the four temple types). */
-    private static final int LINKED_SALT_DISTANCE = 16;
+    static final int LINKED_SALT_DISTANCE = 16;
 
     final StructureObservation observation;
     private final RandomSpreadPlacement placement;

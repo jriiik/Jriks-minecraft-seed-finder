@@ -60,8 +60,6 @@ final class WorldSession {
     private SeedCheck typedSeedCheck;
     /** Typed-seed progress not saved yet (it doesn't count as a change of the notes). */
     private boolean progressToSave;
-    /** Increases when all notes are removed, so that work started before is dropped. */
-    private int generation;
 
     /** Increases with every change, so a search result can tell whether it is still up to date. */
     private int version;
@@ -101,11 +99,6 @@ final class WorldSession {
             progressToSave = true; // the notes file says what the notes make of the seed
         }
         typedSeedCheck = check;
-    }
-
-    /** Counts "Remove all notes", so work started before it can be dropped. */
-    int generation() {
-        return generation;
     }
 
     /**
@@ -322,17 +315,18 @@ final class WorldSession {
         return true;
     }
 
-    /** Forgets everything noted in this world (collecting stays as it is); for a world that was reset or replaced. */
+    /**
+     * Forgets everything noted in this world (collecting stays as it is); for a world that was reset or replaced. The
+     * typed-seed search is kept: it depends only on the hashed seed, which is part of the key these notes are kept
+     * under, so it would find the same again.
+     */
     void clearAll() {
         structures.clear();
         removed.clear();
         disagreements.clear();
-        typedSeedPieces = 0;
-        typedSeed = OptionalLong.empty();
         typedSeedCheck = null;
         bedrock.clear();
         hashedSeed = OptionalLong.empty();
-        generation++;
         version++;
     }
 
@@ -372,7 +366,10 @@ final class WorldSession {
         List<String> lines = new ArrayList<>();
         lines.add("# Jrik's Seed Finder notes for " + world);
         lines.add("# Written by the mod. The command-line app reads this file too: seedfinder find --file <this file>");
-        hashedSeed.ifPresent(value -> lines.add("hashed-seed " + value));
+        hashedSeed.ifPresent(value -> {
+            lines.add("# If the seed was typed (as text or a short number): seedfinder typed-seed --file <this file>");
+            lines.add("hashed-seed " + value);
+        });
         typedSeed.ifPresent(value -> lines.add(typedSeedComment(value)));
         lines.add("");
         for (NotedStructure structure : structures) {
@@ -395,11 +392,11 @@ final class WorldSession {
             return "# The hashed seed is the one of the typed seed " + seed + " (not checked against these notes yet).";
         }
         return switch (typedSeedCheck.verdict()) {
-            case CONFIRMED -> "# The world seed is " + seed + ": it was typed, its hash is the hashed seed, and these notes fit it.";
+            case CONFIRMED -> "# The world seed is " + seed + ": it was typed, its hash is the hashed seed, and these notes confirm it.";
             case UNCONFIRMED -> "# The world seed is " + seed + " (it was typed, and its hash is the hashed seed), unless the server sends a "
                 + "made-up hashed seed: these notes don't confirm it yet.";
-            case CONTRADICTED -> "# The hashed seed is the one of the typed seed " + seed + ", but these notes don't fit that seed: the server "
-                + "probably sends a made-up hashed seed.";
+            case CONTRADICTED -> "# The hashed seed is the one of the typed seed " + seed + ", but these notes don't fit that seed (the server "
+                + "may send a made-up hashed seed).";
         };
     }
 

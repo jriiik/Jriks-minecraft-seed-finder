@@ -121,9 +121,10 @@ final class StatusText {
                 lines.add("Note: " + misfits(check) + " fit this seed: " + (one ? "it" : "they") + " may come from an older Minecraft version,"
                     + " a command or a copy (or " + (one ? "was" : "were") + " noted in the wrong place).");
             }
-            if (check.bedrockMismatches() > 0) {
-                lines.add("Note: some of the bedrock seen doesn't fit this seed (it may have been changed).");
+            if (check.overworld().mismatches() > 0) {
+                lines.add("Note: some of the overworld bedrock seen doesn't fit this seed (it may have been changed).");
             }
+            netherNote(check, lines);
             return true;
         }
         switch (check.verdict()) {
@@ -137,9 +138,7 @@ final class StatusText {
                         + (one ? "it comes" : "they come") + " from an older Minecraft version, a command or a copy (or "
                         + (one ? "was" : "were") + " noted in the wrong place).");
                 }
-                if (check.bedrockMismatches() > 0) {
-                    lines.add("Note: some of the bedrock seen doesn't fit this seed (the server may change blocks it sends).");
-                }
+                netherNote(check, lines);
                 return true;
             }
             case UNCONFIRMED -> {
@@ -149,21 +148,50 @@ final class StatusText {
                 return true;
             }
             case CONTRADICTED -> {
-                lines.add("The hashed seed the server sent is the one of the typed seed " + seed + ", but " + disagreeing(check) + ": "
-                    + (check.bedrockMismatches() > 0
-                        ? "the server probably sends a made-up hashed seed, so the world seed has to come from structures and bedrock instead."
-                        : "the server may send a made-up hashed seed, or place structures differently. Bedrock from the overworld would tell which."));
+                lines.add("The hashed seed the server sent is the one of the typed seed " + seed + ", but " + disagreeing(check) + ". "
+                    + contradictionReason(check));
                 return false;
             }
         }
         return false;
     }
 
-    /** What fits the seed: "the bedrock seen fits it", "the bedrock seen and 2 of the 3 structures noted fit it", ... */
+    /** Why notes contradict a typed seed, and what would tell. */
+    static String contradictionReason(SeedCheck check) {
+        if (check.bedrockMostlyFits()) {
+            return "Most of the overworld bedrock fits it, though (a wrong seed gets about a third of it wrong), so those blocks may have"
+                + " been changed or read wrong; it isn't shown as the world seed while they disagree.";
+        }
+        if (check.overworld().mismatches() > 0) {
+            return "The server probably sends a made-up hashed seed, so the world seed has to come from structures and bedrock instead.";
+        }
+        List<String> otherwise = new ArrayList<>();
+        if (check.nether().mismatches() > 0) {
+            otherwise.add("those nether chunks were made by Minecraft 1.17 or older");
+        }
+        if (!check.misfits().isEmpty()) {
+            boolean one = check.misfits().size() == 1;
+            otherwise.add((one ? "that structure was" : "those structures were") + " noted in the wrong place or " + (one ? "doesn't" : "don't")
+                + " follow the seed (older chunks, a command, a copy, or a server that places structures differently)");
+        }
+        return "Either the server sends a made-up hashed seed, or " + String.join(" and ", otherwise) + ". Bedrock from the overworld would tell which.";
+    }
+
+    private static void netherNote(SeedCheck check, List<String> lines) {
+        if (check.nether().mismatches() > 0) {
+            lines.add("Note: some of the nether bedrock seen doesn't fit this seed: nether chunks made by Minecraft 1.17 or older don't"
+                + " follow the seed (or the blocks were changed).");
+        }
+    }
+
+    /** What fits the seed: "the overworld bedrock seen fits it", "the overworld bedrock seen and 2 of the 3 structures noted fit it", ... */
     static String agreeing(SeedCheck check) {
         List<String> parts = new ArrayList<>();
-        if (check.bedrockBlocks() > 0 && check.bedrockMismatches() == 0) {
-            parts.add("the bedrock seen");
+        if (check.overworld().fits()) {
+            parts.add("the overworld bedrock seen");
+        }
+        if (check.nether().fits()) {
+            parts.add("the nether bedrock seen");
         }
         if (!check.fitting().isEmpty()) {
             parts.add(structures(check.fitting().size(), check.fitting().size() + check.misfits().size()));
@@ -171,14 +199,17 @@ final class StatusText {
         return String.join(" and ", parts) + (parts.size() > 1 || check.fitting().size() > 1 ? " fit it" : " fits it");
     }
 
-    /** What doesn't fit the seed: "the structure noted doesn't fit it", "1 of the 2 structures noted and the bedrock seen don't fit it", ... */
+    /** What doesn't fit the seed: "the structure noted doesn't fit it", "1 of the 2 structures noted and the nether bedrock seen don't fit it", ... */
     static String disagreeing(SeedCheck check) {
         List<String> parts = new ArrayList<>();
         if (!check.misfits().isEmpty()) {
             parts.add(structures(check.misfits().size(), check.fitting().size() + check.misfits().size()));
         }
-        if (check.bedrockMismatches() > 0) {
-            parts.add("the bedrock seen");
+        if (check.overworld().mismatches() > 0) {
+            parts.add("the overworld bedrock seen");
+        }
+        if (check.nether().mismatches() > 0) {
+            parts.add("the nether bedrock seen");
         }
         return String.join(" and ", parts) + (parts.size() > 1 || check.misfits().size() > 1 ? " don't fit it" : " doesn't fit it");
     }

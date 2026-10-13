@@ -228,7 +228,7 @@ final class FullSeedReport {
         return index < 26 ? String.valueOf((char) ('A' + index)) : "#" + (index + 1);
     }
 
-    private static String mistake(BedrockObservation observation) {
+    static String mistake(BedrockObservation observation) {
         String at = "(" + observation.x() + ", " + observation.y() + ", " + observation.z() + ")"
             + (observation.dimension().id().equals("minecraft:overworld") ? "" : " in the " + observation.dimension().displayName());
         return observation.bedrock() ? "your notes say bedrock at " + at + ", this seed says no bedrock"

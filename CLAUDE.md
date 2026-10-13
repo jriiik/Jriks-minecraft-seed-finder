@@ -37,9 +37,11 @@ the client already received.
     `TypedSeedSearch` checks all 2^32 typed seeds (text hashCodes and short numbers) against the hashed seed, in
     1024 resumable pieces, smallest numbers first; its progress gives a safe resume point (all pieces before it
     checked), never a plain count, and `LAYOUT` must change with the pieces. `Seeds.Hasher` is the fast reusable
-    hashed-seed function. A seed found from the hashed seed alone is only presented after `SeedCheck` (structures +
-    bedrock; confirmed when a wrong seed's chance to fit is <= 0.001) doesn't contradict it: servers may send a
-    made-up hashed seed.
+    hashed-seed function. A seed found from the hashed seed alone is only presented after `SeedCheck` doesn't
+    contradict it (servers may send a made-up hashed seed): confirmed when a wrong seed would fit the notes at least
+    as well with a chance <= 0.001 (structures: tail bound over all checked notes, linked notes counted once;
+    overworld bedrock: measured rate x 10); any overworld bedrock mismatch contradicts it; nether bedrock (old
+    chunks) and structures only contradict it when nothing confirms it.
   - `recognize/`: start chunks of jigsaw structures from blocks. `StartPiece` (a start piece's blueprint: blocks,
     built/terrain split, reference point, anchors), `StartPieceRecognizer` (anchor -> candidate placements that pass
     the chunk-corner and region checks, looked up by the anchor's position in its chunk -> score; the all, built and
@@ -52,9 +54,9 @@ the client already received.
   listeners; `WorldSession` holds per-world notes (opt-in `collecting`, saved as JSON plus a CLI-readable notes
   file in `config/jriksseedfinder/`); `SearchRunner` runs `WorldSeedSearch` on its own low-priority thread;
   `TypedSeedRunner` runs `TypedSeedSearch` in the background (a quarter of the CPU threads, progress saved, stops
-  once the seed is known or the player leaves; results from before "Remove all notes" are dropped via
-  `WorldSession.generation`), and `SearchRunner` checks a typed seed against the notes (`SeedCheck`) before its
-  structure search;
+  once the seed is known or the player leaves; kept by "Remove all notes", since it depends only on the hashed seed
+  in the notes' key), and `SearchRunner` checks a typed seed against the notes (`SeedCheck`) before its structure
+  search;
   `BedrockScanner` reads bedrock layers (B / natural stone / unknown); `StartPieceLibrary` builds the start-piece
   blueprints at runtime from the game jar's own data (structure, template pool, processor list, block tag JSON and
   `.nbt` templates; 26.x block states use `id`/`properties`), and `StructureRecognition` scans loaded chunks for
