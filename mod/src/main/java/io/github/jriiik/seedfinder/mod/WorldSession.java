@@ -60,6 +60,8 @@ final class WorldSession {
     private SeedCheck typedSeedCheck;
     /** Typed-seed progress not saved yet (it doesn't count as a change of the notes). */
     private boolean progressToSave;
+    /** The version at the last "Remove all notes": checks of the notes from before it are out of date. */
+    private int clearedAt;
 
     /** Increases with every change, so a search result can tell whether it is still up to date. */
     private int version;
@@ -90,9 +92,12 @@ final class WorldSession {
         return Optional.ofNullable(typedSeedCheck);
     }
 
-    /** Notes how the notes fit the typed seed (main thread); a check of another seed is ignored. */
-    void setTypedSeedCheck(SeedCheck check) {
-        if (typedSeed.isEmpty() || typedSeed.getAsLong() != check.worldSeed()) {
+    /**
+     * Notes how the notes of {@code forVersion} fit the typed seed (main thread); a check of another seed, or of notes
+     * from before "Remove all notes", is ignored.
+     */
+    void setTypedSeedCheck(int forVersion, SeedCheck check) {
+        if (typedSeed.isEmpty() || typedSeed.getAsLong() != check.worldSeed() || forVersion < clearedAt) {
             return;
         }
         if (typedSeedCheck == null || typedSeedCheck.verdict() != check.verdict()) {
@@ -316,9 +321,9 @@ final class WorldSession {
     }
 
     /**
-     * Forgets everything noted in this world (collecting stays as it is); for a world that was reset or replaced. The
-     * typed-seed search is kept: it depends only on the hashed seed, which is part of the key these notes are kept
-     * under, so it would find the same again.
+     * Forgets the structures and bedrock noted in this world (collecting stays as it is); for a world that was reset
+     * or replaced. The hashed seed and the typed-seed search are kept: the hashed seed is part of the key these notes
+     * are kept under, and the typed seed depends only on it.
      */
     void clearAll() {
         structures.clear();
@@ -326,8 +331,8 @@ final class WorldSession {
         disagreements.clear();
         typedSeedCheck = null;
         bedrock.clear();
-        hashedSeed = OptionalLong.empty();
         version++;
+        clearedAt = version;
     }
 
     int version() {

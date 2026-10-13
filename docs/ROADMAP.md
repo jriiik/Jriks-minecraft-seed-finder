@@ -90,6 +90,12 @@ Typical searches take well under a second. Villages-only searches need more stru
   seed has full seeds that miss only a few blocks of a chunk.
 - *Nether bedrock* uses the old 48-bit generator, so it only depends on the structure seed. It can tell look-alike
   structure seeds apart, and later (Phase 6) it could find the structure seed without any structures.
+- *Near the middle of the world the false-fit rate is higher* (found in the review of the typed-seed check). Notes
+  next to x = 0 or z = 0 are fitted by wrong seeds more often than the c = 3.5 estimate says: for a 16 x 16 single
+  layer around the origin about 10 times on average and up to about 90 times in single worlds; for a chunk of
+  heights about 2 times (up to about 14). The typed-seed check allows for it. The bedrock proof of the structure
+  search still uses the plain estimate; it only matters there when the structure seed itself is wrong, but it
+  should be re-measured and given the same margin.
 
 ### Phase 5: the mod
 
@@ -116,10 +122,16 @@ Typical searches take well under a second. Villages-only searches need more stru
     nothing. Notes whose random numbers are related (the same region of sets with nearly the same salt: the four
     temples, ocean monuments and end cities, or one set twice) count once. Measured: random typed seeds checked
     against 30, 60 and 100 notes of one world were confirmed 5, 60 and 26 times in 100,000.
-  - Overworld bedrock that fits completely: the measured false-fit rate times 10, because single worlds were measured
-    up to about 6 times worse than the average for small notes (so bedrock alone needs about 75 informative blocks;
-    the mod notes thousands).
-  Any overworld bedrock that doesn't fit means it is not the world's seed. Nether bedrock and structures that don't
+  - Overworld bedrock that fits completely: the measured false-fit rate with a safety factor, so that bedrock alone
+    confirms a seed only from about 300 informative blocks (a chunk of heights has about 600, and the mod notes about
+    1,000 per chunk). The measured rate is an average: for small notes single worlds were measured up to about 10
+    times higher, and next to x = 0 or z = 0, where the game's random numbers for neighbouring blocks are alike, up to
+    about 90 times (a single layer of 16 x 16 blocks around the middle of the world). Less bedrock still helps
+    together with structures.
+  Any overworld bedrock that doesn't fit keeps the seed from being shown as the world's seed, and the message says
+  why: a few wrong blocks out of many were probably noted wrong (a wrong seed gets about a third of them wrong);
+  bedrock that doesn't fit while the structures confirm the seed was probably noted in the wrong place (or the
+  server changes the bedrock it sends); otherwise the server probably sends a made-up hashed seed. Nether bedrock and structures that don't
   fit only count against it when nothing confirms it: nether chunks made by Minecraft 1.17 or older have bedrock that
   doesn't follow the seed, a server may place structures differently, and older chunks or commands leave structures
   that don't follow it either. Bedrock notes that break the game's rules are left out and reported.

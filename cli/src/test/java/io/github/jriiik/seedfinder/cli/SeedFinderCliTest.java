@@ -436,7 +436,8 @@ class SeedFinderCliTest {
         result = typedSeed(notes12345(folder, lines));
         assertEquals(0, result.exitCode(), result.err());
         assertTrue(result.out().matches("(?s).*The notes confirm it: \\d+ overworld bedrock blocks fit it\\.\n\\d+ of the \\d+ nether bedrock"
-            + " blocks in the notes don't fit it: nether chunks made by Minecraft 1\\.17 or older don't follow the seed\\..*"), result.out());
+            + " blocks in the notes don't fit it: nether chunks made by Minecraft 1\\.17 or older don't follow the seed \\(or they were"
+            + " noted wrong\\):\n  your notes say .* in the nether.*"), result.out());
 
         // A note that is wrong whatever the seed is left out; the rest still confirms it.
         lines = new java.util.ArrayList<>(bedrockLines("overworld", 12345L));
@@ -462,6 +463,40 @@ class SeedFinderCliTest {
             + " blocks were\nprobably noted wrong:\n  your notes say "), result.out());
         assertTrue(result.out().contains("Check them in the game, fix them and run this again."), result.out());
         assertFalse(result.out().contains("made-up"), result.out());
+    }
+
+    @Test
+    void typedSeedTellsANotingMistakeFromAMadeUpHashedSeed(@org.junit.jupiter.api.io.TempDir java.nio.file.Path folder) throws java.io.IOException {
+        List<String> structures = List.of("desert_pyramid 272 80", "swamp_hut 256 -144", "village 336 80", "shipwreck -128 32",
+            "ruined_portal 16 0", "trial_chamber 0 224");
+
+        // Bedrock of another world: probably a made-up hashed seed.
+        Result result = typedSeed(notes12345(folder, bedrockLines("overworld", 999L)));
+        assertEquals(1, result.exitCode(), result.err());
+        assertTrue(result.out().contains("\nThe server probably sends a made-up hashed seed, so this is not the world's seed. Use 'seedfinder"
+            + " find' with the\nstructures and bedrock instead.\n"), result.out());
+
+        // The world's own bedrock written under the wrong corner, while six structures confirm the seed: a noting mistake.
+        List<String> lines = new java.util.ArrayList<>(structures);
+        List<String> shifted = new java.util.ArrayList<>(bedrockLines("overworld", 12345L));
+        shifted.set(0, "bedrock-heights 16 0");
+        lines.addAll(shifted);
+        result = typedSeed(notes12345(folder, lines));
+        assertEquals(1, result.exitCode(), result.err());
+        assertFalse(result.out().contains("Found the world seed") || result.out().contains("made-up"), result.out());
+        assertTrue(result.out().contains("The structures in the notes confirm it, though, so the overworld bedrock was probably noted in the"
+            + " wrong place:\n"), result.out());
+
+        // One nether digit mistyped, nothing else noted: the block is shown so it can be checked.
+        List<String> nether = new java.util.ArrayList<>(bedrockLines("nether", 12345L));
+        String row = nether.get(1);
+        nether.set(1, (row.charAt(0) == '2' ? '1' : '2') + row.substring(1));
+        result = typedSeed(notes12345(folder, nether));
+        assertEquals(1, result.exitCode(), result.err());
+        assertTrue(result.out().contains("Either the server sends a made-up hashed seed, or the nether bedrock was noted wrong or comes from"
+            + " chunks made by Minecraft 1.17 or older. Bedrock notes from the overworld would tell which.\nNether bedrock that doesn't fit:\n"
+            + "  your notes say "), result.out());
+        assertTrue(result.out().contains("If it was noted wrong, fix it and run this again."), result.out());
     }
 
     @Test

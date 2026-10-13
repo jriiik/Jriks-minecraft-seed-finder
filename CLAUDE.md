@@ -40,8 +40,10 @@ the client already received.
     hashed-seed function. A seed found from the hashed seed alone is only presented after `SeedCheck` doesn't
     contradict it (servers may send a made-up hashed seed): confirmed when a wrong seed would fit the notes at least
     as well with a chance <= 0.001 (structures: tail bound over all checked notes, linked notes counted once;
-    overworld bedrock: measured rate x 10); any overworld bedrock mismatch contradicts it; nether bedrock (old
-    chunks) and structures only contradict it when nothing confirms it.
+    overworld bedrock: measured rate x a factor so that bedrock alone needs 300 blocks, because notes next to x = 0
+    or z = 0 fit wrong seeds up to ~90x more often); any overworld bedrock mismatch contradicts it; nether bedrock
+    (old chunks) and structures only contradict it when nothing confirms it. `SeedCheckTest` guards the measured
+    rates (60 notes; an 18 x 18 layer around the origin).
   - `recognize/`: start chunks of jigsaw structures from blocks. `StartPiece` (a start piece's blueprint: blocks,
     built/terrain split, reference point, anchors), `StartPieceRecognizer` (anchor -> candidate placements that pass
     the chunk-corner and region checks, looked up by the anchor's position in its chunk -> score; the all, built and

@@ -162,6 +162,10 @@ final class StatusText {
             return "Most of the overworld bedrock fits it, though (a wrong seed gets about a third of it wrong), so those blocks may have"
                 + " been changed or read wrong; it isn't shown as the world seed while they disagree.";
         }
+        if (check.overworld().mismatches() > 0 && check.structuresConfirm()) {
+            return "The structures noted confirm it, though, so the server may change the bedrock it sends; it isn't shown as the world"
+                + " seed while the bedrock disagrees.";
+        }
         if (check.overworld().mismatches() > 0) {
             return "The server probably sends a made-up hashed seed, so the world seed has to come from structures and bedrock instead.";
         }

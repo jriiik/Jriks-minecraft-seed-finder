@@ -32,8 +32,10 @@ import java.util.Set;
  *       region of sets with nearly the same salt get related random numbers in every world (and two notes of one set
  *       in one region can't both fit), so such notes count once, with the sum of their chances.</li>
  *   <li>Overworld bedrock, when every block fits: the measured false-fit rate ({@link FullSeedFinder#falseFitChance})
- *       times {@link #BEDROCK_SAFETY}, because that rate is an average over worlds and single worlds were measured up
- *       to about 5 times higher for small notes.</li>
+ *       times {@link #BEDROCK_SAFETY}. That rate is an average over worlds and places; for small notes, single worlds
+ *       were measured up to about 10 times higher, and notes next to x = 0 or z = 0 (where the game's random numbers
+ *       for neighbouring blocks are alike) up to about 90 times. So bedrock alone confirms a seed only from
+ *       {@link #BEDROCK_ALONE} informative blocks; less still helps together with structures.</li>
  * </ul>
  * Overworld bedrock that doesn't fit contradicts the seed: the right seed fits every valid overworld bedrock note,
  * also in chunks of worlds made before Minecraft 1.18 (their part below y = 0 was made with the seed). Nether bedrock
@@ -53,6 +55,7 @@ import java.util.Set;
  * @param bedrockProblems bedrock notes left out because they are wrong whatever the seed
  * @param falseFitChance  at most this chance that a wrong seed fits the notes as well as this one (1 when the
  *                        overworld bedrock doesn't fit)
+ * @param structureChance the same for the structures alone
  */
 public record SeedCheck(
     long worldSeed,
@@ -62,7 +65,8 @@ public record SeedCheck(
     Bedrock overworld,
     Bedrock nether,
     List<String> bedrockProblems,
-    double falseFitChance
+    double falseFitChance,
+    double structureChance
 ) {
 
     /**
@@ -96,8 +100,10 @@ public record SeedCheck(
 
     /** The seed counts as confirmed when a wrong seed would fit the notes this well with at most this chance. */
     public static final double MAX_FALSE_FIT_CHANCE = 0.001;
-    /** How much more often than the measured average a wrong seed may fit the bedrock of one particular world. */
-    static final double BEDROCK_SAFETY = 10;
+    /** Bedrock alone confirms a seed from this many informative overworld blocks (a chunk of heights has about 600). */
+    static final int BEDROCK_ALONE = 300;
+    /** How much more often than the measured average a wrong seed may fit bedrock notes: so that {@link #BEDROCK_ALONE} holds. */
+    static final double BEDROCK_SAFETY = MAX_FALSE_FIT_CHANCE / FullSeedFinder.falseFitChance(BEDROCK_ALONE);
 
     public SeedCheck {
         fitting = List.copyOf(fitting);
@@ -112,6 +118,11 @@ public record SeedCheck(
      */
     public boolean bedrockMostlyFits() {
         return overworld.mismatches() > 0 && overworld.blocks() >= 40 && overworld.mismatches() <= Math.max(4, overworld.blocks() / 10);
+    }
+
+    /** True when the structures alone would confirm the seed (whatever the bedrock says). */
+    public boolean structuresConfirm() {
+        return structureChance <= MAX_FALSE_FIT_CHANCE;
     }
 
     public static SeedCheck of(VersionData data, List<StructureObservation> structures, List<BedrockObservation> bedrock, long worldSeed) {
@@ -132,7 +143,8 @@ public record SeedCheck(
             checked.add(structure);
             (fits ? fitting : misfits).add(structure);
         }
-        double chance = structuresFitChance(checked, new HashSet<>(fitting));
+        double structureChance = structuresFitChance(checked, new HashSet<>(fitting));
+        double chance = structureChance;
 
         BedrockEvidence evidence = new BedrockEvidence(bedrock);
         Set<String> conflicting = conflictingBlocks(bedrock);
@@ -148,7 +160,7 @@ public record SeedCheck(
             : chance <= MAX_FALSE_FIT_CHANCE ? Verdict.CONFIRMED
             : !misfits.isEmpty() || nether.mismatches() > 0 ? Verdict.CONTRADICTED
             : Verdict.UNCONFIRMED;
-        return new SeedCheck(worldSeed, verdict, fitting, misfits, overworld, nether, evidence.problems(), chance);
+        return new SeedCheck(worldSeed, verdict, fitting, misfits, overworld, nether, evidence.problems(), chance, structureChance);
     }
 
     private static Bedrock check(List<BedrockObservation> observations, Set<String> conflicting, long worldSeed) {

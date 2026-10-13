@@ -84,7 +84,7 @@ final class SearchRunner {
                 if (typedSeed.isPresent()) {
                     SeedCheck check = SeedCheck.of(data, notes.structures(), notes.bedrock(), typedSeed.getAsLong());
                     // Shown at once: a structure search can take a while.
-                    Minecraft.getInstance().execute(() -> session.setTypedSeedCheck(check));
+                    Minecraft.getInstance().execute(() -> session.setTypedSeedCheck(version, check));
                     typedSeedConfirmed = check.verdict() == SeedCheck.Verdict.CONFIRMED;
                 }
                 if (notes.structures().isEmpty()) {

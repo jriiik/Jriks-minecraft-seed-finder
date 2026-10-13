@@ -163,26 +163,45 @@ class WorldSessionTest {
         session.setTypedSeedSearch(new TypedSeedSearch.Outcome(OptionalLong.of(12345L), 0));
 
         // Nothing noted yet: shown, but not confirmed.
-        session.setTypedSeedCheck(SeedCheck.of(data, List.of(), List.of(), 12345L));
+        session.setTypedSeedCheck(session.version(), SeedCheck.of(data, List.of(), List.of(), 12345L));
         assertEquals(OptionalLong.of(12345L), session.worldSeed());
         assertTrue(session.notesLines().stream().anyMatch(line -> line.startsWith("# The world seed is 12345 (it was typed")));
 
         // A village where seed 12345 has none (its village of that region is one chunk west): not the world seed.
         List<StructureObservation> misfit = ObservationReader.read(data, List.of("village 352 80")).structures();
-        session.setTypedSeedCheck(SeedCheck.of(data, misfit, List.of(), 12345L));
+        session.setTypedSeedCheck(session.version(), SeedCheck.of(data, misfit, List.of(), 12345L));
         assertEquals(OptionalLong.empty(), session.worldSeed());
         assertTrue(session.notesLines().stream().anyMatch(line -> line.contains("these notes don't fit that seed")));
 
         // A check of another seed changes nothing.
-        session.setTypedSeedCheck(SeedCheck.of(data, List.of(), List.of(), 999L));
+        session.setTypedSeedCheck(session.version(), SeedCheck.of(data, List.of(), List.of(), 999L));
         assertEquals(OptionalLong.empty(), session.worldSeed());
 
-        // "Remove all notes" drops the check (it was about the notes), not the typed seed.
-        session.setTypedSeedCheck(SeedCheck.of(data, List.of(), List.of(), 12345L));
+        // "Remove all notes" drops the check (it was about the notes), not the typed seed or the hashed seed; a check of
+        // the notes from before it is ignored.
+        int before = session.version();
+        session.setTypedSeedCheck(before, SeedCheck.of(data, List.of(), List.of(), 12345L));
         session.clearAll();
         assertEquals(java.util.Optional.empty(), session.typedSeedCheck());
         assertEquals(OptionalLong.of(12345L), session.typedSeed());
+        assertEquals(OptionalLong.of(Seeds.hashedSeed(12345L)), session.hashedSeed());
+        session.setTypedSeedCheck(before, SeedCheck.of(data, List.of(), List.of(), 12345L));
+        assertEquals(java.util.Optional.empty(), session.typedSeedCheck());
         assertEquals(OptionalLong.empty(), session.worldSeed(), "shown again once the remaining notes are checked");
+        session.setTypedSeedCheck(session.version(), SeedCheck.of(data, List.of(), List.of(), 12345L));
+        assertEquals(OptionalLong.of(12345L), session.worldSeed());
+    }
+
+    @Test
+    void removeAllNotesKeepsTheTypedSeedAcrossSaving(@TempDir Path folder) throws IOException {
+        WorldSession session = new WorldSession(WORLD);
+        session.setHashedSeed(Seeds.hashedSeed(12345L));
+        session.setTypedSeedSearch(new TypedSeedSearch.Outcome(OptionalLong.of(12345L), 3));
+        session.clearAll();
+        session.save(folder);
+        WorldSession loaded = WorldSession.load(folder, WORLD);
+        assertEquals(OptionalLong.of(12345L), loaded.typedSeed());
+        assertEquals(OptionalLong.of(Seeds.hashedSeed(12345L)), loaded.hashedSeed());
     }
 
     @Test
@@ -195,7 +214,7 @@ class WorldSessionTest {
         session.setTypedSeedSearch(new TypedSeedSearch.Outcome(OptionalLong.of(12345L), 0));
         assertEquals(OptionalLong.empty(), session.worldSeed(), "shown once checked");
         List<StructureObservation> misfit = ObservationReader.read(data, List.of("village 352 80")).structures();
-        session.setTypedSeedCheck(SeedCheck.of(data, misfit, List.of(), 12345L));
+        session.setTypedSeedCheck(session.version(), SeedCheck.of(data, misfit, List.of(), 12345L));
         assertEquals(OptionalLong.of(12345L), session.worldSeed());
         assertFalse(new WorldSession(WORLD).hashedSeedIsGenuine());
     }

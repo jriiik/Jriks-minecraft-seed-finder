@@ -33,7 +33,7 @@ class StatusTextTest {
     }
 
     private static SeedCheck check(int fitting, int misfits, SeedCheck.Bedrock overworld, SeedCheck.Bedrock nether) {
-        return new SeedCheck(12345L, SeedCheck.Verdict.CONFIRMED, villages(fitting), villages(misfits), overworld, nether, List.of(), 0);
+        return new SeedCheck(12345L, SeedCheck.Verdict.CONFIRMED, villages(fitting), villages(misfits), overworld, nether, List.of(), 0, 1);
     }
 
     private static SeedCheck.Bedrock bedrock(int blocks, int mismatches) {
@@ -60,6 +60,10 @@ class StatusTextTest {
 
         assertTrue(StatusText.contradictionReason(check(0, 0, bedrock(1024, 400), NONE)).startsWith("The server probably sends a made-up hashed seed"));
         assertTrue(StatusText.contradictionReason(check(0, 0, bedrock(1024, 3), NONE)).startsWith("Most of the overworld bedrock fits it, though"));
+        SeedCheck structuresConfirm = new SeedCheck(12345L, SeedCheck.Verdict.CONTRADICTED, villages(6), villages(0), bedrock(1024, 400), NONE,
+            List.of(), 1, 1e-15);
+        assertTrue(StatusText.contradictionReason(structuresConfirm).startsWith("The structures noted confirm it, though"),
+            StatusText.contradictionReason(structuresConfirm));
         assertEquals("Either the server sends a made-up hashed seed, or those nether chunks were made by Minecraft 1.17 or older and that"
             + " structure was noted in the wrong place or doesn't follow the seed (older chunks, a command, a copy, or a server that places"
             + " structures differently). Bedrock from the overworld would tell which.",
@@ -82,7 +86,7 @@ class StatusTextTest {
         assertEquals(OptionalLong.empty(), StatusText.seedToCopy(session));
 
         // Nothing noted to check it against: shown, but not confirmed.
-        session.setTypedSeedCheck(SeedCheck.of(DATA, List.of(), List.of(), 12345L));
+        session.setTypedSeedCheck(session.version(), SeedCheck.of(DATA, List.of(), List.of(), 12345L));
         lines = StatusText.lines(session, runner);
         assertTrue(lines.contains("World seed: 12345"), lines.toString());
         assertTrue(lines.stream().anyMatch(line -> line.contains("unless the server sends a made-up hashed seed")), lines.toString());
@@ -91,7 +95,7 @@ class StatusTextTest {
 
         // A village where seed 12345 has none: not shown as the world seed.
         List<StructureObservation> misfit = ObservationReader.read(DATA, List.of("village 352 80")).structures();
-        session.setTypedSeedCheck(SeedCheck.of(DATA, misfit, List.of(), 12345L));
+        session.setTypedSeedCheck(session.version(), SeedCheck.of(DATA, misfit, List.of(), 12345L));
         lines = StatusText.lines(session, runner);
         assertTrue(lines.stream().noneMatch(line -> line.startsWith("World seed:")), lines.toString());
         assertTrue(lines.contains("The hashed seed the server sent is the one of the typed seed 12345, but the structure noted doesn't fit it."
@@ -103,7 +107,7 @@ class StatusTextTest {
 
         // The overworld bedrock fits: certain.
         List<String> bedrockLines = BedrockText.heights(new BedrockPattern(DATA.bedrockDimension("overworld").orElseThrow(), 12345L), 0, 0, 16, 16);
-        session.setTypedSeedCheck(SeedCheck.of(DATA, misfit, ObservationReader.read(DATA, bedrockLines).bedrock(), 12345L));
+        session.setTypedSeedCheck(session.version(), SeedCheck.of(DATA, misfit, ObservationReader.read(DATA, bedrockLines).bedrock(), 12345L));
         lines = StatusText.lines(session, runner);
         assertTrue(lines.contains("World seed: 12345"), lines.toString());
         assertTrue(lines.contains("Certain: it was typed (as text or as this number), its hash is the hashed seed the server sent, and the"
@@ -121,7 +125,7 @@ class StatusTextTest {
         session.setTypedSeedSearch(new TypedSeedSearch.Outcome(OptionalLong.of(12345L), 0));
         List<StructureObservation> structures = ObservationReader.read(DATA, List.of("desert_pyramid 272 80", "swamp_hut 256 -144",
             "village 336 80", "shipwreck -128 32", "ruined_portal 16 0", "trial_chamber 0 224")).structures();
-        session.setTypedSeedCheck(SeedCheck.of(DATA, List.of(structures.get(2)), List.of(), 12345L));
+        session.setTypedSeedCheck(session.version(), SeedCheck.of(DATA, List.of(structures.get(2)), List.of(), 12345L));
         WorldSeedSearch.Result result = WorldSeedSearch.run(DATA, structures, List.of(), session.hashedSeed(), 2, (done, total) -> { });
         session.setResult(session.version(), result, null);
         List<String> lines = StatusText.lines(session, runner);

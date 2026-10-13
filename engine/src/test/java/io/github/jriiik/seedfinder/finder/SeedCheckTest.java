@@ -114,6 +114,33 @@ class SeedCheckTest {
     }
 
     @Test
+    void bedrockAloneConfirmsOnlyFromAboutThreeHundredBlocksEvenNextToTheMiddleOfTheWorld() {
+        // Next to x = 0 and z = 0 the game's random numbers for neighbouring blocks are alike, so wrong seeds fit small
+        // notes there far more often: a 9 x 9 layer around the middle doesn't confirm a seed, an 18 x 18 one does.
+        BedrockPattern pattern = new BedrockPattern(OVERWORLD, 12345L);
+        SeedCheck nine = SeedCheck.of(DATA, List.of(), bedrock(BedrockText.layer(pattern, -4, -61, -4, 9, 9)), 12345L);
+        assertTrue(nine.overworld().fits());
+        assertEquals(SeedCheck.Verdict.UNCONFIRMED, nine.verdict());
+        assertEquals(SeedCheck.Verdict.CONFIRMED, SeedCheck.of(DATA, List.of(), bedrock(BedrockText.layer(pattern, -9, -61, -9, 18, 18)), 12345L).verdict());
+
+        // Measured: how often random wrong seeds fit such an 18 x 18 layer perfectly, in 20 worlds.
+        Random worlds = new Random(13);
+        int samples = 20_000;
+        for (int w = 0; w < 20; w++) {
+            long world = worlds.nextLong();
+            List<BedrockObservation> notes = bedrock(BedrockText.layer(new BedrockPattern(OVERWORLD, world), -9, -61, -9, 18, 18));
+            io.github.jriiik.seedfinder.bedrock.BedrockEvidence evidence = new io.github.jriiik.seedfinder.bedrock.BedrockEvidence(notes);
+            assertTrue(evidence.fullSeedObservations().size() >= SeedCheck.BEDROCK_ALONE);
+            Random seeds = new Random(world);
+            int fits = 0;
+            for (int i = 0; i < samples; i++) {
+                fits += evidence.fullSeedMismatches(seeds.nextLong(), 0) == 0 ? 1 : 0;
+            }
+            assertTrue(fits <= samples * SeedCheck.MAX_FALSE_FIT_CHANCE, "world " + world + ": " + fits + " of " + samples + " wrong seeds fit");
+        }
+    }
+
+    @Test
     void theNotesOfAnotherWorldContradictIt() {
         SeedCheck check = SeedCheck.of(DATA, structures(STRUCTURES_12345), bedrockOf(12345L), 999L);
         assertEquals(SeedCheck.Verdict.CONTRADICTED, check.verdict());

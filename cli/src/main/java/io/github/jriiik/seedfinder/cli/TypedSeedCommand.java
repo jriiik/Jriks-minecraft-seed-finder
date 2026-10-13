@@ -112,13 +112,18 @@ final class TypedSeedCommand implements Callable<Integer> {
                 out.println("probably noted wrong:");
                 contradicted.overworld().examples().forEach(observation -> out.println("  " + FullSeedReport.mistake(observation)));
                 out.println("Check them in the game, fix them and run this again.");
+            } else if (contradicted.overworld().mismatches() > 0 && contradicted.structuresConfirm()) {
+                out.println("The structures in the notes confirm it, though, so the overworld bedrock was probably noted in the wrong place:");
+                out.println("check the x and z on its 'bedrock-heights' or 'bedrock-layer' line, that the rows go from north to south and");
+                out.println("each row from west to east, and that nether bedrock says 'nether'. (The server could also change the bedrock it");
+                out.println("sends.) Fix the notes and run this again.");
             } else if (contradicted.overworld().mismatches() > 0) {
                 out.println("The server probably sends a made-up hashed seed, so this is not the world's seed. Use 'seedfinder find' with the");
                 out.println("structures and bedrock instead.");
             } else {
                 List<String> otherwise = new ArrayList<>();
                 if (contradicted.nether().mismatches() > 0) {
-                    otherwise.add("those nether chunks were made by Minecraft 1.17 or older");
+                    otherwise.add("the nether bedrock was noted wrong or comes from chunks made by Minecraft 1.17 or older");
                 }
                 if (!contradicted.misfits().isEmpty()) {
                     boolean one = contradicted.misfits().size() == 1;
@@ -127,6 +132,11 @@ final class TypedSeedCommand implements Callable<Integer> {
                 }
                 out.println("Either the server sends a made-up hashed seed, or " + String.join(" and ", otherwise)
                     + ". Bedrock notes from the overworld would tell which.");
+                if (contradicted.nether().mismatches() > 0) {
+                    out.println("Nether bedrock that doesn't fit:");
+                    contradicted.nether().examples().forEach(observation -> out.println("  " + FullSeedReport.mistake(observation)));
+                    out.println("If it was noted wrong, fix it and run this again.");
+                }
                 if (!contradicted.misfits().isEmpty()) {
                     out.println("Structures that don't fit: " + names(contradicted.misfits()) + ". If one was noted in the wrong place, fix it and"
                         + " run this again.");
@@ -152,8 +162,11 @@ final class TypedSeedCommand implements Callable<Integer> {
                     + " from an older Minecraft version, a command or a copy (or " + (one ? "was" : "were") + " noted in the wrong place).");
             }
             if (confirmed.nether().mismatches() > 0) {
-                out.println(confirmed.nether().mismatches() + " of the " + confirmed.nether().blocks() + " nether bedrock blocks in the notes don't fit it: "
-                    + "nether chunks made by Minecraft 1.17 or older don't follow the seed.");
+                boolean one = confirmed.nether().mismatches() == 1;
+                out.println(confirmed.nether().mismatches() + " of the " + confirmed.nether().blocks() + " nether bedrock blocks in the notes "
+                    + (one ? "doesn't" : "don't") + " fit it: nether chunks made by Minecraft 1.17 or older don't follow the seed (or "
+                    + (one ? "it was" : "they were") + " noted wrong):");
+                confirmed.nether().examples().forEach(observation -> out.println("  " + FullSeedReport.mistake(observation)));
             }
         }
         return 0;
