@@ -8,7 +8,10 @@ import io.github.jriiik.seedfinder.finder.ObservationReader;
 import io.github.jriiik.seedfinder.finder.SeedCheck;
 import io.github.jriiik.seedfinder.finder.WorldSeedSearch;
 import io.github.jriiik.seedfinder.recognize.RecognizedStarts;
+import io.github.jriiik.seedfinder.recognize.RigidKind;
+import io.github.jriiik.seedfinder.recognize.RigidRecognizer;
 import io.github.jriiik.seedfinder.recognize.StartPieceRecognizer;
+import io.github.jriiik.seedfinder.structure.RandomSpreadPlacement;
 import io.github.jriiik.seedfinder.structure.StructureSet;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -28,6 +31,7 @@ import net.minecraft.core.registries.Registries;
 import net.minecraft.resources.Identifier;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.world.level.ChunkPos;
+import net.minecraft.world.level.Level;
 import net.minecraft.world.level.chunk.status.ChunkStatus;
 import net.minecraft.world.level.levelgen.presets.WorldPreset;
 import net.minecraft.world.level.levelgen.presets.WorldPresets;
@@ -58,29 +62,44 @@ public class SeedFinderGameTest implements FabricClientGameTest {
 
     /**
      * Automatic recognition: the player visits the nearest structure of each type the mod recognizes (found with
-     * the game's own /locate search); the mod must recognize its start chunk from the blocks alone. Every start it
-     * recognized on the way must be a real start in the game's own records, and the seed must still come out right.
+     * the game's own /locate search), and a ruined portal in the nether; the mod must recognize its start chunk from
+     * the blocks alone. Every start it recognized on the way must be a real start in the game's own records, and the
+     * seed must still come out right.
      */
     static void recognizesStructures(ClientGameTestContext context, TestSingleplayerContext world) {
         context.runOnClient(client -> client.options.renderDistance().set(8));
         world.getServer().runCommand("gamemode spectator @a");
-        for (String set : StartPieceLibrary.SETS) {
-            ChunkPos start = world.getServer().computeOnServer(server -> nearestStart(server.overworld(), set));
-            check(start != null, "the game has a " + set + " start to visit");
-            world.getServer().runCommand("tp @a " + (start.getMinBlockX() + 8) + " 160 " + (start.getMinBlockZ() + 8));
-            RecognizedStarts.Start expected = new RecognizedStarts.Start(set, start.x(), start.z());
-            boolean found = false;
-            for (int wait = 0; wait < 20 * 120 && !found; wait += 20) {
-                context.waitTicks(20);
-                found = context.computeOnClient(client -> SeedFinderClient.recognition().starts().contains(expected));
-            }
-            check(found, "recognized " + set + " starting in chunk " + start.x() + ", " + start.z() + " from its blocks");
+        List<String> sets = new ArrayList<>(StartPieceLibrary.SETS);
+        for (RigidKind kind : RigidKind.values()) {
+            sets.add(kind.structureSet());
         }
+        ChunkPos last = null;
+        for (String set : sets) {
+            ChunkPos start = world.getServer().computeOnServer(server -> nearestStart(server.overworld(), set, BlockPos.ZERO));
+            check(start != null, "the game has a " + set + " start to visit");
+            visit(context, world, "minecraft:overworld", set, start);
+            last = start;
+        }
+        // Both dimensions share the ruined portals' grid, so the nearest nether portal may start in the very chunk of
+        // the overworld one just visited: look for one in another region, far away.
+        ChunkPos netherPortal = world.getServer().computeOnServer(server -> nearestStart(server.getLevel(Level.NETHER), "ruined_portals",
+            new BlockPos(16 * 40 * 6, 64, 16 * 40 * 6)));
+        check(netherPortal != null && context.computeOnClient(client -> SeedFinderClient.recognition().starts().stream()
+                .noneMatch(start -> start.structureSet().equals("ruined_portals") && start.chunkX() == netherPortal.x() && start.chunkZ() == netherPortal.z())),
+            "the game has a ruined portal in the nether to visit, in a chunk not recognized yet");
+        visit(context, world, "minecraft:the_nether", "ruined_portals", netherPortal);
+        world.getServer().runCommand("execute in minecraft:overworld run tp @a " + (last.getMinBlockX() + 8) + " 160 " + (last.getMinBlockZ() + 8));
+        context.waitTicks(100);
 
         List<RecognizedStarts.Start> recognized = context.computeOnClient(client -> SeedFinderClient.recognition().starts());
         log("recognized: " + recognized);
         for (RecognizedStarts.Start start : recognized) {
-            List<String> real = world.getServer().computeOnServer(server -> realStarts(server.overworld(), start.chunkX(), start.chunkZ()));
+            // Ruined portals of both dimensions share one placement grid.
+            List<String> real = world.getServer().computeOnServer(server -> {
+                List<String> both = new ArrayList<>(realStarts(server.overworld(), start.chunkX(), start.chunkZ()));
+                both.addAll(realStarts(server.getLevel(Level.NETHER), start.chunkX(), start.chunkZ()));
+                return both;
+            });
             List<String> inSet = SeedFinderClient.data().structureSet(start.structureSet()).orElseThrow().structures().stream()
                 .map(StructureSet.Entry::structure).toList();
             check(real.stream().anyMatch(inSet::contains), start + " is a real start (the game has " + real + " there)");
@@ -118,7 +137,20 @@ public class SeedFinderGameTest implements FabricClientGameTest {
         context.waitForScreen(null);
     }
 
-    /** The recognizer on the nearest real starts of each set, generated by the game (see {@link RecognitionSweep}). */
+    /** Teleports the player to a start and waits until the mod recognizes it. */
+    static void visit(ClientGameTestContext context, TestSingleplayerContext world, String dimension, String set, ChunkPos start) {
+        world.getServer().runCommand("execute in " + dimension + " run tp @a " + (start.getMinBlockX() + 8) + " " + (dimension.endsWith("nether") ? 100 : 160)
+            + " " + (start.getMinBlockZ() + 8));
+        RecognizedStarts.Start expected = new RecognizedStarts.Start(set, start.x(), start.z());
+        boolean found = false;
+        for (int wait = 0; wait < 20 * 120 && !found; wait += 20) {
+            context.waitTicks(20);
+            found = context.computeOnClient(client -> SeedFinderClient.recognition().starts().contains(expected));
+        }
+        check(found, "recognized " + set + " starting in chunk " + start.x() + ", " + start.z() + " (" + dimension + ") from its blocks");
+    }
+
+    /** The recognizers on the nearest real starts of each set, generated by the game (see {@link RecognitionSweep}). */
     static void recognizesRealStartsAround(ClientGameTestContext context, TestSingleplayerContext world) {
         StartPieceRecognizer recognizer = context.computeOnClient(client -> StructureRecognition.recognizer(SeedFinderClient.data()).getNow(null));
         RecognitionSweep.Result result = world.getServer().computeOnServer(server -> RecognitionSweep.run(server.overworld(), recognizer));
@@ -127,6 +159,24 @@ public class SeedFinderGameTest implements FabricClientGameTest {
         check(result.conflicting().isEmpty(), "no region had contradicting matches " + result.conflicting());
         check(result.real() >= 18 && result.found() >= result.real() * 0.85,
             "the sweep recognized " + result.found() + " of " + result.real() + " real starts of the six types");
+
+        RigidLibrary.Library library = context.computeOnClient(client ->
+            StructureRecognition.rigidLibrary(SeedFinderClient.data(), client.level.registryAccess()).getNow(null));
+        check(library != null && library.problems().isEmpty() && library.layouts().size() > 400,
+            "the rigid-structure layouts were built from the game (" + (library == null ? "not yet" : library.layouts().size() + " layouts, problems "
+                + library.problems()) + ")");
+        for (String dimension : List.of("minecraft:overworld", "minecraft:the_nether")) {
+            RigidRecognizer rigid = RigidRecognizer.create(library.layouts(), SeedFinderClient.data(), dimension);
+            RecognitionSweep.Result found = world.getServer().computeOnServer(server -> RecognitionSweep.runRigid(
+                dimension.endsWith("nether") ? server.getLevel(Level.NETHER) : server.overworld(), rigid, dimension.endsWith("nether")));
+            log("rigid sweep " + dimension + ": " + found.found() + " of " + found.real() + " real starts recognized; missed " + found.missed()
+                + "; layouts " + found.pieces());
+            check(found.wrong().isEmpty(), "the rigid sweep in " + dimension + " recognized no start that isn't real " + found.wrong());
+            check(found.conflicting().isEmpty(), "no region had contradicting rigid matches " + found.conflicting());
+            // Up to 4 starts per kind near the world's centre; kinds of rare biomes may have fewer.
+            check(found.real() >= 2 * rigid.kinds().size() && found.found() >= found.real() * 0.85,
+                "the rigid sweep in " + dimension + " recognized " + found.found() + " of " + found.real() + " real starts");
+        }
     }
 
     /**
@@ -159,15 +209,50 @@ public class SeedFinderGameTest implements FabricClientGameTest {
             "but it is not noted, because the mod read the /place answer");
     }
 
-    /** The start chunk of the nearest structure of a set to the world's centre, with the search /locate uses. */
-    static ChunkPos nearestStart(ServerLevel level, String set) {
+    /**
+     * The same for a rigid structure: a ruined portal placed with /place in a chunk where portals can start, at least
+     * 12 chunks from where the real portal of that placement region may be (so it is not in view).
+     */
+    static void ignoresPlacedRigidStructures(ClientGameTestContext context, TestSingleplayerContext world) {
+        RandomSpreadPlacement grid = (RandomSpreadPlacement) SeedFinderClient.data().structureSet("ruined_portals").orElseThrow().placement();
+        int regionX = 4;
+        int regionZ = 4;
+        io.github.jriiik.seedfinder.world.ChunkPos real = grid.potentialChunk(SEED, regionX, regionZ);
+        int limit = grid.spacing() - grid.separation();
+        int chunkX = regionX * grid.spacing() + (real.x() - regionX * grid.spacing() < limit / 2 ? limit - 1 : 0);
+        int chunkZ = regionZ * grid.spacing() + (real.z() - regionZ * grid.spacing() < limit / 2 ? limit - 1 : 0);
+        int x = chunkX * 16;
+        int z = chunkZ * 16;
+        world.getServer().runCommand("forceload add " + (x - 64) + " " + (z - 64) + " " + (x + 64) + " " + (z + 64));
+        world.getServer().runCommand("tp @a " + (x + 8) + " 160 " + (z + 8));
+        context.waitTicks(100);
+        context.runOnClient(client -> client.getConnection().sendCommand("place structure minecraft:ruined_portal " + x + " 100 " + z));
+        context.waitTicks(40);
+        world.getServer().runCommand("forceload remove all");
+        world.getServer().runCommand("tp @a " + (x + 8 + 1000) + " 160 " + (z + 8));
+        context.waitTicks(100);
+        world.getServer().runCommand("tp @a " + (x + 8) + " 160 " + (z + 8));
+        RecognizedStarts.Start placed = new RecognizedStarts.Start("ruined_portals", chunkX, chunkZ);
+        for (int wait = 0; wait < 20 * 90 && !context.computeOnClient(client -> SeedFinderClient.recognition().starts().contains(placed)); wait += 20) {
+            context.waitTicks(20);
+        }
+        check(context.computeOnClient(client -> SeedFinderClient.recognition().starts().contains(placed)),
+            "the ruined portal placed with /place in chunk " + chunkX + ", " + chunkZ + " looks like a start by its blocks");
+        context.waitTicks(40);
+        check(context.computeOnClient(client -> SeedFinderClient.session(client).structures().stream()
+            .noneMatch(s -> s.set().equals("ruined_portals") && Math.floorDiv(s.x(), 16) == chunkX && Math.floorDiv(s.z(), 16) == chunkZ)),
+            "but it is not noted, because the mod read the /place answer");
+    }
+
+    /** The start chunk of the structure of a set nearest to a position, with the search /locate uses. */
+    static ChunkPos nearestStart(ServerLevel level, String set, BlockPos from) {
         Registry<Structure> registry = level.registryAccess().lookupOrThrow(Registries.STRUCTURE);
         List<Holder<Structure>> structures = new ArrayList<>();
         for (StructureSet.Entry entry : SeedFinderClient.data().structureSet(set).orElseThrow().structures()) {
             structures.add(registry.get(Identifier.parse(entry.structure())).orElseThrow());
         }
         Pair<BlockPos, Holder<Structure>> found = level.getChunkSource().getGenerator()
-            .findNearestMapStructure(level, HolderSet.direct(structures), BlockPos.ZERO, 100, false);
+            .findNearestMapStructure(level, HolderSet.direct(structures), from, 100, false);
         return found == null ? null : ChunkPos.containing(found.getFirst());
     }
 
@@ -286,6 +371,7 @@ public class SeedFinderGameTest implements FabricClientGameTest {
             recognizesStructures(context, world);
             recognizesRealStartsAround(context, world);
             ignoresPlacedStructures(context, world);
+            ignoresPlacedRigidStructures(context, world);
         }
         log("ALL CHECKS PASSED");
     }

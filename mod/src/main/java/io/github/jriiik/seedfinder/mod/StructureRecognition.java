@@ -2,11 +2,16 @@ package io.github.jriiik.seedfinder.mod;
 
 import io.github.jriiik.seedfinder.recognize.BlockView;
 import io.github.jriiik.seedfinder.recognize.RecognizedStarts;
+import io.github.jriiik.seedfinder.recognize.RigidKind;
+import io.github.jriiik.seedfinder.recognize.RigidLayout;
+import io.github.jriiik.seedfinder.recognize.RigidRecognizer;
+import io.github.jriiik.seedfinder.recognize.RigidTracker;
 import io.github.jriiik.seedfinder.recognize.StartPieceRecognizer;
 import io.github.jriiik.seedfinder.structure.RandomSpreadPlacement;
 import io.github.jriiik.seedfinder.version.VersionData;
 import java.util.ArrayDeque;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.HashSet;
@@ -20,10 +25,12 @@ import java.util.function.Predicate;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.multiplayer.ClientLevel;
 import net.minecraft.core.BlockPos;
+import net.minecraft.core.RegistryAccess;
 import net.minecraft.core.SectionPos;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.resources.Identifier;
 import net.minecraft.world.level.ChunkPos;
+import net.minecraft.world.level.Level;
 import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.chunk.LevelChunk;
@@ -31,9 +38,11 @@ import net.minecraft.world.level.chunk.LevelChunkSection;
 import net.minecraft.world.level.chunk.status.ChunkStatus;
 
 /**
- * Recognizes villages, pillager outposts, trial chambers, ancient cities, trail ruins and camps from the blocks of
- * loaded chunks, and notes their start chunks (see {@link StartPieceRecognizer} for how). Runs on the game's main
- * thread in small steps, so it never holds up a frame for long.
+ * Recognizes structures from the blocks of loaded chunks and notes their start chunks: villages, pillager outposts,
+ * trial chambers, ancient cities, trail ruins and camps by their start piece ({@link StartPieceRecognizer}), and
+ * desert pyramids, jungle temples, swamp huts, igloos, shipwrecks, ocean ruins and ruined portals as a whole
+ * ({@link RigidRecognizer}, run chunk by chunk by a {@link RigidTracker}). Runs on the game's main thread in small
+ * steps, so it never holds up a frame for long.
  *
  * <p>Underground structures can only be seen when the server sends the real blocks; servers that hide them
  * (anti-xray) simply mean they are not found. The mod never tries to get around that.
@@ -43,15 +52,24 @@ final class StructureRecognition {
     static final String SOURCE = "recognized automatically";
     /** Work at most this long per tick (2 ms of the 50 ms a tick has). */
     private static final long BUDGET_NANOS = 2_000_000L;
+    /** Of that, judging rigid structures gets at most this much. */
+    private static final long RIGID_BUDGET_NANOS = 1_000_000L;
     /** Placements waiting for chunks to load are checked again every 2 seconds. */
     private static final int RETRY_TICKS = 40;
     private static final int MAX_WAITING = 20_000;
     private static final int MAX_SEEN = 500_000;
     /** Blocks looked at between two checks of the time budget. */
     private static final int SCAN_SLICE = 512;
+    /** Every 10 seconds, what was found far away is forgotten (beyond the render distance plus this many chunks). */
+    private static final int FORGET_TICKS = 200;
+    private static final int FORGET_MARGIN = 8;
 
     /** The blueprints, read once from the game's files in the background. */
     private static CompletableFuture<StartPieceRecognizer> recognizer;
+    /** The rigid-structure layouts, built once from the game's files and code in the background. */
+    private static CompletableFuture<RigidLibrary.Library> rigidLibrary;
+    /** A rigid-structure recognizer per dimension (the kinds that appear there), made when first needed. */
+    private static final Map<String, RigidRecognizer> RIGID_RECOGNIZERS = new HashMap<>();
 
     private final VersionData data;
     /** The dimensions the recognized structure sets can appear in. */
@@ -76,23 +94,33 @@ final class StructureRecognition {
     private LevelChunk scanning;
     private int scanSection;
     private int scanBlock;
-    private final Predicate<BlockState> isAnchor = state -> anchors.contains(state.getBlock());
+    /** The rigid structures of the current level: null when none appear in its dimension (or until ready). */
+    private RigidTracker tracker;
+    private boolean trackerMade;
+    /** For the current tracker: each block's trigger class, or -1. */
+    private final Map<Block, Integer> triggerClasses = new IdentityHashMap<>();
+    /** The trigger blocks found so far in the chunk being scanned. */
+    private int[] found = new int[64];
+    private int foundCount;
+    private final Predicate<BlockState> isWanted = state -> anchors.contains(state.getBlock()) || triggerClass(state.getBlock()) >= 0;
     /** Starts left out because they disagreed with a note; offered again after the player removes a note. */
     private final Set<RecognizedStarts.Start> disagreed = new HashSet<>();
     private int removals;
 
     StructureRecognition(VersionData data) {
         this.data = data;
-        Set<String> found = new HashSet<>();
-        for (String set : StartPieceLibrary.SETS) {
+        Set<String> inDimensions = new HashSet<>();
+        List<String> sets = new ArrayList<>(StartPieceLibrary.SETS);
+        Arrays.stream(RigidKind.values()).forEach(kind -> sets.add(kind.structureSet()));
+        for (String set : sets) {
             data.structureSet(set).ifPresent(structureSet -> {
-                found.addAll(data.dimensionsOf(structureSet));
+                inDimensions.addAll(data.dimensionsOf(structureSet));
                 if (structureSet.placement() instanceof RandomSpreadPlacement placement) {
                     spacing.put(set, placement.spacing());
                 }
             });
         }
-        this.dimensions = Set.copyOf(found);
+        this.dimensions = Set.copyOf(inDimensions);
     }
 
     /** Starts reading the blueprints, once (call on the main thread). */
@@ -114,25 +142,68 @@ final class StructureRecognition {
         return recognizer;
     }
 
-    /** The structure sets whose blueprints could not be read (none until reading has finished). */
-    static synchronized List<String> missingSets() {
-        StartPieceRecognizer done = recognizer == null ? null : recognizer.getNow(null);
-        if (done == null) {
-            return List.of();
+    /** Starts building the rigid-structure layouts, once (call on the main thread, in a world). */
+    static synchronized CompletableFuture<RigidLibrary.Library> rigidLibrary(VersionData data, RegistryAccess registries) {
+        if (rigidLibrary == null) {
+            StartPieceLibrary.DataFiles files = StartPieceLibrary.vanilla(Minecraft.getInstance().getVanillaPackResources().fullResources());
+            rigidLibrary = CompletableFuture.supplyAsync(() -> {
+                RigidLibrary.Library library = RigidLibrary.load(data, files, registries);
+                library.problems().forEach(problem -> SeedFinderClient.LOG.warn("Structure recognition: {}", problem));
+                SeedFinderClient.LOG.info("Structure recognition: {} layouts of {} rigid structure kinds", library.layouts().size(),
+                    library.layouts().stream().map(RigidLayout::kind).distinct().count());
+                return library;
+            });
+            rigidLibrary = rigidLibrary.exceptionally(error -> {
+                SeedFinderClient.LOG.warn("Recognition of rigid structures is not available", error);
+                return new RigidLibrary.Library(List.of(), List.of("could not be prepared: " + error));
+            });
         }
-        Set<String> loaded = new HashSet<>();
-        done.pieces().forEach(piece -> loaded.add(piece.structureSet()));
-        return StartPieceLibrary.SETS.stream().filter(set -> !loaded.contains(set)).toList();
+        return rigidLibrary;
     }
 
-    /** The structure sets recognition has blueprints for (empty until they are read). */
+    /** The structure sets whose blueprints or layouts could not be made (none until reading has finished). */
+    static synchronized List<String> missingSets() {
+        StartPieceRecognizer done = recognizer == null ? null : recognizer.getNow(null);
+        RigidLibrary.Library rigid = rigidLibrary == null ? null : rigidLibrary.getNow(null);
+        List<String> missing = new ArrayList<>();
+        if (done != null) {
+            Set<String> loaded = new HashSet<>();
+            done.pieces().forEach(piece -> loaded.add(piece.structureSet()));
+            StartPieceLibrary.SETS.stream().filter(set -> !loaded.contains(set)).forEach(missing::add);
+        }
+        if (rigid != null) {
+            Set<RigidKind> kinds = new HashSet<>();
+            rigid.layouts().forEach(layout -> kinds.add(layout.kind()));
+            Arrays.stream(RigidKind.values()).filter(kind -> !kinds.contains(kind)).forEach(kind -> missing.add(kind.structureSet()));
+        }
+        return missing;
+    }
+
+    /** The structure sets recognition has blueprints or layouts for (empty until they are made). */
     static synchronized Set<String> recognizedSets() {
         StartPieceRecognizer done = recognizer == null ? null : recognizer.getNow(null);
+        RigidLibrary.Library rigid = rigidLibrary == null ? null : rigidLibrary.getNow(null);
         Set<String> sets = new HashSet<>();
         if (done != null) {
             done.pieces().forEach(piece -> sets.add(piece.structureSet()));
         }
+        if (rigid != null) {
+            rigid.layouts().forEach(layout -> sets.add(layout.kind().structureSet()));
+        }
         return sets;
+    }
+
+    /** The rigid-structure recognizer for a dimension, or null when no rigid structure appears there (main thread). */
+    private static RigidRecognizer rigidRecognizer(RigidLibrary.Library library, VersionData data, String dimension) {
+        RigidRecognizer known = RIGID_RECOGNIZERS.get(dimension);
+        if (known == null && !RIGID_RECOGNIZERS.containsKey(dimension)) {
+            known = RigidRecognizer.create(library.layouts(), data, dimension);
+            if (known.layouts().isEmpty()) {
+                known = null;
+            }
+            RIGID_RECOGNIZERS.put(dimension, known);
+        }
+        return known;
     }
 
     /** The starts found so far in this world (for the in-game test). */
@@ -140,7 +211,7 @@ final class StructureRecognition {
         return starts.starts();
     }
 
-    /** Chunk loaded: remember to look for anchor blocks in it. */
+    /** Chunk loaded: remember to look for anchor and trigger blocks in it. */
     void chunkLoaded(ClientLevel level, LevelChunk chunk) {
         switchLevel(level);
         if (inStructureDimension()) {
@@ -162,25 +233,37 @@ final class StructureRecognition {
             seen.clear();
             scanning = null;
             scanAllLoaded = true;
+            tracker = null;
+            trackerMade = false;
+            triggerClasses.clear();
         }
     }
 
-    /** A little work every tick (while collecting): check placements, then look through newly loaded chunks. */
+    /** A little work every tick (while collecting): check placements, judge rigid structures, read newly loaded chunks. */
     void tick(Minecraft minecraft, WorldSession session) {
         ticks++;
         StartPieceRecognizer pieces = recognizer(data).getNow(null);
         if (minecraft.level == null || minecraft.player == null) {
             return;
         }
+        RigidLibrary.Library rigid = rigidLibrary(data, minecraft.level.registryAccess()).getNow(null);
         switchLevel(minecraft.level);
-        if (pieces == null || !inStructureDimension()) {
+        if (pieces == null || rigid == null || !inStructureDimension()) {
             return;
         }
+        if (!trackerMade) {
+            trackerMade = true;
+            RigidRecognizer rigidRecognizer = rigidRecognizer(rigid, data, level.dimension().identifier().toString());
+            tracker = rigidRecognizer == null ? null : new RigidTracker(rigidRecognizer, level.dimension() == Level.NETHER);
+            // Chunks read before the tracker was there have no trigger blocks noted: read them again.
+            scanAllLoaded = true;
+            scanning = null;
+        }
+        int centerX = minecraft.player.blockPosition().getX() >> 4;
+        int centerZ = minecraft.player.blockPosition().getZ() >> 4;
         if (scanAllLoaded) {
             scanAllLoaded = false;
             int radius = minecraft.options.getEffectiveRenderDistance() + 2;
-            int centerX = minecraft.player.blockPosition().getX() >> 4;
-            int centerZ = minecraft.player.blockPosition().getZ() >> 4;
             for (int dx = -radius; dx <= radius; dx++) {
                 for (int dz = -radius; dz <= radius; dz++) {
                     if (level.getChunkSource().getChunk(centerX + dx, centerZ + dz, ChunkStatus.FULL, false) != null) {
@@ -199,6 +282,9 @@ final class StructureRecognition {
             toCheck.addAll(waiting);
             waiting.clear();
         }
+        if (tracker != null && ticks % FORGET_TICKS == 0) {
+            tracker.forgetFarFrom(centerX, centerZ, minecraft.options.getEffectiveRenderDistance() + FORGET_MARGIN);
+        }
         if (session.removals() != removals) {
             // The player removed a note: starts that disagreed with it may fit now.
             removals = session.removals();
@@ -206,8 +292,19 @@ final class StructureRecognition {
             disagreed.clear();
             updateNotes(session);
         }
-        long end = System.nanoTime() + BUDGET_NANOS;
+        long start = System.nanoTime();
+        long end = start + BUDGET_NANOS;
         View view = new View();
+        if (tracker != null) {
+            long rigidEnd = start + RIGID_BUDGET_NANOS;
+            List<RigidRecognizer.Detection> detections = tracker.work(view, () -> System.nanoTime() > rigidEnd);
+            for (RigidRecognizer.Detection d : detections) {
+                SeedFinderClient.LOG.info("Recognized {}", d);
+                if (starts.add(d.kind().structureSet(), spacing.get(d.kind().structureSet()), d.chunkX(), d.chunkZ())) {
+                    updateNotes(session);
+                }
+            }
+        }
         while (System.nanoTime() < end) {
             if (!toCheck.isEmpty()) {
                 check(pieces, toCheck.poll(), view, session);
@@ -219,6 +316,7 @@ final class StructureRecognition {
                 scanning = level.getChunkSource().getChunk(ChunkPos.getX(pos), ChunkPos.getZ(pos), ChunkStatus.FULL, false);
                 scanSection = 0;
                 scanBlock = 0;
+                foundCount = 0;
             } else {
                 break;
             }
@@ -229,15 +327,28 @@ final class StructureRecognition {
         return dimensions.contains(level.dimension().identifier().toString());
     }
 
+    private int triggerClass(Block block) {
+        if (tracker == null) {
+            return -1;
+        }
+        Integer known = triggerClasses.get(block);
+        if (known == null) {
+            known = tracker.recognizer().triggerClass(id(block));
+            triggerClasses.put(block, known);
+        }
+        return known;
+    }
+
     /**
-     * Looks for anchor blocks in the chunk being scanned, a slice of at most {@link #SCAN_SLICE} blocks at a time so
-     * the budget is never overrun by much. Sections whose palette can't hold an anchor block are skipped whole.
+     * Looks for anchor and trigger blocks in the chunk being scanned, a slice of at most {@link #SCAN_SLICE} blocks at
+     * a time so the budget is never overrun by much. Sections whose palette can't hold such a block are skipped whole.
+     * When the chunk is done, its trigger blocks go to the rigid-structure tracker.
      */
     private void scanSome(StartPieceRecognizer pieces) {
         LevelChunkSection[] sections = scanning.getSections();
         while (scanSection < sections.length) {
             LevelChunkSection section = sections[scanSection];
-            if (scanBlock == 0 && (section.hasOnlyAir() || !section.maybeHas(isAnchor))) {
+            if (scanBlock == 0 && (section.hasOnlyAir() || !section.maybeHas(isWanted))) {
                 scanSection++;
                 continue;
             }
@@ -260,12 +371,22 @@ final class StructureRecognition {
                         }
                     }
                 }
+                int triggerClass = triggerClass(block);
+                if (triggerClass >= 0) {
+                    if (foundCount == found.length) {
+                        found = Arrays.copyOf(found, found.length * 2);
+                    }
+                    found[foundCount++] = RigidRecognizer.pack(x, minY + y, z, triggerClass);
+                }
             }
             if (scanBlock == 4096) {
                 scanSection++;
                 scanBlock = 0;
             }
             return;
+        }
+        if (tracker != null) {
+            tracker.chunkScanned(scanning.getPos().x(), scanning.getPos().z(), Arrays.copyOf(found, foundCount));
         }
         scanning = null;
     }
@@ -336,6 +457,9 @@ final class StructureRecognition {
 
         @Override
         public String blockAt(int x, int y, int z) {
+            if (level.isOutsideBuildHeight(y)) {
+                return null;
+            }
             if (chunk == null || chunk.getPos().x() != x >> 4 || chunk.getPos().z() != z >> 4) {
                 chunk = level.getChunkSource().getChunk(x >> 4, z >> 4, ChunkStatus.FULL, false);
                 if (chunk == null) {
@@ -343,6 +467,14 @@ final class StructureRecognition {
                 }
             }
             return id(chunk.getBlockState(pos.set(x, y, z)).getBlock());
+        }
+
+        @Override
+        public String biomeAt(int x, int y, int z) {
+            if (!isLoaded(x >> 4, z >> 4)) {
+                return null;
+            }
+            return level.getNoiseBiome(x >> 2, y >> 2, z >> 2).unwrapKey().map(key -> key.identifier().toString()).orElse(null);
         }
     }
 }

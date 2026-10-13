@@ -27,8 +27,18 @@ public final class RecognizedStarts {
     /** Notes a match; returns whether {@link #starts()} or {@link #conflicting()} changed. */
     public boolean add(StartPieceRecognizer.Candidate match) {
         StartPiece piece = match.piece();
-        Region region = new Region(piece.structureSet(), Math.floorDiv(match.chunkX(), piece.spacing()), Math.floorDiv(match.chunkZ(), piece.spacing()));
-        return regions.computeIfAbsent(region, key -> new LinkedHashSet<>()).add(new Start(piece.structureSet(), match.chunkX(), match.chunkZ()));
+        return add(piece.structureSet(), piece.spacing(), match.chunkX(), match.chunkZ());
+    }
+
+    /**
+     * Notes a start found some other way (a rigid structure); returns whether {@link #starts()} or
+     * {@link #conflicting()} changed.
+     *
+     * @param spacing the set's spacing: the size of its placement regions, in chunks
+     */
+    public boolean add(String structureSet, int spacing, int chunkX, int chunkZ) {
+        Region region = new Region(structureSet, Math.floorDiv(chunkX, spacing), Math.floorDiv(chunkZ, spacing));
+        return regions.computeIfAbsent(region, key -> new LinkedHashSet<>()).add(new Start(structureSet, chunkX, chunkZ));
     }
 
     /** The starts that are certain: the only one found in their region. */

@@ -49,6 +49,7 @@ import net.minecraft.world.level.levelgen.structure.placement.RandomSpreadStruct
  * <ul>
  *   <li>version data: the vanilla structure sets in datapack JSON format, plus the biomes each structure may use;</li>
  *   <li>version data: the bedrock rules of each dimension (see {@link BedrockOracle});</li>
+ *   <li>version data: how the main piece of each rigid structure is placed (see {@link RigidOracle});</li>
  *   <li>test fixtures: RNG outputs, structure placement results and stronghold positions for a list of seeds;</li>
  *   <li>test fixtures: the Xoroshiro128++ generator, random world seeds, and bedrock from real generated chunks.</li>
  * </ul>
@@ -108,12 +109,16 @@ public final class Oracle {
         write(fixturesDir.resolve("xoroshiro.json"), BedrockOracle.xoroshiroJson(version, registries));
         write(fixturesDir.resolve("random_seeds.json"), BedrockOracle.randomSeedsJson(version));
         write(fixturesDir.resolve("bedrock.json"), BedrockOracle.bedrockChunksJson(version, registries, loaded.world()));
+        write(versionDataDir.resolve("rigid_structures.json"), RigidOracle.rigidStructuresJson(version, loaded));
         System.out.println("Oracle finished for Minecraft " + version);
         System.exit(0); // the game's background executors would otherwise keep the JVM alive
     }
 
-    /** The loaded registries: a lookup over all of them, and the world-generation layer on its own. */
-    record LoadedRegistries(HolderLookup.Provider lookup, RegistryAccess.Frozen world) {
+    /**
+     * The loaded registries: a lookup over all of them, the world-generation layer on its own, all layers as one
+     * registry access, and the vanilla data pack's files.
+     */
+    record LoadedRegistries(HolderLookup.Provider lookup, RegistryAccess.Frozen world, RegistryAccess.Frozen all, ResourceManager resources) {
     }
 
     /**
@@ -132,7 +137,8 @@ public final class Oracle {
         // Like ReloadableServerResources: block tags such as #minecraft:uncarvable (which keeps carvers away from
         // bedrock) only work once they are bound.
         staticTags.forEach(Registry.PendingTags::apply);
-        return new LoadedRegistries(HolderLookup.Provider.create(Stream.concat(context.stream(), world.listRegistries())), world);
+        return new LoadedRegistries(HolderLookup.Provider.create(Stream.concat(context.stream(), world.listRegistries())), world,
+            layers.replaceFrom(RegistryLayer.WORLD, world).compositeAccess(), resources);
     }
 
     /** All structure sets, exactly as a datapack would define them. */

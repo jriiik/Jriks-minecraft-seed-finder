@@ -1,6 +1,7 @@
 package io.github.jriiik.seedfinder.version;
 
 import io.github.jriiik.seedfinder.bedrock.BedrockDimension;
+import io.github.jriiik.seedfinder.structure.RigidStructures;
 import io.github.jriiik.seedfinder.structure.StructureInfo;
 import io.github.jriiik.seedfinder.structure.StructureSet;
 import java.util.ArrayList;
@@ -21,14 +22,16 @@ public final class VersionData {
     private final Map<String, StructureInfo> structures;
     private final Map<String, Set<String>> dimensionBiomes;
     private final Map<String, BedrockDimension> bedrock;
+    private final RigidStructures rigidStructures;
 
     /**
      * @param dimensionBiomes for each dimension id (e.g. {@code minecraft:the_nether}), the biomes it can contain
      * @param bedrock         for each dimension id, how it places its random bedrock
+     * @param rigidStructures how the main piece of each rigid structure is built (for recognizing it from blocks)
      */
     public VersionData(
         String version, Map<String, StructureSet> structureSets, Map<String, StructureInfo> structures,
-        Map<String, Set<String>> dimensionBiomes, Map<String, BedrockDimension> bedrock
+        Map<String, Set<String>> dimensionBiomes, Map<String, BedrockDimension> bedrock, RigidStructures rigidStructures
     ) {
         this.version = version;
         this.structureSets = Collections.unmodifiableMap(new LinkedHashMap<>(structureSets));
@@ -37,6 +40,7 @@ public final class VersionData {
         dimensionBiomes.forEach((dimension, biomes) -> dimensions.put(dimension, Set.copyOf(biomes)));
         this.dimensionBiomes = Collections.unmodifiableMap(dimensions);
         this.bedrock = Collections.unmodifiableMap(new LinkedHashMap<>(bedrock));
+        this.rigidStructures = rigidStructures;
     }
 
     /**
@@ -88,6 +92,11 @@ public final class VersionData {
 
     public Optional<StructureInfo> structure(String id) {
         return Optional.ofNullable(structures.get(VersionDataLoader.normalizeId(id)));
+    }
+
+    /** How the main piece of each rigid structure is built, by structure set id. */
+    public RigidStructures rigidStructures() {
+        return rigidStructures;
     }
 
     /** How each dimension places its random bedrock, by dimension id. */
