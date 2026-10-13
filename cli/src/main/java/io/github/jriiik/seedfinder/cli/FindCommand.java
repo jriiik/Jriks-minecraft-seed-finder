@@ -74,12 +74,19 @@ final class FindCommand implements Callable<Integer> {
         List<StructureObservation> observations = read.structures();
         BedrockEvidence bedrock = new BedrockEvidence(read.bedrock());
         int threadCount = Threads.resolve(commandLine, threads);
+        if (observations.isEmpty() && read.bedrock().isEmpty() && read.hashedSeed().isPresent()) {
+            out.println("There is a hashed seed but no structures yet. If the world's seed was typed (as text or a short number),");
+            out.println("the hashed seed alone gives it: " + typedSeedCommand(read.hashedSeed().getAsLong()));
+            return 1;
+        }
         if (observations.isEmpty() && read.bedrock().isEmpty()) {
             throw new CommandLine.ParameterException(commandLine, "Tell me which structures you saw, for example: seedfinder find igloo:48,208 village:336,80");
         }
         if (observations.isEmpty()) {
             out.println("There are bedrock notes but no structures. Bedrock alone can't find the structure seed yet:");
             out.println("add about 6 structures, or if you know the structure seed, use 'seedfinder full-seed <structure seed>'.");
+            read.hashedSeed().ifPresent(hashed -> out.println("If the world's seed was typed (as text or a short number), the hashed seed gives it"
+                + " and the bedrock checks it: " + typedSeedCommand(hashed)));
             return 1;
         }
 
@@ -99,6 +106,8 @@ final class FindCommand implements Callable<Integer> {
         bedrock.problems().forEach(problem -> out.println("Can't search yet: " + problem + "."));
         if (!plan.canSearch()) {
             plan.problems().forEach(problem -> out.println("Can't search yet: " + problem));
+            read.hashedSeed().ifPresent(hashed -> out.println("If the world's seed was typed (as text or a short number), the hashed seed alone "
+                + "gives it: " + typedSeedCommand(hashed)));
         }
         if (!plan.canSearch() || !bedrock.problems().isEmpty()) {
             return 1;
@@ -119,7 +128,7 @@ final class FindCommand implements Callable<Integer> {
         out.println();
         boolean named = false;
         if (found.size() <= FullSeedFinder.MAX_STRUCTURE_SEEDS) {
-            named = FullSeedReport.run(out, data, found, bedrock, threadCount);
+            named = FullSeedReport.run(out, data, found, bedrock, read.hashedSeed(), threadCount);
         } else if (!read.bedrock().isEmpty()) {
             out.println("Too many structure seeds to check the bedrock against; add more structures first.");
         }
@@ -184,5 +193,10 @@ final class FindCommand implements Callable<Integer> {
                 lastPrint = now;
             }
         }
+    }
+
+    /** The typed-seed command for these notes: with the file, so the seed found is checked against them too. */
+    private String typedSeedCommand(long hashedSeed) {
+        return file != null ? "seedfinder typed-seed --file " + file : "seedfinder typed-seed " + hashedSeed;
     }
 }

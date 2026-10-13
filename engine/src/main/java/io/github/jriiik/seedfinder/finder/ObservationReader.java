@@ -7,6 +7,7 @@ import io.github.jriiik.seedfinder.version.VersionData;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
+import java.util.OptionalLong;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -25,13 +26,14 @@ import java.util.regex.Pattern;
  * bedrock 10 -61 20            single blocks
  * not-bedrock 11 -61 20
  * </pre>
+ * A line {@code hashed-seed <number>} gives the hashed seed the server sent (the mod writes it into its notes).
  * The overworld is assumed; write the dimension after the keyword for the nether ({@code bedrock-heights nether 0 0}).
  * A grid ends at an empty line or at the first line that is not a row.
  */
 public final class ObservationReader {
 
-    /** Structures and bedrock read from a list of lines. */
-    public record Observations(List<StructureObservation> structures, List<BedrockObservation> bedrock) {
+    /** Structures, bedrock and the hashed seed read from a list of lines. */
+    public record Observations(List<StructureObservation> structures, List<BedrockObservation> bedrock, OptionalLong hashedSeed) {
     }
 
     /** A mistake in one line; {@link #lineIndex()} is 0-based. */
@@ -51,6 +53,7 @@ public final class ObservationReader {
 
     private static final Pattern HEADER = Pattern.compile(
         "(?i)(bedrock[- ]heights|bedrock[- ]layer|not[- ]bedrock|no[- ]bedrock|bedrock)(?=$|[\\s:,(\\[])(.*)");
+    private static final Pattern HASHED_SEED = Pattern.compile("(?i)hashed[- ]seed[\\s:=]+(-?\\d+)");
     private static final Pattern NUMBER_ROW = Pattern.compile("(?:-?\\d+|\\?)(?:[\\s,;]+(?:-?\\d+|\\?))*");
     private static final Pattern DIGIT_ROW = Pattern.compile("[0-9?]+");
     private static final Pattern LAYER_ROW = Pattern.compile("[bB.?]+");
@@ -65,11 +68,22 @@ public final class ObservationReader {
     public static Observations read(VersionData data, List<String> lines) {
         List<StructureObservation> structures = new ArrayList<>();
         List<BedrockObservation> bedrock = new ArrayList<>();
+        OptionalLong hashedSeed = OptionalLong.empty();
         int i = 0;
         while (i < lines.size()) {
             String text = lines.get(i).strip();
             Matcher header = HEADER.matcher(withoutComment(text));
             try {
+                Matcher hashed = HASHED_SEED.matcher(withoutComment(text));
+                if (hashed.matches()) {
+                    try {
+                        hashedSeed = OptionalLong.of(Long.parseLong(hashed.group(1)));
+                    } catch (NumberFormatException e) {
+                        throw new IllegalArgumentException("the hashed seed must be a whole number from -9223372036854775808 to 9223372036854775807");
+                    }
+                    i++;
+                    continue;
+                }
                 if (!header.matches()) {
                     if (!text.startsWith("#") && ROW_LIKE.matcher(withoutComment(text)).matches()) {
                         throw new IllegalArgumentException("this line has no structure name. If it is a row of bedrock notes, it "
@@ -106,7 +120,7 @@ public final class ObservationReader {
                 throw new LineException(i, e.getMessage());
             }
         }
-        return new Observations(structures, bedrock);
+        return new Observations(structures, bedrock, hashedSeed);
     }
 
     /** A bedrock line without a trailing "# comment" (structure lines keep theirs: /locate output can contain '#'). */

@@ -1,0 +1,7 @@
+{
+    "required": true,
+    "package": "io.github.jriiik.seedfinder.mod.gametest",
+    "compatibilityLevel": "JAVA_25",
+    "client": ["XvfbSrgbWorkaroundMixin"],
+    "injectors": {"defaultRequire": 1}
+}

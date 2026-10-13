@@ -1,0 +1,18 @@
+{
+    "key.category.jriksseedfinder.main": "Jrik's Seed Finder",
+    "key.jriksseedfinder.open": "Open Seed Finder",
+    "gui.jriksseedfinder.title": "Jrik's Seed Finder",
+    "gui.jriksseedfinder.collect.on": "Collecting here: ON",
+    "gui.jriksseedfinder.collect.off": "Collecting here: OFF",
+    "gui.jriksseedfinder.add_structure": "Add a structure here",
+    "gui.jriksseedfinder.remove_structure": "Remove a structure",
+    "gui.jriksseedfinder.start_over": "Remove all notes",
+    "gui.jriksseedfinder.start_over.title": "Remove all notes for this world?",
+    "gui.jriksseedfinder.start_over.message": "The structures and bedrock noted here are deleted. Use this when the world was reset or replaced.",
+    "gui.jriksseedfinder.copy_seed": "Copy seed",
+    "gui.jriksseedfinder.copy_notes": "Copy notes",
+    "gui.jriksseedfinder.show_status.on": "Status line: ON",
+    "gui.jriksseedfinder.show_status.off": "Status line: OFF",
+    "gui.jriksseedfinder.close": "Close",
+    "gui.jriksseedfinder.back": "Back"
+}

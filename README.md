@@ -6,8 +6,9 @@ Minecraft version (**26.3**).
 
 > **Work in progress.** From about six structure positions the finder works out the world's *structure seed* (the
 > part of the seed that decides where structures go), usually in under a second, and names the likely full seed.
-> With the bedrock floor of one chunk added, it finds the full seed for certain. The Minecraft mod is next. See the
-> [roadmap](docs/ROADMAP.md).
+> With the bedrock floor of one chunk added, it finds the full seed for certain. A Fabric mod does all of this while
+> you play, and recognizes villages, outposts, trial chambers, ancient cities, trail ruins and camps by itself. See
+> the [roadmap](docs/ROADMAP.md).
 
 *Not an official Minecraft product. Not approved by or associated with Mojang or Microsoft.*
 
@@ -20,8 +21,11 @@ Minecraft version (**26.3**).
 | `seedfinder find`: work out the structure seed (48 bits) from structure positions | ✅ done |
 | Name the likely full seed (64 bits) of worlds whose seed was picked by Minecraft or typed as text | ✅ done |
 | Find the full seed for certain from the bedrock floor (`seedfinder full-seed`, or bedrock notes in `find`) | ✅ done |
+| Find a seed that was typed (as text or a short number) from the "hashed seed" alone, in minutes (`seedfinder typed-seed`) | ✅ done |
 | `seedfinder bedrock`: show the bedrock floor of a seed you know | ✅ done |
-| Fabric client mod that collects structures and bedrock while you play | 🔜 next |
+| Fabric client mod: notes structures and bedrock while you play and finds the seed by itself | ✅ first version |
+| The mod recognizes villages, pillager outposts, trial chambers, ancient cities, trail ruins and camps by itself | ✅ done |
+| The mod recognizes the other structures (temples, igloos, shipwrecks, ...) by itself | ⏳ next |
 | Full seed from biomes, structure seed from nether bedrock alone | 🔜 later |
 
 ## Trying the command-line app
@@ -85,6 +89,22 @@ If the seed was typed as text (like "My World") or as a short number, it is 1234
 That is a good guess for most worlds and servers, but only a guess: if the seed was typed, the "random" answer is
 a different seed that happens to share the structure seed.
 
+**The hashed seed.** Minecraft sends every player a "hashed seed", a fingerprint of the world seed (the mod notes it
+by itself, as a `hashed-seed` line in its notes file). With it, the full seed is certain as soon as the structure
+seed is known. And if the seed was typed (as text or as a number from -2147483648 to 2147483647), the hashed seed
+alone gives it, without any structures: `seedfinder typed-seed --file <notes file>` (or `seedfinder typed-seed
+<hashed seed>`) checks all 4,294,967,296 seeds that can be typed. That takes about a minute on a recent computer
+and up to 20 minutes on an older one with few CPU threads; a small typed number like 12345 comes out at once. For
+text seeds you get the number Minecraft made of the text, not the text itself.
+
+Some servers send a made-up hashed seed to protect their seed. If that made-up value happens to be the fingerprint of
+a typed seed, the search finds that seed, but it isn't the world's. So the seed found is checked against the
+structures and bedrock in the notes: when they fit (and a wrong seed would fit them only by a chance below 1 in
+1,000), it is certain; when they don't, it is not presented as the world seed. A few structures that don't fit, or
+nether bedrock from chunks made by Minecraft 1.17 or older, are listed but don't stop a seed that the rest confirms;
+overworld bedrock always has to fit. With nothing noted yet, the seed is shown as "not confirmed yet". (In a single-player world the game makes the hashed
+seed itself, so there the seed found is always the world's.)
+
 **Bedrock, to be sure.** The bottom of the overworld (y = -64 to -60) is a random-looking bedrock pattern that
 depends on the whole seed. With bedrock notes, the finder checks every one of the 65,536 seeds.
 
@@ -128,6 +148,64 @@ the bedrock floor the finder expects, in the same format as the notes, to compar
 know, nearest first, using the same positions that `/locate` reports. A structure only appears at its spot if the
 biome there allows it. The finder does not check biomes yet, so some spots will turn out empty in the game.
 
+## The Minecraft mod
+
+The mod does the same as the command-line app, inside the game: it notes what you come across and searches by
+itself. It needs Minecraft **26.3** with **Fabric Loader** (0.19.5 or newer) and **Fabric API**.
+
+1. Install Fabric for Minecraft 26.3 (see [fabricmc.net](https://fabricmc.net/use/)), and put Fabric API and
+   `jriks-seed-finder-mod-….jar` (the "jriks-seed-finder-mod" download from the latest successful
+   [build](https://github.com/jriiik/Jriks-minecraft-seed-finder/actions)) into your `mods` folder.
+2. In Options → Controls → Key Binds, give **Open Seed Finder** a key (it has none at first, so it can't clash with
+   anything).
+3. In a world where you may look for the seed, press that key and switch **Collecting here** on. In every other world
+   the mod notes nothing.
+4. Play. The mod then:
+   - reads the bedrock floor of chunks around you (overworld and nether);
+   - recognizes **villages, pillager outposts, trial chambers, ancient cities, trail ruins and camps** you come
+     near, from their blocks, and notes the chunk where each one starts (see below);
+   - notes the answer when you use `/locate structure ...` (if you are allowed to use it);
+   - notes structures you mark: stand in the chunk where a structure starts and press **Add a structure here**;
+   - uses the "hashed seed" that Minecraft sends to every player, which settles the full seed as soon as the
+     structure seed is known;
+   - checks in the background whether the seed was typed (as text or a number from -2147483648 to 2147483647): then
+     the hashed seed alone gives it, without any structures. That takes from a few minutes to half an hour or more
+     of background work on older computers (a moment for a small typed number like 12345), using a quarter of your CPU
+     threads; it continues where it was when you come back. The seed found is checked against the bedrock
+     and structures noted (see "The hashed seed" above).
+5. The status shows in the top-left corner and on the mod's screen; **Copy seed** copies the result.
+
+**How structures are recognized.** The mod compares the blocks around you with the game's own blueprints of each
+structure's first piece (it reads them from the Minecraft you are running; nothing of Minecraft is copied into the
+mod). The game puts that piece exactly on the corner of the chunk where the structure starts, so a match that
+doesn't sit on a chunk corner is thrown away. A structure is only noted when at least 70% of its blueprint is
+there, 70% of its built blocks (not just ground), and 70% of its built blocks other than the most common one (so a
+roof of wool stairs on grass doesn't count as a camp tent). Tested against worlds made by the game's own code (204
+structures, with trees, ores and other decoration): it never named a wrong chunk, and every build of the project
+checks 24 more in a real game. Some structures are not recognized, which only means they don't count: a village
+whose centre was overbuilt by its own farm streets or a sand patch, a rare zombie village centre, or anything
+players have taken apart. Underground structures (trial chambers, ancient cities, trail ruins) can only be seen
+where the server sends the real underground blocks; servers that hide them (anti-xray) simply mean they are not
+found.
+
+Some structures are real but don't follow the seed: villages and outposts in chunks made by Minecraft 1.17 or
+older (an upgraded world), structures placed with `/place` or copied from elsewhere, and exact copies players
+built on a chunk corner. The mod ignores structures you place with `/place` yourself. When the others make "no
+seed fits", the mod tries again leaving out one structure at a time; if that proves a seed (with the hashed seed or
+bedrock), it shows the seed and names the structure that doesn't fit. Structures you remove on the mod's screen
+are not noted again.
+
+Each world has its own notes, told apart by the server address (or save name) and the hashed seed, so a server
+network's lobby and game world, or a world that was reset, never mix.
+
+The notes are saved in `config/jriksseedfinder/` inside your Minecraft folder: a `.txt` file per world that the
+command-line app reads too (`seedfinder find --file <that file>`).
+
+**What the mod does not do:** it adds no chat commands (so nothing can clash with a server's own commands or plugins,
+such as `/locate`), sends nothing to the server, and doesn't change the game's code. It only looks at what the game
+has already received, and only in worlds where you switched it on. Every build checks this automatically: a test
+fails if the mod's code could send anything or register a command.
+
 ## Ground rules
 
 Seed finding is meant for your own worlds, friends' servers with their permission, servers whose rules allow it,
@@ -135,9 +213,8 @@ and server owners checking whether their own seed can be found. Many servers don
 reveals where ores and structures are. This project will not include anything to hide from anti-cheat or to get
 around a server's seed protection.
 
-The command-line app never connects to a server. The planned mod will not add chat commands (so nothing can clash
-with a server's own commands or plugins, such as `/locate`) and will not send anything to the server: it opens with
-a key you choose and only looks at what the game already shows you.
+The command-line app never connects to a server. The mod adds no chat commands and sends nothing to the server (see
+above), and it collects nothing until you switch it on for a world.
 
 ## How the project is organized
 
@@ -145,6 +222,7 @@ a key you choose and only looks at what the game already shows you.
 |---|---|
 | `engine/` | The seed-finding logic and the per-version world generation data. Plain Java, no Minecraft code. |
 | `cli/` | The `seedfinder` command-line app. |
+| `mod/` | The Fabric client mod. It contains the engine and adds the in-game part. |
 | `tools/oracle/` | Generates the version data and the test answers from the official Minecraft server, which it downloads when run (never committed). |
 | `docs/` | The [roadmap](docs/ROADMAP.md). |
 
@@ -157,11 +235,14 @@ the game and require it to find the right seed.
 
 ## Building from source
 
-Needs Java 21 or newer. On Windows use `gradlew.bat` instead of `./gradlew`.
+Needs Java 25 (the mod's tools require it; the command-line app it builds still runs on Java 21). On Windows use
+`gradlew.bat` instead of `./gradlew`.
 
 ```
-./gradlew build                  # compile and run all tests
+./gradlew build                  # compile and run all tests, including the mod's "sends nothing" check
 ./gradlew :cli:fatJar            # the runnable jar: cli/build/libs/seedfinder.jar
+                                 # the mod: mod/build/libs/jriks-seed-finder-mod-<version>.jar
+xvfb-run -a ./gradlew :mod:runProductionClientGameTest    # starts real Minecraft and tests the mod in it (Linux)
 ```
 
 To add or refresh a Minecraft version (needs the Java version that Minecraft version needs, Java 25 for 26.x):

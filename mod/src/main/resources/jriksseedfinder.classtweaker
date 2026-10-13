@@ -1,0 +1,3 @@
+classTweaker	v1	official
+# The hashed seed the server sends at login (BiomeManager.obfuscateSeed); the mod only reads it.
+accessible	field	net/minecraft/world/level/biome/BiomeManager	biomeZoomSeed	J

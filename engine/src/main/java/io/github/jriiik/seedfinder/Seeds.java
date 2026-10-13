@@ -1,8 +1,16 @@
 package io.github.jriiik.seedfinder;
 
 import io.github.jriiik.seedfinder.rng.JavaRandom;
+import java.security.DigestException;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
+import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Collection;
+import java.util.LinkedHashSet;
+import java.util.List;
 import java.util.OptionalLong;
+import java.util.Set;
 
 /** Helpers for world seeds as players see them. */
 public final class Seeds {
@@ -65,6 +73,99 @@ public final class Seeds {
     public static OptionalLong textSeedCandidate(long structureSeed) {
         long candidate = (structureSeed << 16) >> 16;
         return candidate == (int) candidate ? OptionalLong.of(candidate) : OptionalLong.empty();
+    }
+
+    /**
+     * The "hashed seed" Minecraft sends to every player when they join or change dimension
+     * ({@code BiomeManager.obfuscateSeed}): the first 8 bytes of the SHA-256 hash of the world seed, both read in
+     * little-endian byte order. The game uses it to blend biomes smoothly; the seed can't be computed back from it,
+     * but each candidate seed can be checked against it.
+     */
+    public static long hashedSeed(long worldSeed) {
+        return new Hasher().hashedSeed(worldSeed);
+    }
+
+    /** Works out many hashed seeds quickly, reusing its buffers; one per thread. */
+    public static final class Hasher {
+        private final MessageDigest digest = sha256();
+        private final byte[] input = new byte[8];
+        private final byte[] output = new byte[32];
+
+        /** The hashed seed of a world seed, see {@link Seeds#hashedSeed(long)}. */
+        public long hashedSeed(long worldSeed) {
+            for (int i = 0; i < 8; i++) {
+                input[i] = (byte) (worldSeed >>> (8 * i));
+            }
+            digest.update(input, 0, 8);
+            try {
+                digest.digest(output, 0, output.length);
+            } catch (DigestException e) {
+                throw new IllegalStateException("SHA-256 output doesn't fit in 32 bytes", e);
+            }
+            long value = 0;
+            for (int i = 7; i >= 0; i--) {
+                value = (value << 8) | (output[i] & 0xFF);
+            }
+            return value;
+        }
+    }
+
+    /**
+     * The world seeds with one of these structure seeds whose hashed seed is the given one: normally exactly one, or
+     * none when the server sent a different value (or the structure seeds are wrong). Tries the seeds people
+     * normally end up with first ({@link #likelyWithHashedSeed}), then all 65,536 seeds of each structure seed.
+     */
+    public static long[] withHashedSeed(Collection<Long> structureSeeds, long hashedSeed) {
+        long[] likely = likelyWithHashedSeed(structureSeeds, hashedSeed);
+        if (likely.length > 0) {
+            return likely;
+        }
+        Hasher hasher = new Hasher();
+        List<Long> found = new ArrayList<>();
+        for (long structureSeed : distinct(structureSeeds)) {
+            for (long upper = 0; upper < 1 << 16; upper++) {
+                long worldSeed = upper << STRUCTURE_SEED_BITS | structureSeed;
+                if (hasher.hashedSeed(worldSeed) == hashedSeed) {
+                    found.add(worldSeed);
+                }
+            }
+        }
+        return found.stream().mapToLong(Long::longValue).toArray();
+    }
+
+    /**
+     * The quick part of {@link #withHashedSeed}: only the one to three seeds per structure seed that Minecraft picks
+     * by itself ({@link #randomSeedCandidates}) or that typed text or a short number gives ({@link #textSeedCandidate}).
+     */
+    public static long[] likelyWithHashedSeed(Collection<Long> structureSeeds, long hashedSeed) {
+        Hasher hasher = new Hasher();
+        List<Long> found = new ArrayList<>();
+        for (long structureSeed : distinct(structureSeeds)) {
+            Set<Long> likely = new LinkedHashSet<>();
+            Arrays.stream(randomSeedCandidates(structureSeed)).forEach(likely::add);
+            textSeedCandidate(structureSeed).ifPresent(likely::add);
+            for (long worldSeed : likely) {
+                if (hasher.hashedSeed(worldSeed) == hashedSeed) {
+                    found.add(worldSeed);
+                }
+            }
+        }
+        return found.stream().mapToLong(Long::longValue).toArray();
+    }
+
+    /** The structure seeds (lowest 48 bits) without repeats, even when the same one is given in two forms. */
+    private static Set<Long> distinct(Collection<Long> structureSeeds) {
+        Set<Long> seeds = new LinkedHashSet<>();
+        structureSeeds.forEach(seed -> seeds.add(structureSeed(seed)));
+        return seeds;
+    }
+
+    private static MessageDigest sha256() {
+        try {
+            return MessageDigest.getInstance("SHA-256");
+        } catch (NoSuchAlgorithmException e) {
+            throw new IllegalStateException("Every Java runtime has SHA-256", e);
+        }
     }
 
     /**

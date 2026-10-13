@@ -33,7 +33,7 @@
 | 2 | Find the 48-bit structure seed from a list of structure observations (`seedfinder find`) | ✅ |
 | 3 | Find the full 64-bit seed: the `nextLong()` shortcut, text seeds, and the overworld bedrock floor | ✅ |
 | 4 | CLI polish: a `verify` command, saving results | 🔜 |
-| 5 | Fabric client mod: notes structures and bedrock while you explore, shows progress, turned on per server | ⏳ next |
+| 5 | Fabric client mod: notes structures and bedrock while you explore, shows progress, turned on per server | ✅ first version; recognizing the remaining structure types ⏳ |
 | 6 | Extras: structure seed from nether bedrock alone, biomes, more data sources (End pillars), older versions | 🔜 |
 
 ### Phase 2: how the structure seed search works
@@ -90,6 +90,89 @@ Typical searches take well under a second. Villages-only searches need more stru
   seed has full seeds that miss only a few blocks of a chunk.
 - *Nether bedrock* uses the old 48-bit generator, so it only depends on the structure seed. It can tell look-alike
   structure seeds apart, and later (Phase 6) it could find the structure seed without any structures.
+- *Near the middle of the world the false-fit rate is higher* (found in the review of the typed-seed check). Notes
+  next to x = 0 or z = 0 are fitted by wrong seeds more often than the c = 3.5 estimate says: for a 16 x 16 single
+  layer around the origin about 10 times on average and up to about 90 times in single worlds; for a chunk of
+  heights about 2 times (up to about 14). The typed-seed check allows for it. The bedrock proof of the structure
+  search still uses the plain estimate; it only matters there when the structure seed itself is wrong, but it
+  should be re-measured and given the same margin.
+
+### Phase 5: the mod
+
+- **Opt-in per world.** Nothing is read until the player switches collecting on for that world or server. Notes
+  are kept per address (or save name) and hashed seed, so worlds behind one address never mix.
+- **The hashed seed.** Every server sends players a SHA-256 hash of the world seed (for biome blending). Once the
+  structure seed is known, checking its 65,536 full seeds against that hash settles the seed at once. If no
+  candidate matches (a server may send a different value), the mod says so and uses bedrock instead.
+- **Typed seeds from the hashed seed alone.** A seed typed as text becomes its 32-bit `hashCode()`, and short typed
+  numbers are 32-bit too, so all typed seeds are among the 2^32 `int` values. Checking all of them against the hashed
+  seed takes 2^32 SHA-256 hashes: about 60 ns each per CPU thread with SHA instructions (4.5 minutes on one thread,
+  a little over a minute on four), about 290 ns without them (about 21 minutes on one thread), and about 430 ns on
+  CPUs that also lack AVX2 (about 31 minutes). The values are
+  checked smallest numbers first, so a typed number like 12345 comes out at once. The search runs in 1024 pieces and
+  saves where it can resume: the first piece not yet fully checked, so a slow thread never leaves a gap. The mod runs
+  it in the background with a quarter of the CPU threads until the seed is known.
+- **Checking a seed found from the hashed seed alone.** A server may send a made-up hashed seed; if that value is the
+  hash of some typed seed, the typed search finds the wrong seed. So the seed is checked against the notes: whether
+  it puts each noted structure's start in its chunk, and whether it gives the noted bedrock. It is confirmed when a
+  wrong seed would fit the notes at least as well with a chance of at most 1 in 1,000:
+  - Structures: a wrong seed has a start in a given chunk about 1 time in 150 to 900, depending on the kind (end
+    cities 1 in 23; mineshafts, buried treasure and nether fossils don't count). What counts is the chance of
+    fitting at least as many of all the notes as this seed does, so with many notes a few chance fits confirm
+    nothing. Notes whose random numbers are related (the same region of sets with nearly the same salt: the four
+    temples, ocean monuments and end cities, or one set twice) count once. Measured: random typed seeds checked
+    against 30, 60 and 100 notes of one world were confirmed 5, 60 and 26 times in 100,000.
+  - Overworld bedrock that fits completely: the measured false-fit rate with a safety factor, so that bedrock alone
+    confirms a seed only from about 300 informative blocks (a chunk of heights has about 600, and the mod notes about
+    1,000 per chunk). The measured rate is an average: for small notes single worlds were measured up to about 10
+    times higher, and next to x = 0 or z = 0, where the game's random numbers for neighbouring blocks are alike, up to
+    about 90 times (a single layer of 16 x 16 blocks around the middle of the world). Less bedrock still helps
+    together with structures.
+  Any overworld bedrock that doesn't fit keeps the seed from being shown as the world's seed, and the message says
+  why: a few wrong blocks out of many were probably noted wrong (a wrong seed gets about a third of them wrong);
+  bedrock that doesn't fit while the structures confirm the seed was probably noted in the wrong place (or the
+  server changes the bedrock it sends); otherwise the server probably sends a made-up hashed seed. Nether bedrock and structures that don't
+  fit only count against it when nothing confirms it: nether chunks made by Minecraft 1.17 or older have bedrock that
+  doesn't follow the seed, a server may place structures differently, and older chunks or commands leave structures
+  that don't follow it either. Bedrock notes that break the game's rules are left out and reported.
+- **Bedrock from loaded chunks.** The mod reads the random bedrock layers of up to four chunks per dimension and
+  skips anything that isn't natural stone, so player-made holes and structures count as unknown, not as "no
+  bedrock". The in-game test checks thousands of blocks read this way against the engine's prediction.
+- **Structures recognized from blocks** (villages, pillager outposts, trial chambers, ancient cities, trail ruins,
+  abandoned camps). These are built from pieces, and the game puts one point of the first piece exactly on the
+  north-west corner of the start chunk, turned by a random multiple of 90 degrees around that point. The mod reads
+  the blueprints of all first pieces from the running game (220 of them), keeps the blocks that are sure to be
+  there, and searches loaded chunks for a few rare blocks of each (a bell for villages, reinforced deepslate for
+  ancient cities). A placement is only accepted when its reference point lands on a chunk corner, the chunk is one
+  the structure can start in at all, and at least 70% of the blueprint and 70% of its built blocks match. Matches
+  are grouped per placement region; a region whose matches disagree reports nothing.
+
+**What we learned while testing:**
+
+- *"The chunk the structure is in" is usually wrong.* Because of the rotation, the first piece only lies inside the
+  start chunk about a quarter of the time. The corner rule was checked on 13,476 starts made by the game's code.
+- *Ground fools a blueprint-only check.* A tent blueprint that is mostly floor matched plain savanna ground well
+  enough to pass a 60% threshold. Scoring the built blocks separately fixed it: wrong placements reached at most
+  46% of their built blocks, real ones at least 73%.
+- *Measured with the real code.* On 175 areas generated by the game's own code (with trees, ores and other
+  decoration) the mod's recognizer found 204 starts (72 camps, 41 villages, 29 trial chambers, 24 outposts,
+  23 trail ruins, 15 ancient cities) and never named a wrong chunk. It missed 5 villages: two zombie plains fountains
+  (left out on purpose, since only the bell survives the zombie processor), a zombie taiga centre covered by a sand
+  patch, and two savanna centres over which the game laid its own terrain-following farm streets. Recognition took
+  at most 0.11 s for 1,024 chunks. The in-game test then recognizes one of each type in a real client and checks
+  every recognized start against the game's records.
+- *Player builds.* A review found that a plain roof of white wool stairs on grass matched camp tents (their built
+  blocks are mostly those stairs). Now 70% of the built blocks other than the most common one must match too, and
+  the most common block is only used to search when nothing else can be.
+- *Real structures that don't follow the seed:* chunks made by older versions (before 1.18 villages used a 32-chunk
+  grid), `/place structure` (it puts the start piece on the corner of the chunk you name) and copied areas. The mod
+  reads `/place` answers and ignores those spots; for the rest, "no seed fits" triggers a search that leaves out one
+  structure at a time and only reports a result that the hashed seed or bedrock proves.
+- *Every build checks real structures.* The in-game test generates the chunks around the 4 nearest starts of each
+  of the six types (24) with the game itself and requires the recognizer to find them with no wrong or
+  contradicting start; it also checks that a camp placed with `/place` is not noted.
+- *Underground structures need real blocks.* Servers with anti-xray hide them; the mod doesn't try to get around
+  that, and they are simply not found there.
 
 ## Things that can't work
 
@@ -100,7 +183,9 @@ Typical searches take well under a second. Villages-only searches need more stru
   and superflat worlds (their bedrock is one flat layer).
 - **Text seeds**: the finder gets the number, not the original text.
 - **Old chunks**: chunks generated by an older Minecraft version keep that version's generation, so the finder must
-  know which version made the chunks you looked at.
+  know which version made the chunks you looked at. This includes structures the mod recognizes by itself: a
+  village from an older version can look the same but follow older placement rules, and then no seed fits. Remove
+  structures in old parts of an upgraded world on the mod's screen.
 
 ## Keeping up with new Minecraft versions
 

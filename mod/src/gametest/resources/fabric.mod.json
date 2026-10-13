@@ -1,0 +1,15 @@
+{
+    "schemaVersion": 1,
+    "id": "jriksseedfinder-gametest",
+    "version": "1.0.0",
+    "name": "Jrik's Seed Finder in-game tests",
+    "environment": "client",
+    "entrypoints": {
+        "fabric-client-gametest": ["io.github.jriiik.seedfinder.mod.SeedFinderGameTest"]
+    },
+    "depends": {
+        "jriksseedfinder": "*",
+        "fabric-client-gametest-api-v1": "*"
+    },
+    "mixins": ["jriksseedfinder-gametest.mixins.json"]
+}

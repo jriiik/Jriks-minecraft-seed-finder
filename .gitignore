@@ -6,6 +6,9 @@ build/
 # Oracle downloads (official Minecraft server jar, never committed)
 tools/oracle/build/
 
+# Logs Minecraft's logger writes when the game's classes run outside a build folder
+logs/
+
 # IDEs and OS files
 .idea/
 *.iml
