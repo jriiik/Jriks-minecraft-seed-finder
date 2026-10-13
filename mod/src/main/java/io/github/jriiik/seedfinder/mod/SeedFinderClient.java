@@ -43,6 +43,7 @@ public final class SeedFinderClient implements ClientModInitializer {
     private static VersionData data;
     static KeyMapping openKey;
     private static SearchRunner runner;
+    private static final TypedSeedRunner TYPED_SEEDS = new TypedSeedRunner();
     /** The current world's notes; only touched on the game's main thread. */
     private static WorldSession session;
     private static StructureRecognition recognition;
@@ -108,9 +109,25 @@ public final class SeedFinderClient implements ClientModInitializer {
         return runner;
     }
 
+    static TypedSeedRunner typedSeeds() {
+        return TYPED_SEEDS;
+    }
+
+    /** Saves notes of a world the player has left (a background search finished after the switch). */
+    static void saveIfLeft(WorldSession notes) {
+        if (notes != session && notes.needsSaving()) {
+            try {
+                notes.save(folder());
+            } catch (IOException e) {
+                LOG.warn("Could not save the seed finder notes for {}", notes.world(), e);
+            }
+        }
+    }
+
     private static void onTick(Minecraft minecraft) {
         ticks++;
         WorldSession current = session(minecraft);
+        TYPED_SEEDS.tick(current);
         if (current != null) {
             if (current.collecting() && minecraft.level != null) {
                 current.setHashedSeed(HashedSeed.read(minecraft.level));

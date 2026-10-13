@@ -5,6 +5,7 @@ import com.mojang.datafixers.util.Pair;
 import io.github.jriiik.seedfinder.Seeds;
 import io.github.jriiik.seedfinder.bedrock.BedrockEvidence;
 import io.github.jriiik.seedfinder.finder.ObservationReader;
+import io.github.jriiik.seedfinder.finder.SeedCheck;
 import io.github.jriiik.seedfinder.finder.WorldSeedSearch;
 import io.github.jriiik.seedfinder.recognize.RecognizedStarts;
 import io.github.jriiik.seedfinder.recognize.StartPieceRecognizer;
@@ -217,6 +218,20 @@ public class SeedFinderGameTest implements FabricClientGameTest {
             context.clickScreenButton("gui.jriksseedfinder.collect.off");
             check(context.computeOnClient(client -> SeedFinderClient.session(client).collecting()), "the screen's button switches collecting on");
             context.takeScreenshot("seedfinder-screen");
+            context.clickScreenButton("gui.jriksseedfinder.close");
+            context.waitForScreen(null);
+
+            // The seed was typed (as the number 12345), so the hashed seed alone gives it, before any structure, and the
+            // bedrock read around the player confirms it.
+            context.waitFor(client -> SeedFinderClient.session(client).typedSeedCheck()
+                .map(typed -> typed.verdict() == SeedCheck.Verdict.CONFIRMED).orElse(false), 20 * 90);
+            check(context.computeOnClient(client -> SeedFinderClient.session(client).worldSeed().orElse(0)) == SEED,
+                "the hashed seed alone gave the typed seed " + SEED + ", and the notes confirm it");
+            String statusLine = context.computeOnClient(client -> StatusText.statusLine(SeedFinderClient.session(client), SeedFinderClient.runner()));
+            check(statusLine.equals("Seed Finder: world seed " + SEED), "the status line shows it: " + statusLine);
+            context.getInput().pressKey(SeedFinderClient.openKey);
+            context.waitForScreen(SeedFinderScreen.class);
+            context.takeScreenshot("seedfinder-typed-seed");
             context.clickScreenButton("gui.jriksseedfinder.close");
             context.waitForScreen(null);
 

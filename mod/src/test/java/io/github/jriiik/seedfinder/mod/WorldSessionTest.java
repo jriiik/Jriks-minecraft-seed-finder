@@ -1,8 +1,16 @@
 package io.github.jriiik.seedfinder.mod;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import io.github.jriiik.seedfinder.Seeds;
+import io.github.jriiik.seedfinder.finder.ObservationReader;
+import io.github.jriiik.seedfinder.finder.SeedCheck;
+import io.github.jriiik.seedfinder.finder.StructureObservation;
+import io.github.jriiik.seedfinder.finder.TypedSeedSearch;
+import io.github.jriiik.seedfinder.version.MinecraftVersion;
+import io.github.jriiik.seedfinder.version.VersionData;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
@@ -119,5 +127,102 @@ class WorldSessionTest {
         WorldSession third = WorldSession.load(folder, WORLD);
         assertEquals(WorldSession.Offer.LEFT_OUT, third.addRecognized(recognized(3, 4), VILLAGES));
         assertEquals(WorldSession.Offer.LEFT_OUT, third.addRecognized(recognized(20, 4), VILLAGES));
+    }
+
+    @Test
+    void theTypedSeedSearchIsSavedAndContinuedLater(@TempDir Path folder) throws IOException {
+        WorldSession session = new WorldSession(WORLD);
+        session.setHashedSeed(Seeds.hashedSeed(12345L));
+        int version = session.version();
+        session.setTypedSeedSearch(new TypedSeedSearch.Outcome(OptionalLong.empty(), 37));
+        assertEquals(version, session.version(), "progress alone doesn't count as new notes (no new search)");
+        assertTrue(session.needsSaving());
+        session.save(folder);
+        WorldSession later = WorldSession.load(folder, WORLD);
+        assertEquals(37, later.typedSeedPieces());
+        assertFalse(later.typedSeedSearchDone());
+
+        later.setTypedSeedSearch(new TypedSeedSearch.Outcome(OptionalLong.of(12345L), 37));
+        assertTrue(later.typedSeedSearchDone());
+        assertEquals(OptionalLong.empty(), later.worldSeed(), "not presented before the notes are checked");
+        assertTrue(later.notesLines().contains("# The hashed seed is the one of the typed seed 12345 (not checked against these notes yet)."));
+        later.save(folder);
+        assertEquals(OptionalLong.of(12345L), WorldSession.load(folder, WORLD).typedSeed());
+
+        later.clearAll();
+        assertEquals(OptionalLong.empty(), later.typedSeed());
+        assertEquals(0, later.typedSeedPieces());
+    }
+
+    @Test
+    void theTypedSeedIsTheWorldSeedUnlessTheNotesContradictIt() {
+        VersionData data = MinecraftVersion.V26_3.data();
+        WorldSession session = new WorldSession(WORLD);
+        session.setHashedSeed(Seeds.hashedSeed(12345L));
+        session.setTypedSeedSearch(new TypedSeedSearch.Outcome(OptionalLong.of(12345L), 0));
+
+        // Nothing noted yet: shown, but not confirmed.
+        session.setTypedSeedCheck(SeedCheck.of(data, List.of(), List.of(), 12345L));
+        assertEquals(OptionalLong.of(12345L), session.worldSeed());
+        assertTrue(session.notesLines().stream().anyMatch(line -> line.startsWith("# The world seed is 12345 (it was typed")));
+
+        // A village where seed 12345 has none (its village of that region is one chunk west): not the world seed.
+        List<StructureObservation> misfit = ObservationReader.read(data, List.of("village 352 80")).structures();
+        session.setTypedSeedCheck(SeedCheck.of(data, misfit, List.of(), 12345L));
+        assertEquals(OptionalLong.empty(), session.worldSeed());
+        assertTrue(session.notesLines().stream().anyMatch(line -> line.contains("these notes don't fit that seed")));
+
+        // A check of another seed (one started before "Remove all notes") changes nothing.
+        session.setTypedSeedCheck(SeedCheck.of(data, List.of(), List.of(), 999L));
+        assertEquals(OptionalLong.empty(), session.worldSeed());
+
+        int generation = session.generation();
+        session.clearAll();
+        assertEquals(generation + 1, session.generation());
+        assertEquals(java.util.Optional.empty(), session.typedSeedCheck());
+    }
+
+    @Test
+    void inASinglePlayerWorldTheTypedSeedIsTheWorldSeedEvenWhenNotesDisagree() {
+        // The game itself makes the hashed seed there, so disagreeing notes are the ones that are wrong.
+        VersionData data = MinecraftVersion.V26_3.data();
+        WorldSession session = new WorldSession(WorldIdentity.key("singleplayer:New World", Seeds.hashedSeed(12345L)));
+        assertTrue(session.hashedSeedIsGenuine());
+        session.setHashedSeed(Seeds.hashedSeed(12345L));
+        session.setTypedSeedSearch(new TypedSeedSearch.Outcome(OptionalLong.of(12345L), 0));
+        assertEquals(OptionalLong.empty(), session.worldSeed(), "shown once checked");
+        List<StructureObservation> misfit = ObservationReader.read(data, List.of("village 352 80")).structures();
+        session.setTypedSeedCheck(SeedCheck.of(data, misfit, List.of(), 12345L));
+        assertEquals(OptionalLong.of(12345L), session.worldSeed());
+        assertFalse(new WorldSession(WORLD).hashedSeedIsGenuine());
+    }
+
+    @Test
+    void aDoubtfulSavedTypedSeedSearchStartsOverButKeepsTheNotes(@TempDir Path folder) throws IOException {
+        WorldSession session = new WorldSession(WORLD);
+        session.setHashedSeed(Seeds.hashedSeed(12345L));
+        session.addStructure(new WorldSession.NotedStructure("villages", 336, 80, "marked by the player"));
+        session.setTypedSeedSearch(new TypedSeedSearch.Outcome(OptionalLong.of(12345L), 5));
+        session.save(folder);
+        Path file = folder.resolve(WorldSession.fileName(WORLD) + ".json");
+        String saved = Files.readString(file, StandardCharsets.UTF_8);
+        assertTrue(saved.contains("\"typed_seed\": \"12345\"") && saved.contains("\"typed_seed_pieces\": 5"), saved);
+
+        // A typed seed whose hash isn't the hashed seed (edited or damaged).
+        Files.writeString(file, saved.replace("\"typed_seed\": \"12345\"", "\"typed_seed\": \"12346\""), StandardCharsets.UTF_8);
+        WorldSession edited = WorldSession.load(folder, WORLD);
+        assertEquals(OptionalLong.empty(), edited.typedSeed());
+        assertEquals(0, edited.typedSeedPieces());
+        assertEquals(1, edited.structures().size());
+
+        // Progress that doesn't read.
+        Files.writeString(file, saved.replace("\"typed_seed_pieces\": 5", "\"typed_seed_pieces\": \"lots\""), StandardCharsets.UTF_8);
+        WorldSession damaged = WorldSession.load(folder, WORLD);
+        assertEquals(0, damaged.typedSeedPieces());
+        assertEquals(1, damaged.structures().size());
+
+        // Progress saved for another layout of the pieces.
+        Files.writeString(file, saved.replace("\"typed_seed_layout\": " + TypedSeedSearch.LAYOUT, "\"typed_seed_layout\": 0"), StandardCharsets.UTF_8);
+        assertEquals(0, WorldSession.load(folder, WORLD).typedSeedPieces());
     }
 }

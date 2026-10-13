@@ -74,6 +74,11 @@ final class FindCommand implements Callable<Integer> {
         List<StructureObservation> observations = read.structures();
         BedrockEvidence bedrock = new BedrockEvidence(read.bedrock());
         int threadCount = Threads.resolve(commandLine, threads);
+        if (observations.isEmpty() && read.bedrock().isEmpty() && read.hashedSeed().isPresent()) {
+            out.println("There is a hashed seed but no structures yet. If the world's seed was typed (as text or a short number),");
+            out.println("the hashed seed alone gives it: seedfinder typed-seed " + read.hashedSeed().getAsLong());
+            return 1;
+        }
         if (observations.isEmpty() && read.bedrock().isEmpty()) {
             throw new CommandLine.ParameterException(commandLine, "Tell me which structures you saw, for example: seedfinder find igloo:48,208 village:336,80");
         }
@@ -99,6 +104,8 @@ final class FindCommand implements Callable<Integer> {
         bedrock.problems().forEach(problem -> out.println("Can't search yet: " + problem + "."));
         if (!plan.canSearch()) {
             plan.problems().forEach(problem -> out.println("Can't search yet: " + problem));
+            read.hashedSeed().ifPresent(hashed -> out.println("If the world's seed was typed (as text or a short number), the hashed seed alone "
+                + "gives it: seedfinder typed-seed " + hashed));
         }
         if (!plan.canSearch() || !bedrock.problems().isEmpty()) {
             return 1;

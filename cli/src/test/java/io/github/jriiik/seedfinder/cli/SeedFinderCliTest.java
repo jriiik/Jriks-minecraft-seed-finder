@@ -331,4 +331,76 @@ class SeedFinderCliTest {
         assertEquals(0, result.exitCode(), result.err());
         assertTrue(result.out().contains("26.3  (newest)"), result.out());
     }
+
+    @Test
+    void typedSeedFindsATypedSeedFromItsHashedSeed(@org.junit.jupiter.api.io.TempDir java.nio.file.Path folder) throws java.io.IOException {
+        Result result = run("typed-seed", "--threads", "2", Long.toString(io.github.jriiik.seedfinder.Seeds.hashedSeed(12345L)));
+        assertEquals(0, result.exitCode(), result.err());
+        assertTrue(result.out().contains("Found the world seed: 12345\n"), result.out());
+
+        // From the mod's notes file.
+        java.nio.file.Path notes = folder.resolve("notes.txt");
+        java.nio.file.Files.writeString(notes, "# Jrik's Seed Finder notes\nhashed-seed " + io.github.jriiik.seedfinder.Seeds.hashedSeed(-7L) + "\n");
+        result = run("typed-seed", "--threads", "2", "--file", notes.toString());
+        assertEquals(0, result.exitCode(), result.err());
+        assertTrue(result.out().contains("Found the world seed: -7\n"), result.out());
+
+        // find points to it when the notes have a hashed seed but no structures.
+        result = run(find("--file", notes.toString()));
+        assertEquals(1, result.exitCode(), result.err());
+        assertTrue(result.out().contains("seedfinder typed-seed " + io.github.jriiik.seedfinder.Seeds.hashedSeed(-7L)), result.out());
+    }
+
+    @Test
+    void typedSeedTakesANegativeHashedSeed() {
+        // Half of all hashed seeds are negative; on the command line they must not be taken for an option.
+        Result result = run("typed-seed", "--threads", "2", Long.toString(io.github.jriiik.seedfinder.Seeds.hashedSeed(1L)));
+        assertEquals(0, result.exitCode(), result.err());
+        assertTrue(result.out().contains("Found the world seed: 1\n"), result.out());
+        assertTrue(result.out().contains("unless the server sends a made-up hashed seed"), result.out());
+    }
+
+    @Test
+    void typedSeedChecksTheSeedAgainstTheNotes(@org.junit.jupiter.api.io.TempDir java.nio.file.Path folder) throws java.io.IOException {
+        var data = io.github.jriiik.seedfinder.version.MinecraftVersion.V26_3.data();
+        var overworld = data.bedrockDimension("overworld").orElseThrow();
+        String hashedSeed = "hashed-seed " + io.github.jriiik.seedfinder.Seeds.hashedSeed(12345L) + "\n";
+
+        // The bedrock of the world fits the typed seed: confirmed.
+        java.nio.file.Path notes = folder.resolve("notes.txt");
+        java.nio.file.Files.writeString(notes, hashedSeed + String.join("\n", io.github.jriiik.seedfinder.bedrock.BedrockText.heights(
+            new io.github.jriiik.seedfinder.bedrock.BedrockPattern(overworld, 12345L), 0, 0, 16, 16)) + "\n");
+        Result result = run("typed-seed", "--threads", "2", "--file", notes.toString());
+        assertEquals(0, result.exitCode(), result.err());
+        assertTrue(result.out().contains("Found the world seed: 12345\n"), result.out());
+        assertTrue(result.out().contains("The notes confirm it: "), result.out());
+
+        // Bedrock of another world: the server sends a made-up hashed seed, and the typed seed is not the world's.
+        java.nio.file.Files.writeString(notes, hashedSeed + String.join("\n", io.github.jriiik.seedfinder.bedrock.BedrockText.heights(
+            new io.github.jriiik.seedfinder.bedrock.BedrockPattern(overworld, 999L), 0, 0, 16, 16)) + "\n");
+        result = run("typed-seed", "--threads", "2", "--file", notes.toString());
+        assertEquals(1, result.exitCode(), result.err());
+        assertFalse(result.out().contains("Found the world seed"), result.out());
+        assertTrue(result.out().contains("the notes don't fit that seed (bedrock blocks that don't fit: "), result.out());
+    }
+
+    @Test
+    void typedSeedNeedsExactlyOneHashedSeed() {
+        assertEquals(2, run("typed-seed").exitCode());
+        Result result = run("typed-seed", "not-a-number");
+        assertEquals(2, result.exitCode());
+        assertTrue(result.err().contains("must be a whole number"), result.err());
+        result = run("typed-seed", "123", "--file", "notes.txt");
+        assertEquals(2, result.exitCode());
+        assertTrue(result.err().contains("not both"), result.err());
+    }
+
+    @Test
+    void durationsReadNaturally() {
+        assertEquals("10 seconds", TypedSeedCommand.duration(3));
+        assertEquals("40 seconds", TypedSeedCommand.duration(41));
+        assertEquals("80 seconds", TypedSeedCommand.duration(84));
+        assertEquals("2 minutes", TypedSeedCommand.duration(95));
+        assertEquals("21 minutes", TypedSeedCommand.duration(1245));
+    }
 }

@@ -130,6 +130,11 @@ public final class FullSeedFinder {
         return Math.min(UPPER_VALUES, UPPER_VALUES * Math.pow(FALSE_FIT_CONSTANT / informativeBlocks, 3));
     }
 
+    /** The chance that one wrong world seed fits this many informative bedrock blocks perfectly (same measurement). */
+    public static double falseFitChance(int informativeBlocks) {
+        return expectedFalseFits(informativeBlocks) / UPPER_VALUES;
+    }
+
     /** How a world seed could have been made, judged by the seed alone. */
     public static Origin originOf(long worldSeed) {
         if (Seeds.couldBeRandomSeed(worldSeed)) {

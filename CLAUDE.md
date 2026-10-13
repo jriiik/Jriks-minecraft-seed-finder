@@ -34,17 +34,27 @@ the client already received.
     `Seeds.randomSeedCandidates` (the `nextLong()` shortcut) and `textSeedCandidate`, `ObservationReader` (structures
     and bedrock notes in one file). `FullSeedFinder.expectedFalseFits` is measured too and guarded by
     `FullSeedFinderTest.theFalseFitEstimateMatchesReality`. Never present a seed with bedrock mismatches as found.
+    `TypedSeedSearch` checks all 2^32 typed seeds (text hashCodes and short numbers) against the hashed seed, in
+    1024 resumable pieces, smallest numbers first; its progress gives a safe resume point (all pieces before it
+    checked), never a plain count, and `LAYOUT` must change with the pieces. `Seeds.Hasher` is the fast reusable
+    hashed-seed function. A seed found from the hashed seed alone is only presented after `SeedCheck` (structures +
+    bedrock; confirmed when a wrong seed's chance to fit is <= 0.001) doesn't contradict it: servers may send a
+    made-up hashed seed.
   - `recognize/`: start chunks of jigsaw structures from blocks. `StartPiece` (a start piece's blueprint: blocks,
     built/terrain split, reference point, anchors), `StartPieceRecognizer` (anchor -> candidate placements that pass
     the chunk-corner and region checks, looked up by the anchor's position in its chunk -> score; the all, built and
     "distinct" (built minus the most common built block) scores must each be >= 0.70), `RecognizedStarts` (grouping
     by set and region; disagreeing regions report nothing). No game data here: the mod builds the blueprints.
-- `cli/`: picocli app `seedfinder` (`find`, `full-seed`, `structure-seed`, `locate`, `bedrock`, `structures`,
-  `versions`).
+- `cli/`: picocli app `seedfinder` (`find`, `full-seed`, `typed-seed`, `structure-seed`, `locate`, `bedrock`,
+  `structures`, `versions`).
 - `mod/`: Fabric client mod for 26.3 (Loom, non-remapping, Mojang names; the engine is nested as jar-in-jar, Gson
   comes from Minecraft). `SeedFinderClient` registers an unbound key, a HUD line, chunk-load and system-message
   listeners; `WorldSession` holds per-world notes (opt-in `collecting`, saved as JSON plus a CLI-readable notes
   file in `config/jriksseedfinder/`); `SearchRunner` runs `WorldSeedSearch` on its own low-priority thread;
+  `TypedSeedRunner` runs `TypedSeedSearch` in the background (a quarter of the CPU threads, progress saved, stops
+  once the seed is known or the player leaves; results from before "Remove all notes" are dropped via
+  `WorldSession.generation`), and `SearchRunner` checks a typed seed against the notes (`SeedCheck`) before its
+  structure search;
   `BedrockScanner` reads bedrock layers (B / natural stone / unknown); `StartPieceLibrary` builds the start-piece
   blueprints at runtime from the game jar's own data (structure, template pool, processor list, block tag JSON and
   `.nbt` templates; 26.x block states use `id`/`properties`), and `StructureRecognition` scans loaded chunks for

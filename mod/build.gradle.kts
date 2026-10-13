@@ -72,12 +72,16 @@ tasks.processResources {
     filesMatching("fabric.mod.json") { expand("version" to modVersion) }
 }
 
-// The guard test reads the finished mod jar (with the engine jar inside it).
+// The guard test reads the finished mod jar (with the engine jar inside it). The tests run inside the build folder,
+// so the game's logger (on the test classpath) writes its logs there, not into the source tree.
 tasks.test {
     useJUnitPlatform()
     val modJar = tasks.jar.flatMap { it.archiveFile }
     inputs.file(modJar).withPropertyName("modJar")
     jvmArgumentProviders.add(ModJarArgument(modJar))
+    val testRunDir = layout.buildDirectory.dir("test-run")
+    workingDir(testRunDir)
+    doFirst { testRunDir.get().asFile.mkdirs() }
 }
 
 class ModJarArgument(@get:InputFile @get:PathSensitive(PathSensitivity.NONE) val jar: Provider<RegularFile>) : CommandLineArgumentProvider {

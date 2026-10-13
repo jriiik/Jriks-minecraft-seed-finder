@@ -1,6 +1,7 @@
 package io.github.jriiik.seedfinder;
 
 import io.github.jriiik.seedfinder.rng.JavaRandom;
+import java.security.DigestException;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.util.ArrayList;
@@ -81,7 +82,32 @@ public final class Seeds {
      * but each candidate seed can be checked against it.
      */
     public static long hashedSeed(long worldSeed) {
-        return hashedSeed(sha256(), worldSeed);
+        return new Hasher().hashedSeed(worldSeed);
+    }
+
+    /** Works out many hashed seeds quickly, reusing its buffers; one per thread. */
+    public static final class Hasher {
+        private final MessageDigest digest = sha256();
+        private final byte[] input = new byte[8];
+        private final byte[] output = new byte[32];
+
+        /** The hashed seed of a world seed, see {@link Seeds#hashedSeed(long)}. */
+        public long hashedSeed(long worldSeed) {
+            for (int i = 0; i < 8; i++) {
+                input[i] = (byte) (worldSeed >>> (8 * i));
+            }
+            digest.update(input, 0, 8);
+            try {
+                digest.digest(output, 0, output.length);
+            } catch (DigestException e) {
+                throw new IllegalStateException("SHA-256 output doesn't fit in 32 bytes", e);
+            }
+            long value = 0;
+            for (int i = 7; i >= 0; i--) {
+                value = (value << 8) | (output[i] & 0xFF);
+            }
+            return value;
+        }
     }
 
     /**
@@ -94,12 +120,12 @@ public final class Seeds {
         if (likely.length > 0) {
             return likely;
         }
-        MessageDigest digest = sha256();
+        Hasher hasher = new Hasher();
         List<Long> found = new ArrayList<>();
         for (long structureSeed : distinct(structureSeeds)) {
             for (long upper = 0; upper < 1 << 16; upper++) {
                 long worldSeed = upper << STRUCTURE_SEED_BITS | structureSeed;
-                if (hashedSeed(digest, worldSeed) == hashedSeed) {
+                if (hasher.hashedSeed(worldSeed) == hashedSeed) {
                     found.add(worldSeed);
                 }
             }
@@ -112,14 +138,14 @@ public final class Seeds {
      * by itself ({@link #randomSeedCandidates}) or that typed text or a short number gives ({@link #textSeedCandidate}).
      */
     public static long[] likelyWithHashedSeed(Collection<Long> structureSeeds, long hashedSeed) {
-        MessageDigest digest = sha256();
+        Hasher hasher = new Hasher();
         List<Long> found = new ArrayList<>();
         for (long structureSeed : distinct(structureSeeds)) {
             Set<Long> likely = new LinkedHashSet<>();
             Arrays.stream(randomSeedCandidates(structureSeed)).forEach(likely::add);
             textSeedCandidate(structureSeed).ifPresent(likely::add);
             for (long worldSeed : likely) {
-                if (hashedSeed(digest, worldSeed) == hashedSeed) {
+                if (hasher.hashedSeed(worldSeed) == hashedSeed) {
                     found.add(worldSeed);
                 }
             }
@@ -132,19 +158,6 @@ public final class Seeds {
         Set<Long> seeds = new LinkedHashSet<>();
         structureSeeds.forEach(seed -> seeds.add(structureSeed(seed)));
         return seeds;
-    }
-
-    private static long hashedSeed(MessageDigest digest, long worldSeed) {
-        byte[] bytes = new byte[8];
-        for (int i = 0; i < 8; i++) {
-            bytes[i] = (byte) (worldSeed >>> (8 * i));
-        }
-        byte[] hash = digest.digest(bytes);
-        long value = 0;
-        for (int i = 7; i >= 0; i--) {
-            value = (value << 8) | (hash[i] & 0xFF);
-        }
-        return value;
     }
 
     private static MessageDigest sha256() {

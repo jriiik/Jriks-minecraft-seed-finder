@@ -6,6 +6,9 @@ import com.google.gson.JsonArray;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
+import io.github.jriiik.seedfinder.Seeds;
+import io.github.jriiik.seedfinder.finder.SeedCheck;
+import io.github.jriiik.seedfinder.finder.TypedSeedSearch;
 import io.github.jriiik.seedfinder.finder.WorldSeedSearch;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
@@ -15,6 +18,7 @@ import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.OptionalLong;
 
 /**
@@ -49,6 +53,15 @@ final class WorldSession {
     private final List<String> disagreements = new ArrayList<>();
     private int removals;
     private final List<ScannedChunk> bedrock = new ArrayList<>();
+    /** The typed-seed search ({@link TypedSeedSearch}): where it resumes, and the seed once one matched. */
+    private int typedSeedPieces;
+    private OptionalLong typedSeed = OptionalLong.empty();
+    /** How the notes fit the typed seed: checked by the search runner whenever the notes change. */
+    private SeedCheck typedSeedCheck;
+    /** Typed-seed progress not saved yet (it doesn't count as a change of the notes). */
+    private boolean progressToSave;
+    /** Increases when all notes are removed, so that work started before is dropped. */
+    private int generation;
 
     /** Increases with every change, so a search result can tell whether it is still up to date. */
     private int version;
@@ -59,6 +72,80 @@ final class WorldSession {
 
     WorldSession(String world) {
         this.world = world;
+    }
+
+    /** How many pieces of the typed-seed search are done (where it continues). */
+    int typedSeedPieces() {
+        return typedSeedPieces;
+    }
+
+    /**
+     * The seed the typed-seed search found: it was typed, and its hash is the hashed seed the server sent. It is the
+     * world's seed unless the server sends a made-up hashed seed; see {@link #typedSeedCheck()}.
+     */
+    OptionalLong typedSeed() {
+        return typedSeed;
+    }
+
+    /** How the notes fit the typed seed, once checked. */
+    Optional<SeedCheck> typedSeedCheck() {
+        return Optional.ofNullable(typedSeedCheck);
+    }
+
+    /** Notes how the notes fit the typed seed (main thread); a check of another seed is ignored. */
+    void setTypedSeedCheck(SeedCheck check) {
+        if (typedSeed.isEmpty() || typedSeed.getAsLong() != check.worldSeed()) {
+            return;
+        }
+        if (typedSeedCheck == null || typedSeedCheck.verdict() != check.verdict()) {
+            progressToSave = true; // the notes file says what the notes make of the seed
+        }
+        typedSeedCheck = check;
+    }
+
+    /** Counts "Remove all notes", so work started before it can be dropped. */
+    int generation() {
+        return generation;
+    }
+
+    /**
+     * True in a single-player world: the game itself makes the hashed seed from the real seed there, so a typed seed
+     * found from it is the world's even when some notes disagree (then those notes are wrong).
+     */
+    boolean hashedSeedIsGenuine() {
+        return world.startsWith("singleplayer:");
+    }
+
+    /** True when the typed-seed search has its answer: the seed, or that the seed wasn't typed. */
+    boolean typedSeedSearchDone() {
+        return typedSeed.isPresent() || typedSeedPieces >= TypedSeedSearch.PIECES;
+    }
+
+    /** Notes where the typed-seed search got to; a found seed or a finished search counts as a change. */
+    void setTypedSeedSearch(TypedSeedSearch.Outcome outcome) {
+        boolean answer = outcome.complete() && !typedSeedSearchDone();
+        typedSeedPieces = Math.max(typedSeedPieces, outcome.piecesDone());
+        if (outcome.seed().isPresent() && !outcome.seed().equals(typedSeed)) {
+            typedSeed = outcome.seed();
+            typedSeedCheck = null;
+        }
+        if (answer) {
+            version++;
+        } else {
+            progressToSave = true;
+        }
+    }
+
+    /**
+     * The world seed: proved by the seed search (structures with the hashed seed, or bedrock), or the typed seed once
+     * the notes are checked and don't contradict it (or the hashed seed is genuine).
+     */
+    OptionalLong worldSeed() {
+        if (result != null && result.worldSeed().isPresent()) {
+            return result.worldSeed();
+        }
+        boolean trusted = typedSeedCheck != null && (typedSeedCheck.verdict() != SeedCheck.Verdict.CONTRADICTED || hashedSeedIsGenuine());
+        return trusted ? typedSeed : OptionalLong.empty();
     }
 
     /** The key the notes are kept under (see {@link WorldIdentity#key}). */
@@ -96,6 +183,12 @@ final class WorldSession {
 
     void setHashedSeed(long value) {
         if (hashedSeed.isEmpty() || hashedSeed.getAsLong() != value) {
+            if (hashedSeed.isPresent()) {
+                // The typed-seed search belongs to the old value.
+                typedSeedPieces = 0;
+                typedSeed = OptionalLong.empty();
+                typedSeedCheck = null;
+            }
             hashedSeed = OptionalLong.of(value);
             version++;
         }
@@ -234,8 +327,12 @@ final class WorldSession {
         structures.clear();
         removed.clear();
         disagreements.clear();
+        typedSeedPieces = 0;
+        typedSeed = OptionalLong.empty();
+        typedSeedCheck = null;
         bedrock.clear();
         hashedSeed = OptionalLong.empty();
+        generation++;
         version++;
     }
 
@@ -276,6 +373,7 @@ final class WorldSession {
         lines.add("# Jrik's Seed Finder notes for " + world);
         lines.add("# Written by the mod. The command-line app reads this file too: seedfinder find --file <this file>");
         hashedSeed.ifPresent(value -> lines.add("hashed-seed " + value));
+        typedSeed.ifPresent(value -> lines.add(typedSeedComment(value)));
         lines.add("");
         for (NotedStructure structure : structures) {
             lines.add("# " + structure.source());
@@ -289,8 +387,24 @@ final class WorldSession {
         return lines;
     }
 
+    private String typedSeedComment(long seed) {
+        if (hashedSeedIsGenuine()) {
+            return "# The world seed is " + seed + ": it was typed, and its hash is the hashed seed of this single-player world.";
+        }
+        if (typedSeedCheck == null) {
+            return "# The hashed seed is the one of the typed seed " + seed + " (not checked against these notes yet).";
+        }
+        return switch (typedSeedCheck.verdict()) {
+            case CONFIRMED -> "# The world seed is " + seed + ": it was typed, its hash is the hashed seed, and these notes fit it.";
+            case UNCONFIRMED -> "# The world seed is " + seed + " (it was typed, and its hash is the hashed seed), unless the server sends a "
+                + "made-up hashed seed: these notes don't confirm it yet.";
+            case CONTRADICTED -> "# The hashed seed is the one of the typed seed " + seed + ", but these notes don't fit that seed: the server "
+                + "probably sends a made-up hashed seed.";
+        };
+    }
+
     boolean needsSaving() {
-        return savedVersion != version;
+        return savedVersion != version || progressToSave;
     }
 
     /** File names: the world key with unusual characters replaced, plus a short hash so different keys never clash. */
@@ -305,6 +419,9 @@ final class WorldSession {
         json.addProperty("collecting", collecting);
         json.addProperty("show_status", showStatus);
         hashedSeed.ifPresent(value -> json.addProperty("hashed_seed", Long.toString(value)));
+        json.addProperty("typed_seed_layout", TypedSeedSearch.LAYOUT);
+        json.addProperty("typed_seed_pieces", typedSeedPieces);
+        typedSeed.ifPresent(value -> json.addProperty("typed_seed", Long.toString(value)));
         json.add("structures", structuresJson(structures));
         json.add("removed_structures", structuresJson(removed));
         JsonArray bedrockArray = new JsonArray();
@@ -327,6 +444,7 @@ final class WorldSession {
         Files.writeString(folder.resolve(base + ".json"), GSON.toJson(json) + "\n", StandardCharsets.UTF_8);
         Files.write(folder.resolve(base + ".txt"), notesLines(), StandardCharsets.UTF_8);
         savedVersion = version;
+        progressToSave = false;
     }
 
     private static JsonArray structuresJson(List<NotedStructure> list) {
@@ -372,6 +490,33 @@ final class WorldSession {
         return load(folder, world, world);
     }
 
+    /**
+     * The typed-seed search can always be done again, so anything doubtful starts it over instead of losing the notes:
+     * progress saved for another layout of pieces, a seed whose hash is not the hashed seed, values that don't read.
+     */
+    private static void readTypedSeedSearch(JsonObject json, WorldSession session) {
+        try {
+            if (json.has("typed_seed_pieces") && json.has("typed_seed_layout") && json.get("typed_seed_layout").getAsInt() == TypedSeedSearch.LAYOUT) {
+                session.typedSeedPieces = Math.clamp(json.get("typed_seed_pieces").getAsInt(), 0, TypedSeedSearch.PIECES);
+            }
+            if (json.has("typed_seed")) {
+                long seed = Long.parseLong(json.get("typed_seed").getAsString());
+                if (session.hashedSeed.isPresent() && Seeds.hashedSeed(seed) == session.hashedSeed.getAsLong()) {
+                    session.typedSeed = OptionalLong.of(seed);
+                } else {
+                    session.typedSeedPieces = 0;
+                }
+            }
+            if (session.hashedSeed.isEmpty()) {
+                session.typedSeedPieces = 0; // progress only means something for the hashed seed it was made for
+            }
+        } catch (RuntimeException e) {
+            SeedFinderClient.LOG.warn("Could not read the typed-seed search of {}, starting it over", session.world, e);
+            session.typedSeedPieces = 0;
+            session.typedSeed = OptionalLong.empty();
+        }
+    }
+
     /** Reads the notes saved under {@code savedAs} into a session for {@code world}. */
     private static WorldSession load(Path folder, String savedAs, String world) {
         WorldSession session = new WorldSession(world);
@@ -386,6 +531,7 @@ final class WorldSession {
             if (json.has("hashed_seed")) {
                 session.hashedSeed = OptionalLong.of(Long.parseLong(json.get("hashed_seed").getAsString()));
             }
+            readTypedSeedSearch(json, session);
             readStructures(json, "structures", session.structures);
             readStructures(json, "removed_structures", session.removed);
             for (JsonElement element : json.getAsJsonArray("bedrock")) {

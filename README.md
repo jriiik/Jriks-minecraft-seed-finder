@@ -21,6 +21,7 @@ Minecraft version (**26.3**).
 | `seedfinder find`: work out the structure seed (48 bits) from structure positions | ✅ done |
 | Name the likely full seed (64 bits) of worlds whose seed was picked by Minecraft or typed as text | ✅ done |
 | Find the full seed for certain from the bedrock floor (`seedfinder full-seed`, or bedrock notes in `find`) | ✅ done |
+| Find a seed that was typed (as text or a short number) from the "hashed seed" alone, in minutes (`seedfinder typed-seed`) | ✅ done |
 | `seedfinder bedrock`: show the bedrock floor of a seed you know | ✅ done |
 | Fabric client mod: notes structures and bedrock while you play and finds the seed by itself | ✅ first version |
 | The mod recognizes villages, pillager outposts, trial chambers, ancient cities, trail ruins and camps by itself | ✅ done |
@@ -88,6 +89,20 @@ If the seed was typed as text (like "My World") or as a short number, it is 1234
 That is a good guess for most worlds and servers, but only a guess: if the seed was typed, the "random" answer is
 a different seed that happens to share the structure seed.
 
+**The hashed seed.** Minecraft sends every player a "hashed seed", a fingerprint of the world seed (the mod notes it
+by itself, as a `hashed-seed` line in its notes file). With it, the full seed is certain as soon as the structure
+seed is known. And if the seed was typed (as text or as a number from -2147483648 to 2147483647), the hashed seed
+alone gives it, without any structures: `seedfinder typed-seed --file <notes file>` (or `seedfinder typed-seed
+<hashed seed>`) checks all 4,294,967,296 seeds that can be typed. That takes about a minute on a recent computer
+and up to 20 minutes on an older one with few CPU threads; a small typed number like 12345 comes out at once. For
+text seeds you get the number Minecraft made of the text, not the text itself.
+
+Some servers send a made-up hashed seed to protect their seed. If that made-up value happens to be the fingerprint of
+a typed seed, the search finds that seed, but it isn't the world's. So the seed found is checked against the
+structures and bedrock in the notes: when they fit, it is certain; when they don't, it is not presented as the world
+seed. With nothing noted yet, it is shown as "not confirmed yet". (In a single-player world the game makes the hashed
+seed itself, so there the seed found is always the world's.)
+
 **Bedrock, to be sure.** The bottom of the overworld (y = -64 to -60) is a random-looking bedrock pattern that
 depends on the whole seed. With bedrock notes, the finder checks every one of the 65,536 seeds.
 
@@ -150,7 +165,12 @@ itself. It needs Minecraft **26.3** with **Fabric Loader** (0.19.5 or newer) and
    - notes the answer when you use `/locate structure ...` (if you are allowed to use it);
    - notes structures you mark: stand in the chunk where a structure starts and press **Add a structure here**;
    - uses the "hashed seed" that Minecraft sends to every player, which settles the full seed as soon as the
-     structure seed is known.
+     structure seed is known;
+   - checks in the background whether the seed was typed (as text or a number from -2147483648 to 2147483647): then
+     the hashed seed alone gives it, without any structures. That takes from a few minutes to about 20 minutes of
+     background work, depending on the computer (a moment for a small typed number like 12345), using a quarter of
+     your CPU threads; it continues where it was when you come back. The seed found is checked against the bedrock
+     and structures noted (see "The hashed seed" above).
 5. The status shows in the top-left corner and on the mod's screen; **Copy seed** copies the result.
 
 **How structures are recognized.** The mod compares the blocks around you with the game's own blueprints of each
