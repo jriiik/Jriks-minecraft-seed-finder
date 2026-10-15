@@ -473,8 +473,14 @@ class RigidRecognizerTest {
             world.set(x, 70, 0, "minecraft:cut_sandstone");
         }
         Counting counting = new Counting(world);
-        assertNull(recognizer.verify(new RigidRecognizer.Candidate(layout, 0, 70, 0, 3), counting, false));
+        RigidRecognizer.Verification byVotes = recognizer.verification(new RigidRecognizer.Candidate(layout, 0, 70, 0, 3), false, true);
+        assertTrue(byVotes.step(counting, Integer.MAX_VALUE));
+        assertNull(byVotes.result());
         assertEquals(6, counting.reads);
+        // Without votes from every block around (a scan of a window), it reads on.
+        counting = new Counting(world);
+        assertNull(recognizer.verify(new RigidRecognizer.Candidate(layout, 0, 70, 0, 3), counting, false));
+        assertEquals(14, counting.reads);
     }
 
     @Test
@@ -737,7 +743,7 @@ class RigidRecognizerTest {
                 for (RigidRecognizer.Candidate candidate : recognizer.candidates(cx, cz, (x, z) -> triggers.get(RigidRecognizer.chunkKey(x, z)))) {
                     RigidRecognizer.Detection whole = recognizer.verify(candidate, world, false);
                     Counting counting = new Counting(world);
-                    RigidRecognizer.Verification verification = recognizer.verification(candidate, false);
+                    RigidRecognizer.Verification verification = recognizer.verification(candidate, false, false);
                     long before = 0;
                     while (!verification.step(counting, 1)) {
                         assertTrue(counting.reads - before <= 1);
@@ -902,6 +908,52 @@ class RigidRecognizerTest {
         assertEquals(List.of(), found(recognizer.scan(world, -2, 4, -2, 4, MIN_Y, MAX_Y, false)));
         // Without the second read, the fit compared earlier stands.
         assertEquals(List.of("RUINED_PORTAL 1,1 y 70"), found(stale));
+    }
+
+    @Test
+    void aClusterTestUnderWayIsDoneAgainWhenAChunkInItsAreaIsReadAgain() {
+        // A small ruin 32 stone bricks long, placed 3 blocks east of chunk 0's corner: its last 3 bricks are in
+        // chunk 2. With them, it fits better off the grid (a cluster piece); without them, the grid fit is a start.
+        List<Block> line = new ArrayList<>();
+        List<int[]> above = new ArrayList<>();
+        for (int x = 0; x < 32; x++) {
+            line.add(new Block(x, 0, 0, "minecraft:stone_bricks"));
+            above.add(new int[] {x, 1, 0});
+        }
+        RigidRecognizer recognizer = new RigidRecognizer(List.of(new Template(line, above).layout(RigidKind.OCEAN_RUIN, "line")), rules(Set.of()));
+        for (boolean tailFirst : new boolean[] {true, false}) {
+            World world = new World().load(-9, 9);
+            world.stoneTop = 39;
+            world.waterTop = 62;
+            for (int x = 3; x <= 34; x++) {
+                world.set(x, 40, 0, x < 32 || tailFirst ? "minecraft:stone_bricks" : "minecraft:water");
+            }
+            RigidTracker tracker = new RigidTracker(recognizer, false);
+            for (int x = -8; x <= 8; x++) {
+                for (int z = -8; z <= 8; z++) {
+                    tracker.chunkScanned(x, z, recognizer.triggersOf(world, x, z, MIN_Y, MAX_Y));
+                }
+            }
+            List<RigidRecognizer.Detection> found = new ArrayList<>();
+            boolean changed = false;
+            for (int i = 0; i < 20_000 && tracker.pendingCount() > 0; i++) {
+                int[] steps = {0};
+                found.addAll(tracker.work(world, () -> steps[0]++ > 0));
+                RigidRecognizer.ClusterTest test = tracker.clusterTestUnderWay();
+                if (!changed && test != null && test.detection().chunkX() == 0 && test.detection().chunkZ() == 0 && test.areaRead()) {
+                    // The tail changes and its chunk is read again while the test is under way.
+                    for (int x = 32; x <= 34; x++) {
+                        world.set(x, 40, 0, tailFirst ? "minecraft:water" : "minecraft:stone_bricks");
+                    }
+                    tracker.chunkScanned(2, 0, recognizer.triggersOf(world, 2, 0, MIN_Y, MAX_Y));
+                    changed = true;
+                }
+            }
+            assertTrue(changed);
+            List<String> expected = tailFirst ? List.of("OCEAN_RUIN 0,0 y 40") : List.of();
+            assertEquals(expected, found(recognizer.scan(world, -3, 3, -3, 3, MIN_Y, MAX_Y, false)), "tail first " + tailFirst);
+            assertEquals(expected, found(found), "tail first " + tailFirst);
+        }
     }
 
     @Test

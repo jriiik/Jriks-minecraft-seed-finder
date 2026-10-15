@@ -563,19 +563,22 @@ public final class RigidRecognizer {
 
     /**
      * Compares a placement with the world. Returns null when it cannot matter: its score is sure to stay below
-     * what acceptance or a rival needs ({@code minScore - AMBIGUITY_MARGIN}). The candidate's votes must have been
-     * counted on the blocks the view shows ({@link #candidates}): a block that matches by a voting class has voted, so
-     * at most the votes plus the layout's telling blocks of other classes can match.
+     * what acceptance or a rival needs ({@code minScore - AMBIGUITY_MARGIN}).
      */
     public Detection verify(Candidate candidate, BlockView view, boolean nether) {
-        Verification verification = verification(candidate, nether);
+        Verification verification = verification(candidate, nether, false);
         verification.step(view, Integer.MAX_VALUE);
         return verification.result();
     }
 
-    /** {@link #verify} in small steps. */
-    public Verification verification(Candidate candidate, boolean nether) {
-        return new Verification(candidate, nether);
+    /**
+     * {@link #verify} in small steps. With {@code allVotes}, the candidate's votes were counted on every block the
+     * view shows within {@link #span} of its origin chunk: a block that matches by a voting class has voted, so at most
+     * the votes plus the layout's telling blocks of other classes can match, and a fit that can't reach the floor that
+     * way is left out sooner. (A scan of a window counts only the window's votes.)
+     */
+    public Verification verification(Candidate candidate, boolean nether, boolean allVotes) {
+        return new Verification(candidate, nether, allVotes);
     }
 
     /**
@@ -591,6 +594,8 @@ public final class RigidRecognizer {
         private final Candidate candidate;
         private final RigidLayout layout;
         private final boolean nether;
+        /** At most this many blocks can match in all. */
+        private final int matchable;
         private final double floor;
         private final int[] groupChecked;
         private final long[] positions;
@@ -611,10 +616,11 @@ public final class RigidRecognizer {
         private int emptyWater;
         private Detection result;
 
-        private Verification(Candidate candidate, boolean nether) {
+        private Verification(Candidate candidate, boolean nether, boolean allVotes) {
             this.candidate = candidate;
             this.layout = candidate.layout();
             this.nether = nether;
+            this.matchable = allVotes ? (int) Math.min(layout.informativeCount, (long) candidate.votes() + layout.unvoted) : layout.informativeCount;
             this.floor = layout.kind().minScore() - AMBIGUITY_MARGIN - 1e-9;
             this.remaining = layout.informativeCount;
             this.groupChecked = new int[layout.groupTotal.length];
@@ -680,9 +686,9 @@ public final class RigidRecognizer {
                 weightMatched += layout.weight[e];
             } else {
                 misses++;
-                // Even if every block still to come matched, the score would stay too low to matter. Blocks that
-                // match by a voting class have voted, so at most votes + unvoted blocks can match in all.
-                int possible = Math.min(matched + remaining, Math.max(matched, candidate.votes() + layout.unvoted));
+                // Even if every block still to come matched (as far as the votes allow), the score would stay too low
+                // to matter.
+                int possible = Math.min(matched + remaining, Math.max(matched, matchable));
                 if ((double) possible / (possible + misses) < floor) {
                     stage = DONE;
                 }
@@ -1042,6 +1048,11 @@ public final class RigidRecognizer {
 
         public Detection detection() {
             return d;
+        }
+
+        /** Whether the whole area has been read (for tests). */
+        boolean areaRead() {
+            return votes != null && cleared == votesLength && nextRead == visibleLength;
         }
 
         /** The answer once {@link #step} has returned true. */

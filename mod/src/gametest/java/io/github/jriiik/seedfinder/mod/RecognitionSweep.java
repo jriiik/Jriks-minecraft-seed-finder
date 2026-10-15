@@ -37,13 +37,19 @@ import net.minecraft.world.level.levelgen.structure.placement.RandomSpreadStruct
  */
 final class RecognitionSweep {
 
-    /** Starts per structure set, and how far out (in placement regions) to look for them. */
+    /**
+     * Starts per structure set, how far out (in placement regions) to look for them, and how far for a set with no
+     * start that near (sets of rare biomes, e.g. desert pyramids for the test seed).
+     */
     private static final int STARTS_PER_SET = 4;
     private static final int MAX_REGIONS = 5;
+    private static final int FAR_REGIONS = 15;
     /** Chunks generated around each start (a piece never reaches further than 3 chunks from its start chunk). */
     private static final int RADIUS = 3;
 
-    record Result(int real, int found, List<String> wrong, List<String> missed, List<String> conflicting, Map<String, Integer> pieces) {
+    /** What a sweep found; {@code sets} are the structure sets that had real starts in it. */
+    record Result(int real, int found, List<String> wrong, List<String> missed, List<String> conflicting, Map<String, Integer> pieces,
+                  Set<String> sets) {
     }
 
     private RecognitionSweep() {
@@ -117,7 +123,7 @@ final class RecognitionSweep {
         }
         List<String> missed = real.stream().filter(start -> !found.starts().contains(start)).map(Object::toString).toList();
         List<String> conflicting = found.conflicting().stream().map(Object::toString).toList();
-        return new Result(real.size(), real.size() - missed.size(), wrong, missed, conflicting, pieces);
+        return new Result(real.size(), real.size() - missed.size(), wrong, missed, conflicting, pieces, setsOf(real));
     }
 
     /**
@@ -199,7 +205,7 @@ final class RecognitionSweep {
         }
         List<String> missed = real.stream().filter(start -> !found.starts().contains(start)).map(Object::toString).toList();
         List<String> conflicting = found.conflicting().stream().map(Object::toString).toList();
-        return new Result(real.size(), real.size() - missed.size(), wrong, missed, conflicting, layouts);
+        return new Result(real.size(), real.size() - missed.size(), wrong, missed, conflicting, layouts, setsOf(real));
     }
 
     private static int triggerClass(RigidRecognizer recognizer, Map<Block, Integer> classes, Block block) {
@@ -210,14 +216,17 @@ final class RecognitionSweep {
     private static List<RecognizedStarts.Start> nearestStarts(ServerLevel level, String set, StructureSet structureSet) {
         RandomSpreadStructurePlacement placement = (RandomSpreadStructurePlacement) structureSet.placement();
         List<int[]> regions = new ArrayList<>();
-        for (int rx = -MAX_REGIONS; rx <= MAX_REGIONS; rx++) {
-            for (int rz = -MAX_REGIONS; rz <= MAX_REGIONS; rz++) {
+        for (int rx = -FAR_REGIONS; rx <= FAR_REGIONS; rx++) {
+            for (int rz = -FAR_REGIONS; rz <= FAR_REGIONS; rz++) {
                 regions.add(new int[] {rx, rz});
             }
         }
         regions.sort(Comparator.comparingInt(region -> region[0] * region[0] + region[1] * region[1]));
         List<RecognizedStarts.Start> starts = new ArrayList<>();
         for (int[] region : regions) {
+            if (!starts.isEmpty() && Math.max(Math.abs(region[0]), Math.abs(region[1])) > MAX_REGIONS) {
+                break;
+            }
             ChunkPos chunk = placement.getPotentialStructureChunk(level.getSeed(), region[0] * placement.spacing(), region[1] * placement.spacing());
             RecognizedStarts.Start start = new RecognizedStarts.Start(set, chunk.x(), chunk.z());
             if (isRealStart(level, start)) {
@@ -228,6 +237,12 @@ final class RecognitionSweep {
             }
         }
         return starts;
+    }
+
+    private static Set<String> setsOf(Set<RecognizedStarts.Start> starts) {
+        Set<String> sets = new java.util.TreeSet<>();
+        starts.forEach(start -> sets.add(start.structureSet()));
+        return sets;
     }
 
     private static boolean isRealStart(ServerLevel level, RecognizedStarts.Start start) {

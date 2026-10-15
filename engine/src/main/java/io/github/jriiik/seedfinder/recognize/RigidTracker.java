@@ -199,6 +199,10 @@ public final class RigidTracker {
                     verification = null;
                     verifyingOrigin = null;
                 }
+                if (clusterTest != null && clusterTest.detection().chunkX() == x && clusterTest.detection().chunkZ() == z) {
+                    // Its area may hold blocks that changed: done again on the blocks as they are now.
+                    clusterTest = null;
+                }
             }
         }
         if (forgot && job != null && near(job.key, chunkX, chunkZ, reach)) {
@@ -281,6 +285,11 @@ public final class RigidTracker {
 
     private static boolean near(long key, int chunkX, int chunkZ, int radius) {
         return Math.abs((int) (key >> 32) - chunkX) <= radius && Math.abs((int) key - chunkZ) <= radius;
+    }
+
+    /** The cluster test under way, or null (for tests). */
+    RigidRecognizer.ClusterTest clusterTestUnderWay() {
+        return clusterTest;
     }
 
     /** Chunks waiting to be judged, the one being judged included (for tests and the log). */
@@ -545,7 +554,8 @@ public final class RigidTracker {
     /** Compares up to {@link #STEP_READS} blocks of a fit. */
     private void verify(Origin origin, int index, BlockView view) {
         if (verifyingOrigin != origin || verifyingIndex != index || verification == null) {
-            verification = recognizer.verification(origin.candidates.get(index), nether);
+            // The votes were counted on every chunk within span: the comparison may stop by them.
+            verification = recognizer.verification(origin.candidates.get(index), nether, true);
             verifyingOrigin = origin;
             verifyingIndex = index;
         }

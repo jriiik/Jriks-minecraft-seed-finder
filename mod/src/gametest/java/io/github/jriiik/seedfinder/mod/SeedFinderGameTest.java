@@ -157,6 +157,7 @@ public class SeedFinderGameTest implements FabricClientGameTest {
         log("sweep: " + result.found() + " of " + result.real() + " real starts recognized; missed " + result.missed() + "; pieces " + result.pieces());
         check(result.wrong().isEmpty(), "the sweep recognized no start that isn't real " + result.wrong());
         check(result.conflicting().isEmpty(), "no region had contradicting matches " + result.conflicting());
+        check(result.sets().containsAll(StartPieceLibrary.SETS), "the sweep had real starts of every type " + result.sets());
         check(result.real() >= 18 && result.found() >= result.real() * 0.85,
             "the sweep recognized " + result.found() + " of " + result.real() + " real starts of the six types");
 
@@ -173,7 +174,9 @@ public class SeedFinderGameTest implements FabricClientGameTest {
                 + "; layouts " + found.pieces());
             check(found.wrong().isEmpty(), "the rigid sweep in " + dimension + " recognized no start that isn't real " + found.wrong());
             check(found.conflicting().isEmpty(), "no region had contradicting rigid matches " + found.conflicting());
-            // Up to 4 starts per kind near the world's centre; kinds of rare biomes may have fewer.
+            // Up to 4 starts per kind near the world's centre; kinds of rare biomes may have fewer, but at least one.
+            check(rigid.kinds().stream().allMatch(kind -> found.sets().contains(kind.structureSet())),
+                "the rigid sweep in " + dimension + " had real starts of every kind " + found.sets());
             check(found.real() >= 2 * rigid.kinds().size() && found.found() >= found.real() * 0.85,
                 "the rigid sweep in " + dimension + " recognized " + found.found() + " of " + found.real() + " real starts");
         }

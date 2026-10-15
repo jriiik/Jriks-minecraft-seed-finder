@@ -161,9 +161,10 @@ Typical searches take well under a second. Villages-only searches need more stru
   biome is one the structure starts in; and when a small ocean ruin doesn't fit better off the chunk grid (the
   cluster ruins around a big one). Fits are then taken strongest first: two starts of one set closer than the set's
   separation can't both exist, a fit that mostly explains blocks already explained is dropped, and when another
-  start chunk fits about as well nothing is noted. The mod judges a chunk only once everything within 3 chunks of it
-  is loaded, with the fits of the chunks within 2 as rivals, so a wrong fit next to a real structure always meets
-  the real one whole.
+  start chunk fits about as well nothing is noted. A chunk where none of its own fits passes is done once its
+  neighbours are read; otherwise the mod judges it with the fits of the chunks within 2 as rivals, once everything
+  they and the cluster test read is loaded (4 chunks around it in the overworld, 3 in the nether), so a wrong fit
+  next to a real structure always meets the real one whole.
 
 **What we learned while testing:**
 
@@ -187,10 +188,10 @@ Typical searches take well under a second. Villages-only searches need more stru
   reads `/place` answers and ignores those spots; for the rest, "no seed fits" triggers a search that leaves out one
   structure at a time and only reports a result that the hashed seed or bedrock proves.
 - *Every build checks real structures.* The in-game test generates the chunks around the nearest starts of each
-  recognized type with the game itself (up to 4 per type, ruined portals also in the nether) and requires the
-  recognizers to find them with no wrong or contradicting start; it visits one start of each type, and a ruined
-  portal in the nether, as a player would, and checks that a camp and a ruined portal placed with `/place` are not
-  noted.
+  recognized type with the game itself (up to 4 per type and at least one, looking farther for types of rare biomes;
+  ruined portals also in the nether) and requires the recognizers to find them with no wrong or contradicting
+  start; it visits one start of each type, and a ruined portal in the nether, as a player would, and checks that a
+  camp and a ruined portal placed with `/place` are not noted.
 - *Underground structures need real blocks.* Servers with anti-xray hide them; the mod doesn't try to get around
   that, and they are simply not found there.
 - *Rigid structures: research first, then a port checked against it.* The recognizer was worked out on worlds made
@@ -209,10 +210,11 @@ Typical searches take well under a second. Villages-only searches need more stru
   1 ms per tick plus whatever the chunk scan leaves of its 2 ms). A chunk where nothing fits is done as soon as its
   neighbours are read; one with a fit waits until everything its rivals and the ocean-ruin cluster test read is
   loaded (4 chunks around it in the overworld), so the answer never depends on what happens to be loaded. Checked
-  against the first version on worlds made by the game's code: the same answer for every one of over 650,000
+  against the first version on worlds made by the game's code: the same answer for every one of about 1.3 million
   placements compared (votes, fit, cluster test) and in every area, also with anti-xray-style fake blocks. In busy
-  areas (villages, temples, ocean ruins) judging takes about 1 ms of work per chunk; with heavy anti-xray noise up
-  to about 50 ms, which only means it catches up more slowly.
+  areas (villages, temples, ocean ruins) judging takes about 0.4 ms of work per chunk; on an anti-xray server that
+  sends 1 in 21 hidden blocks as obsidian and 1 in 21 as mossy cobblestone, about 7 ms, which only means it catches
+  up more slowly there.
 - *What rigid recognition misses:* tiny warm ocean ruins (only 9 telling blocks), portals mostly covered by
   netherrack or, in the nether, by lava, ocean ruins buried in coastal rock, and anything players have repaired or
   taken apart (a ruined portal someone completed or lit no longer counts as a ruin).

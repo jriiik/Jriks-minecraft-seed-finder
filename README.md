@@ -61,8 +61,9 @@ The first example uses structure positions of seed 12345 and finds exactly that.
    coordinates of any block in that chunk. `/locate` prints exactly that spot. Without `/locate`: desert pyramids,
    jungle temples and swamp huts start in the chunk of their north-west corner (lowest x and z); a desert pyramid's
    blue terracotta in the middle of the main floor is always 10 blocks east and 10 south of its start chunk's
-   corner, and an igloo's middle white carpet 3 east and 5 south; other structures are built outwards from a corner
-   of their start chunk, close to their center piece.
+   corner, and the igloo's white carpet next to the middle light-gray carpet 3 east and 5 south (whichever way the
+   igloo faces); other structures are built outwards from a corner of their start chunk, close to their center
+   piece.
 3. **Run the finder**, either with the structures on the command line (`igloo:48,208`) or from a text file with
    one structure per line. Lines copied from `/locate` work as they are:
 
