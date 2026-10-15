@@ -165,23 +165,10 @@ public record SeedCheck(
      */
     public static SeedCheck of(VersionData data, List<StructureObservation> structures, List<BedrockObservation> bedrock, BiomeEvidence biomes,
                                long worldSeed, int threads, BooleanSupplier stop, BiomeEvidence.ScanCache cache) {
-        StructureLocator locator = new StructureLocator(data, worldSeed);
         List<StructureObservation> checked = new ArrayList<>();
         List<StructureObservation> fitting = new ArrayList<>();
         List<StructureObservation> misfits = new ArrayList<>();
-        for (StructureObservation structure : new LinkedHashSet<>(structures)) {
-            if (!StructureLocator.canLocate(structure.set())) {
-                continue;
-            }
-            boolean fits;
-            try {
-                fits = locator.isStructureChunk(structure.set(), structure.chunk().x(), structure.chunk().z());
-            } catch (UnsupportedOperationException e) {
-                continue; // an exclusion zone around strongholds: can't be checked yet
-            }
-            checked.add(structure);
-            (fits ? fitting : misfits).add(structure);
-        }
+        checkStructures(data, structures, worldSeed, checked, fitting, misfits);
         double structureChance = structuresFitChance(checked, new HashSet<>(fitting));
         double chance = structureChance;
 
@@ -214,6 +201,31 @@ public record SeedCheck(
             : !misfits.isEmpty() || nether.mismatches() > 0 || biomeCheck.misfit() ? Verdict.CONTRADICTED
             : Verdict.UNCONFIRMED;
         return new SeedCheck(worldSeed, verdict, fitting, misfits, overworld, nether, evidence.problems(), chance, structureChance, biomeCheck);
+    }
+
+    /** The noted structures this seed doesn't let start where they were noted (those that can be checked). */
+    public static List<StructureObservation> misfits(VersionData data, List<StructureObservation> structures, long worldSeed) {
+        List<StructureObservation> misfits = new ArrayList<>();
+        checkStructures(data, structures, worldSeed, new ArrayList<>(), new ArrayList<>(), misfits);
+        return List.copyOf(misfits);
+    }
+
+    private static void checkStructures(VersionData data, List<StructureObservation> structures, long worldSeed, List<StructureObservation> checked,
+                                        List<StructureObservation> fitting, List<StructureObservation> misfits) {
+        StructureLocator locator = new StructureLocator(data, worldSeed);
+        for (StructureObservation structure : new LinkedHashSet<>(structures)) {
+            if (!StructureLocator.canLocate(structure.set())) {
+                continue;
+            }
+            boolean fits;
+            try {
+                fits = locator.isStructureChunk(structure.set(), structure.chunk().x(), structure.chunk().z());
+            } catch (UnsupportedOperationException e) {
+                continue; // an exclusion zone around strongholds: can't be checked yet
+            }
+            checked.add(structure);
+            (fits ? fitting : misfits).add(structure);
+        }
     }
 
     private static Bedrock check(List<BedrockObservation> observations, Set<String> conflicting, long worldSeed) {

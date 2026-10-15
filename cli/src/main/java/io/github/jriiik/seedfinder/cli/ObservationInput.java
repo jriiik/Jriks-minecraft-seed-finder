@@ -25,6 +25,10 @@ record ObservationInput(Path file, List<String> lines, int fromFile) {
 
     /** Lines that belong to bedrock notes, for which the structure hint would not help. */
     private static final Pattern BEDROCK_LINE = Pattern.compile("(?i)\\s*((not[- ]|no[- ])?bedrock.*|[0-9?bB.,;\\s-]+)");
+    /** Biome, preset and hashed-seed lines: not structures either. */
+    private static final Pattern OTHER_NOTE = Pattern.compile("(?i)\\s*(biome|(world[- ])?preset|hashed[- ]seed).*");
+    /** A row of a biome grid (letters of its legend). */
+    private static final Pattern GRID_ROW = Pattern.compile("[A-Za-z?\\s]+");
 
     static ObservationInput of(CommandLine commandLine, Path file, List<String> arguments) {
         List<String> lines = new ArrayList<>();
@@ -63,6 +67,15 @@ record ObservationInput(Path file, List<String> lines, int fromFile) {
         }
     }
 
+    /** True when the line is one of the rows below a biome-grid line. */
+    private boolean isGridRow(int index) {
+        int i = index;
+        while (i > 0 && GRID_ROW.matcher(lines.get(i)).matches()) {
+            i--;
+        }
+        return i < index && lines.get(i).strip().toLowerCase(java.util.Locale.ROOT).startsWith("biome");
+    }
+
     boolean isEmpty() {
         return lines.stream().allMatch(String::isBlank);
     }
@@ -74,7 +87,7 @@ record ObservationInput(Path file, List<String> lines, int fromFile) {
             int i = e.lineIndex();
             String line = lines.get(i);
             String where = i < fromFile ? "line " + (i + 1) + " of " + file : "'" + line + "'";
-            String hint = BEDROCK_LINE.matcher(line).matches() ? ""
+            String hint = BEDROCK_LINE.matcher(line).matches() || OTHER_NOTE.matcher(line).matches() || isGridRow(i) ? ""
                 : ". Write each structure as its name and the block x and z of its start chunk, like igloo:48,208";
             throw new CommandLine.ParameterException(commandLine, where + ": " + e.getMessage() + hint + ".");
         }

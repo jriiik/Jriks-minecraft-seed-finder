@@ -559,8 +559,69 @@ class SeedFinderCliTest {
         java.nio.file.Files.writeString(file, nether.out() + "\nhashed-seed " + io.github.jriiik.seedfinder.Seeds.hashedSeed(12345L) + "\n");
         Result result = run(find("--file", file.toString()));
         assertEquals(0, result.exitCode(), result.out() + result.err());
-        assertTrue(result.out().contains("no structures; nether bedrock: 1,024 floor and 1,024 roof blocks"), result.out());
+        assertTrue(result.out().contains("Minecraft 26.3, no structures.\n"), result.out());
+        assertTrue(result.out().contains("Nether bedrock: 1,024 floor and 1,024 roof blocks"), result.out());
         assertTrue(result.out().contains("structure seed") && result.out().contains("12345"), result.out());
         assertTrue(result.out().contains("Found the full seed: 12345\n"), result.out());
+    }
+
+    @Test
+    void netherBedrockIsUsedWithStructuresToo(@org.junit.jupiter.api.io.TempDir java.nio.file.Path folder) throws java.io.IOException {
+        String nether = run("bedrock", "--seed", "12345", "--dimension", "nether", "--layers", "--at", "64,-32").out();
+        String hashed = "\nhashed-seed " + io.github.jriiik.seedfinder.Seeds.hashedSeed(12345L) + "\n";
+        java.nio.file.Path file = folder.resolve("notes.txt");
+
+        // one structure: too few to search, so the nether bedrock gives the structure seed
+        java.nio.file.Files.writeString(file, "village 336 80\n" + nether + hashed);
+        Result oneStructure = run(find("--file", file.toString()));
+        assertEquals(0, oneStructure.exitCode(), oneStructure.out() + oneStructure.err());
+        assertTrue(oneStructure.out().contains("The nether bedrock is searched instead."), oneStructure.out());
+        assertTrue(oneStructure.out().contains("Found the full seed: 12345\n"), oneStructure.out());
+
+        // a village noted a chunk off: the nether bedrock and the hashed seed give the seed, and the village is named
+        String structures = String.join("\n", EXAMPLE).replace(':', ' ').replace(',', ' ').replace("village 336 80", "village 352 80");
+        java.nio.file.Files.writeString(file, structures + "\n" + nether + hashed);
+        Result misfit = run(find("--file", file.toString()));
+        assertEquals(0, misfit.exitCode(), misfit.out() + misfit.err());
+        assertTrue(misfit.out().contains("Found the full seed: 12345\n"), misfit.out());
+        assertTrue(misfit.out().contains("villages at block (352, 80) doesn't fit this seed"), misfit.out());
+    }
+
+    @Test
+    void littleBedrockWithManyStructureSeedsIsNotCalledFound(@org.junit.jupiter.api.io.TempDir java.nio.file.Path folder) throws java.io.IOException {
+        java.nio.file.Path file = folder.resolve("bedrock.txt");
+        // a whole chunk: certain for one structure seed (a wrong one has a fitting seed about once in 100), not for 41
+        java.nio.file.Files.writeString(file, run("bedrock", "--seed", "12345").out());
+        assertTrue(run("full-seed", "12345", "--threads", "2", "--file", file.toString()).out().contains("Found the full seed: 12345"));
+        List<String> args = new java.util.ArrayList<>(List.of("full-seed", "--threads", "2", "--file", file.toString(), "12345"));
+        for (int i = 1; i <= 40; i++) {
+            args.add(Long.toString(12345L + 1000L * i));
+        }
+        Result result = run(args.toArray(String[]::new));
+        assertFalse(result.out().contains("Found the full seed"), result.out());
+        assertTrue(result.out().contains("One world seed fits all of your bedrock: ") || result.out().contains("world seeds fit all of your bedrock"),
+            result.out());
+    }
+
+    @Test
+    void biomeNotesWithMistakesAreReadOrLeftOut(@org.junit.jupiter.api.io.TempDir java.nio.file.Path folder) throws java.io.IOException {
+        Result biomes = run("biomes", "--seed", "12345", "--at", "-96,-96", "--size", "48");
+        java.nio.file.Path file = folder.resolve("notes.txt");
+        java.nio.file.Files.writeString(file, biomes.out() + "\nbiome dark forrest 120 64 -35\npreset normal\n");
+        Result result = run("full-seed", "12345", "--file", file.toString(), "--threads", "2");
+        assertEquals(0, result.exitCode(), result.out() + result.err());
+        assertTrue(result.out().contains("Found the full seed: 12345"), result.out());
+        assertTrue(result.out().contains("'minecraft:dark_forrest' is not an overworld biome"), result.out());
+        assertFalse(result.err().contains("Exception"), result.err());
+
+        java.nio.file.Files.writeString(file, "preset large biomes\nbiome: sparse jungle 0 64 0\n");
+        Result largeBiomes = run("full-seed", "12345", "--file", file.toString(), "--threads", "2");
+        assertTrue(largeBiomes.exitCode() != 2 && largeBiomes.out().contains("against 1 biome note"), largeBiomes.out() + largeBiomes.err());
+
+        java.nio.file.Files.writeString(file, "preset tiny\n");
+        Result unknownPreset = run("full-seed", "12345", "--file", file.toString());
+        assertEquals(2, unknownPreset.exitCode());
+        assertTrue(unknownPreset.err().contains("unknown world preset 'tiny'"), unknownPreset.err());
+        assertFalse(unknownPreset.err().contains("Write each structure"), unknownPreset.err());
     }
 }

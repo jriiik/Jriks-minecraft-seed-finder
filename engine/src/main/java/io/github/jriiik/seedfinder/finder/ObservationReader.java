@@ -70,7 +70,7 @@ public final class ObservationReader {
         "(?i)(bedrock[- ]heights|bedrock[- ]layer|not[- ]bedrock|no[- ]bedrock|bedrock)(?=$|[\\s:,(\\[])(.*)");
     private static final Pattern HASHED_SEED = Pattern.compile("(?i)hashed[- ]seed[\\s:=]+(-?\\d+)");
     private static final Pattern BIOME = Pattern.compile("(?i)(biome[- ]grid|biome)(?=$|[\\s:,(\\[])(.*)");
-    private static final Pattern PRESET = Pattern.compile("(?i)(?:world[- ])?preset[\\s:=]+(\\S+)");
+    private static final Pattern PRESET = Pattern.compile("(?i)(?:world[- ])?preset[\\s:=]+(\\S.*?)\\s*");
     private static final Pattern BIOME_ROW = Pattern.compile("[A-Za-z?]+");
     private static final Pattern NUMBER_ROW = Pattern.compile("(?:-?\\d+|\\?)(?:[\\s,;]+(?:-?\\d+|\\?))*");
     private static final Pattern DIGIT_ROW = Pattern.compile("[0-9?]+");
@@ -107,7 +107,7 @@ public final class ObservationReader {
                 Matcher presetLine = PRESET.matcher(withoutComment(text));
                 if (presetLine.matches()) {
                     String name = presetLine.group(1);
-                    preset = Optional.of(OverworldBiomes.Preset.byName(name).orElseThrow(() -> new IllegalArgumentException(
+                    preset = Optional.of(OverworldBiomes.Preset.byName(name.replace(' ', '_')).orElseThrow(() -> new IllegalArgumentException(
                         "unknown world preset '" + name + "' (use normal, large_biomes or amplified)")));
                     i++;
                     continue;
@@ -166,7 +166,8 @@ public final class ObservationReader {
         String[] tokens = text.replaceAll("[\\[\\]()]", " ").strip().split("[\\s,;]+");
         List<String> name = new ArrayList<>();
         List<Integer> numbers = new ArrayList<>();
-        for (String token : tokens) {
+        for (String raw : tokens) {
+            String token = stripColons(raw);
             if (token.isEmpty() || token.equals("~")) {
                 continue;
             }
@@ -182,6 +183,11 @@ public final class ObservationReader {
         return new BiomeObservation(biomeId(String.join("_", name)), numbers.get(0), numbers.get(1), numbers.get(2), false);
     }
 
+    /** "biome: forest" and "biome-grid: 3000 64 -3000" are read like the lines without the colon. */
+    private static String stripColons(String token) {
+        return token.replaceAll("^:+|:+$", "");
+    }
+
     /** "Dark Forest", "dark_forest" and "minecraft:dark_forest" all name the same biome. */
     private static String biomeId(String name) {
         String id = name.strip().toLowerCase(Locale.ROOT).replace(' ', '_');
@@ -191,7 +197,8 @@ public final class ObservationReader {
     private static int readBiomeGrid(List<String> lines, int headerIndex, String header, List<BiomeObservation> out) {
         Map<Character, String> legend = new HashMap<>();
         List<Integer> numbers = new ArrayList<>();
-        for (String token : header.replaceAll("[\\[\\]()]", " ").strip().split("[\\s,;]+")) {
+        for (String raw : header.replaceAll("[\\[\\]()]", " ").strip().split("[\\s,;]+")) {
+            String token = stripColons(raw);
             if (token.isEmpty()) {
                 continue;
             }

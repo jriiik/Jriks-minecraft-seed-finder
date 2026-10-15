@@ -132,4 +132,28 @@ class StatusTextTest {
         assertTrue(lines.contains("Certain: it is the only seed that fits the structures and the hashed seed the server sent."), lines.toString());
         assertEquals("Seed Finder: world seed 12345", StatusText.statusLine(session, runner));
     }
+
+    @Test
+    void aSeedFoundFromTheNetherNamesTheStructureThatDoesntFit() {
+        SearchRunner runner = new SearchRunner(DATA);
+        WorldSession session = new WorldSession(SERVER);
+        session.setCollecting(true);
+        session.setHashedSeed(Seeds.hashedSeed(12345L));
+        // a village noted a chunk off, and one nether chunk's floor and roof
+        List<StructureObservation> structures = ObservationReader.read(DATA, List.of("desert_pyramid 272 80", "swamp_hut 256 -144",
+            "village 352 80", "shipwreck -128 32", "ruined_portal 16 0", "trial_chamber 0 224")).structures();
+        BedrockPattern nether = new BedrockPattern(DATA.bedrockDimension("nether").orElseThrow(), 12345L);
+        List<String> netherLines = new java.util.ArrayList<>();
+        for (int y : new int[] {1, 2, 3, 4, 123, 124, 125, 126}) {
+            netherLines.addAll(BedrockText.layer(nether, 64, y, -32, 16, 16));
+        }
+        var bedrock = ObservationReader.read(DATA, netherLines).bedrock();
+        WorldSeedSearch.StructureStep step = WorldSeedSearch.structureSeeds(DATA, structures, bedrock, 2, () -> false, (done, total) -> { },
+            (search, pieces) -> { });
+        session.setResult(session.version(), WorldSeedSearch.fullSeed(step, bedrock, session.hashedSeed(), 2), null);
+        List<String> lines = StatusText.lines(session, runner);
+        assertTrue(lines.contains("World seed: 12345"), lines.toString());
+        assertTrue(lines.contains("Certain: it is the only seed that fits the nether bedrock and the hashed seed the server sent."), lines.toString());
+        assertTrue(lines.stream().anyMatch(line -> line.startsWith("Doesn't fit this seed: villages at block (352, 80).")), lines.toString());
+    }
 }

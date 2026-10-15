@@ -3,6 +3,7 @@ package io.github.jriiik.seedfinder.mod;
 import io.github.jriiik.seedfinder.biome.OverworldBiomes;
 import io.github.jriiik.seedfinder.finder.BiomeEvidence;
 import io.github.jriiik.seedfinder.finder.FullSeedFinder;
+import io.github.jriiik.seedfinder.finder.NetherBedrockSearch;
 import io.github.jriiik.seedfinder.finder.SeedCheck;
 import io.github.jriiik.seedfinder.finder.WorldSeedSearch;
 import java.util.ArrayList;
@@ -38,14 +39,16 @@ final class StatusText {
             lines.add("Could not prepare recognition of " + String.join(", ", missing) + " (see the game log).");
         }
         lines.addAll(session.disagreements());
+        int leftOut = session.leftOutBedrockChunks(NETHER);
         lines.add("Bedrock: " + chunks(session.bedrockChunks("minecraft:overworld"), "overworld") + ", "
-            + chunks(session.bedrockChunks("minecraft:the_nether"), "nether"));
+            + chunks(session.bedrockChunks(NETHER), "nether") + (leftOut == 0 ? "" : " (" + leftOut + " more left out: made by an older Minecraft"
+                + " version, or changed)"));
         lines.add(session.foreignBiome().isPresent()
             ? "Biomes: not noted, because this world has a biome the normal overworld doesn't have (" + session.foreignBiome().get()
                 + "): a data pack or mod changes it."
             : "Biomes: " + session.biomeChunks() + " chunk" + (session.biomeChunks() == 1 ? "" : "s") + " in " + session.biomeAreas() + " area"
-                + (session.biomeAreas() == 1 ? "" : "s") + (session.biomeAreas() == 1 ? " (another area is noted once you are "
-                + WorldSession.BIOME_AREA_SPACING + " blocks away)" : ""));
+                + (session.biomeAreas() == 1 ? "" : "s") + (session.biomeAreas() == 1 ? " (another area is noted once you are about "
+                + String.format(Locale.ROOT, "%,d", WorldSession.biomeAreaDistance(WorldSession.BIOME_AREA_SPACING)) + " blocks away)" : ""));
         lines.add("Hashed seed from the server: " + (session.hashedSeed().isPresent() ? "received" : "not yet"));
         TypedSeedRunner typedSeeds = SeedFinderClient.typedSeeds();
         if (session.worldSeed().isEmpty() && session.typedSeed().isEmpty()) {
@@ -88,11 +91,15 @@ final class StatusText {
                 lines.add("Not enough to search yet:");
                 result.plan().problems().forEach(problem -> lines.add("- " + problem));
                 lines.add("- Or: the nether's bedrock floor and roof of one chunk give the structure seed without any structures (they are"
-                    + " read when you are in the nether near its bottom or top).");
+                    + " read from the chunks around you in the nether).");
                 netherLines(result, lines);
             }
             case NO_STRUCTURE_SEED -> {
-                if (result.plan().canSearch()) {
+                if (result.hashedSeedFitsNone()) {
+                    lines.add("The seeds that fit the notes don't have this world's hashed seed, so a note doesn't follow the seed: a"
+                        + " structure noted in the wrong chunk, or from chunks made by an older Minecraft version, a command or a copy."
+                        + " Remove the ones you doubt.");
+                } else if (result.plan().canSearch()) {
                     lines.add("No seed fits these structures together. Possible reasons: a structure noted in the wrong chunk, structures");
                     lines.add("in chunks made by an older Minecraft version, structures placed by a command or copied, or a server that");
                     lines.add("places structures differently (then the seed can't be found from structures). Remove the ones you doubt.");
@@ -104,17 +111,32 @@ final class StatusText {
             }
             case STRUCTURE_SEED -> structureSeedLines(result, lines);
             case WORLD_SEED -> {
-                lines.add("World seed: " + result.worldSeed().getAsLong());
+                long worldSeed = result.worldSeed().getAsLong();
+                lines.add("World seed: " + worldSeed);
+                String source = source(result, worldSeed);
                 lines.add(switch (result.proof().orElseThrow()) {
-                    case HASHED_SEED -> "Certain: it is the only seed that fits the structures and the hashed seed the server sent.";
-                    case BEDROCK -> "Certain: it is the only seed that fits the structures and the bedrock floor.";
-                    case BIOMES -> "Certain: it is the only seed that fits the structures and the biomes seen, and a wrong seed would fit them"
+                    case HASHED_SEED -> "Certain: it is the only seed that fits " + source + " and the hashed seed the server sent.";
+                    case BEDROCK -> "Certain: it is the only seed that fits " + source + " and the bedrock floor.";
+                    case BIOMES -> "Certain: it is the only seed that fits " + source + " and the biomes seen, and a wrong seed would fit them"
                         + " this well only by a rare chance.";
                 });
                 result.leftOut().ifPresent(misfit -> {
                     lines.add("Left out: " + misfit + " doesn't fit this seed. It may come from an older Minecraft version, a command");
                     lines.add("or a copy (or was noted in the wrong place). Remove it on \"Remove a structure\".");
                 });
+                for (var misfit : result.misfits()) {
+                    lines.add("Doesn't fit this seed: " + misfit + ". It may come from an older Minecraft version, a command or a copy (or"
+                        + " was noted in the wrong place). Remove it on \"Remove a structure\".");
+                }
+                unusableNetherLines(result, lines);
+                if (result.netherDisagrees() && !netherFits(result, worldSeed)) {
+                    lines.add("Note: the nether bedrock seen doesn't fit this seed (nether chunks of another world with the same hashed seed,"
+                        + " or made by an older Minecraft version?).");
+                }
+                if (result.hashedSeedFitsNone()) {
+                    lines.add("Note: the hashed seed the server sent fits none of the seeds that fit the notes: the server may send a made-up"
+                        + " value.");
+                }
                 if (result.bedrockDisagrees()) {
                     lines.add("Note: some of the bedrock seen doesn't fit this seed (the server may change blocks it sends).");
                 }
@@ -150,6 +172,7 @@ final class StatusText {
                 lines.add("Note: some of the overworld bedrock seen doesn't fit this seed (it may have been changed).");
             }
             netherNote(check, lines);
+            biomeNote(check, lines);
             return true;
         }
         switch (check.verdict()) {
@@ -164,6 +187,7 @@ final class StatusText {
                         + (one ? "was" : "were") + " noted in the wrong place).");
                 }
                 netherNote(check, lines);
+                biomeNote(check, lines);
                 return true;
             }
             case UNCONFIRMED -> {
@@ -216,6 +240,13 @@ final class StatusText {
         }
     }
 
+    private static void biomeNote(SeedCheck check, List<String> lines) {
+        if (check.biomes().misfit()) {
+            lines.add("Note: the biomes seen don't fit this seed (chunks made by an older Minecraft version, or a server that changes"
+                + " biomes).");
+        }
+    }
+
     /** What fits the seed: "the overworld bedrock seen fits it", "the overworld bedrock seen and 2 of the 3 structures noted fit it", ... */
     static String agreeing(SeedCheck check) {
         List<String> parts = new ArrayList<>();
@@ -263,24 +294,66 @@ final class StatusText {
         return check.misfits().size() == 1 ? check.misfits().get(0) + " doesn't" : check.misfits().size() + " of the structures noted don't";
     }
 
+    private static final String NETHER = "minecraft:the_nether";
+
     /** What the nether bedrock said, when it was searched. */
     static void netherLines(WorldSeedSearch.Result result, List<String> lines) {
+        unusableNetherLines(result, lines);
+        result.nether().ifPresent(finding -> {
+            if (finding.capped()) {
+                lines.add("Too many structure seeds fit the nether bedrock seen to go on with; the floor and the roof of a whole chunk"
+                    + " narrow them down.");
+            } else if (result.netherDisagrees() && finding.proven() && !result.structuresOnlySeeds().isEmpty()) {
+                lines.add("The structures and the nether bedrock disagree: the structures fit " + seeds(result.structuresOnlySeeds())
+                    + ", the nether bedrock " + seeds(finding.structureSeeds()) + ". One side is wrong (a structure noted in the wrong"
+                    + " place or from older chunks, or nether chunks of another world); the hashed seed, overworld bedrock or biomes"
+                    + " tell which.");
+            } else if (result.netherDisagrees() && finding.proven()) {
+                lines.add("No seed fits all the structures, so one of them doesn't follow the seed (noted in the wrong place, from older"
+                    + " chunks, or placed by a command); the structure seed comes from the nether bedrock.");
+            } else if (result.netherDisagrees()) {
+                lines.add("Note: none of the structures' seeds fits the nether bedrock seen (nether chunks made by an older Minecraft"
+                    + " version, or changed?).");
+            }
+        });
+    }
+
+    /** The nether chunks the search found unusable. */
+    private static void unusableNetherLines(WorldSeedSearch.Result result, List<String> lines) {
         result.nether().ifPresent(finding -> {
             for (io.github.jriiik.seedfinder.world.ChunkPos chunk : finding.unusableChunks()) {
                 lines.add("The nether bedrock of the chunk at " + chunk.minBlockX() + ", " + chunk.minBlockZ() + " fits no seed that fits the rest:"
                     + " made by Minecraft 1.17 or older, or changed. It is left out.");
             }
-            if (result.netherDisagrees()) {
-                lines.add("Note: the nether bedrock fits other structure seeds than the structures do (older chunks on one side, or"
-                    + " structures placed by command?).");
-            }
         });
+    }
+
+    /** What the world seed was found from besides its proof: "the structures", "the nether bedrock", or both. */
+    private static String source(WorldSeedSearch.Result result, long worldSeed) {
+        boolean structures = result.plan().canSearch() && result.misfits().isEmpty() && !result.plan().observations().isEmpty()
+            && !(result.netherDisagrees() && netherFits(result, worldSeed));
+        boolean nether = netherFits(result, worldSeed);
+        return structures && nether ? "the structures and the nether bedrock" : structures ? "the structures" : nether ? "the nether bedrock"
+            : "the notes";
+    }
+
+    private static boolean netherFits(WorldSeedSearch.Result result, long worldSeed) {
+        long structureSeed = worldSeed & 0xFFFF_FFFF_FFFFL;
+        return result.nether().map(finding -> finding.structureSeeds().contains(structureSeed)).orElse(false);
+    }
+
+    private static String seeds(List<Long> seeds) {
+        return seeds.size() <= 3 ? seeds.stream().map(String::valueOf).collect(Collectors.joining(" or ")) : seeds.size() + " seeds";
     }
 
     private static void structureSeedLines(WorldSeedSearch.Result result, List<String> lines) {
         List<Long> seeds = result.structureSeeds();
-        boolean fromNether = result.nether().map(finding -> !finding.structureSeeds().isEmpty()).orElse(false) && !result.plan().canSearch();
-        if (seeds.size() == 1) {
+        boolean fromNether = result.fromNetherAlone();
+        boolean bothSides = result.netherDisagrees() && !result.structuresOnlySeeds().isEmpty()
+            && result.nether().map(NetherBedrockSearch.Finding::proven).orElse(false);
+        if (bothSides) {
+            // said by netherLines below
+        } else if (seeds.size() == 1) {
             lines.add("Structure seed: " + seeds.get(0) + " (the last 48 bits of the world seed" + (fromNether ? ", from the nether bedrock)" : ")"));
         } else if (fromNether && result.nether().get().proven() && seeds.size() == 2) {
             lines.add("Structure seed: " + seeds.get(0) + " or " + seeds.get(1) + ". These two have the same nether bedrock everywhere; the"
@@ -312,10 +385,20 @@ final class StatusText {
             lines.add("The world seed follows from bedrock (noted when you are near the bottom of the world) or from biomes (noted"
                 + " around you).");
         }
-        result.biomes().ifPresent(decision -> biomeLines(decision, lines));
+        result.biomes().ifPresent(decision -> {
+            if (decision.proven() && result.bedrockDisagrees()) {
+                lines.add("Only " + decision.seed().getAsLong() + " fits the biomes seen, but some bedrock seen doesn't fit it while another"
+                    + " seed fits all of it: notes from two worlds, or chunks changed or made by an older version on one side?");
+            } else {
+                biomeLines(decision, lines);
+            }
+        });
         List<Long> likely = result.likelySeeds();
         if (!likely.isEmpty()) {
             lines.add("If nobody typed a seed, it is probably " + likely.stream().map(String::valueOf).collect(Collectors.joining(" or ")) + ".");
+        } else if (seeds.size() == 1 && result.biomes().map(BiomeEvidence.Decision::complete).orElse(false)
+            && !WorldSeedSearch.likelySeeds(seeds.get(0)).isEmpty()) {
+            lines.add("The biomes seen rule out the seeds Minecraft picks itself and those typed text gives: the seed was typed as a number.");
         }
     }
 
@@ -330,9 +413,11 @@ final class StatusText {
             lines.add("No world seed fits the biomes seen: chunks made by an older Minecraft version, or a server that changes biomes?");
         } else if (decision.fitting().size() == 1) {
             lines.add("One world seed fits the biomes seen, " + decision.fitting().get(0) + ", but that isn't proof yet: "
-                + (decision.groups() < 2
-                    ? "the biomes of one area only prove a seed Minecraft picked itself or a text seed. Biomes of a second area at least "
-                        + BiomeEvidence.groupSpacing(decision.preset().orElse(OverworldBiomes.Preset.NORMAL)) + " blocks away prove any seed."
+                + (decision.groups() < 2 && !decision.likely()
+                    ? "the biomes of one area only prove a seed Minecraft picked itself or a text seed. Biomes of another area about "
+                        + String.format(Locale.ROOT, "%,d", WorldSession.biomeAreaDistance(
+                            BiomeEvidence.groupSpacing(decision.preset().orElse(OverworldBiomes.Preset.NORMAL))))
+                        + " blocks from the others prove any seed."
                     : "the areas noted fit many seeds (all one biome, like ocean?). Areas where several biomes meet tell more."));
         } else {
             lines.add(String.format(Locale.ROOT, "%,d world seeds fit the biomes seen so far; more areas tell them apart.", decision.fitting().size()));
@@ -351,7 +436,8 @@ final class StatusText {
             return "Seed Finder: searching" + (runner.percent() >= 0 ? " " + runner.percent() + "%" : "...");
         }
         WorldSeedSearch.Result result = session.result();
-        String notes = session.structures().size() + " structures, " + session.bedrockChunks("minecraft:overworld") + " bedrock chunks"
+        String notes = session.structures().size() + " structures, " + (session.bedrockChunks("minecraft:overworld") + session.bedrockChunks(NETHER))
+            + " bedrock chunks"
             + (session.biomeAreas() > 0 ? ", " + session.biomeAreas() + " biome area" + (session.biomeAreas() == 1 ? "" : "s") : "")
             + (SeedFinderClient.typedSeeds().runningFor(session) ? ", checking typed seeds " + SeedFinderClient.typedSeeds().percent() + "%" : "");
         if (result == null) {

@@ -159,4 +159,20 @@ class ObservationReaderTest {
         assertEquals(0, assertThrows(ObservationReader.LineException.class, () -> read("preset flat")).lineIndex());
         assertEquals(0, assertThrows(ObservationReader.LineException.class, () -> read("biome forest 1.5 2 3")).lineIndex());
     }
+
+    @Test
+    void biomeNotesWithAColonOrThePresetsInGameName() {
+        ObservationReader.Observations read = read(
+            "biome: forest 3000 64 -3000",
+            "biome:plains 1 2 3",
+            "biome-grid: 113 64 -47 a=plains",
+            "a",
+            "",
+            "world preset: Large Biomes");
+        assertEquals(List.of(
+            new BiomeObservation("minecraft:forest", 3000, 64, -3000, false),
+            new BiomeObservation("minecraft:plains", 1, 2, 3, false),
+            new BiomeObservation("minecraft:plains", 112, 64, -48, true)), read.biomes());
+        assertEquals(io.github.jriiik.seedfinder.biome.OverworldBiomes.Preset.LARGE_BIOMES, read.preset().orElseThrow());
+    }
 }

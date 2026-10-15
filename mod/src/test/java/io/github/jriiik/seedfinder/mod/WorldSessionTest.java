@@ -314,7 +314,9 @@ class WorldSessionTest {
         assertTrue(session.offerBiomes(biomeChunk(5, 5, "minecraft:forest")));
         // too far for the first area, too near for a second one
         assertFalse(session.wantsBiomes(100, 0));
-        int far = WorldSession.BIOME_AREA_SPACING / 16 + 1;
+        // the notes of both areas must be the spacing apart, not only their first chunks
+        assertFalse(session.wantsBiomes(WorldSession.BIOME_AREA_SPACING / 16 + 1, 0));
+        int far = WorldSession.biomeAreaDistance(WorldSession.BIOME_AREA_SPACING) / 16 + 1;
         assertTrue(session.offerBiomes(biomeChunk(far, 0, "minecraft:desert")));
         assertEquals(2, session.biomeAreas());
         assertEquals(3, session.biomeChunks());
@@ -349,5 +351,71 @@ class WorldSessionTest {
         assertFalse(WorldSession.load(folder, WORLD).wantsBiomes(1, 1));
         session.clearAll();
         assertTrue(session.wantsBiomes(1, 1));
+    }
+
+    /** A player walking east with collecting on: the chunks around them, nearest first, as the mod reads them. */
+    private static void walk(WorldSession session, int toBlockX) {
+        for (int x = 0; x <= toBlockX; x += 64) {
+            int centerX = x >> 4;
+            for (int radius = 0; radius <= 8; radius++) {
+                for (int dx = -radius; dx <= radius; dx++) {
+                    for (int dz = -radius; dz <= radius; dz++) {
+                        if (Math.max(Math.abs(dx), Math.abs(dz)) == radius && session.wantsBiomes(centerX + dx, dz)) {
+                            session.offerBiomes(biomeChunk(centerX + dx, dz, "minecraft:forest"));
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    private static io.github.jriiik.seedfinder.finder.BiomeEvidence evidence(WorldSession session) {
+        VersionData data = MinecraftVersion.V26_3.data();
+        return new io.github.jriiik.seedfinder.finder.BiomeEvidence(MinecraftVersion.V26_3, ObservationReader.read(data, session.notesLines()).biomes(),
+            OptionalLong.empty());
+    }
+
+    @Test
+    void theAreasOfAWalkCountSeparately() {
+        WorldSession normal = new WorldSession(WORLD);
+        walk(normal, 6000);
+        assertEquals(2, normal.biomeAreas());
+        assertEquals(2, evidence(normal).groups(io.github.jriiik.seedfinder.biome.OverworldBiomes.Preset.NORMAL).size());
+
+        // a large-biome world needs areas 16,384 blocks apart: one more area is noted for that
+        WorldSession large = new WorldSession(WORLD);
+        walk(large, 18_000);
+        assertEquals(WorldSession.MAX_BIOME_AREAS + 1, large.biomeAreas());
+        assertEquals(2, evidence(large).groups(io.github.jriiik.seedfinder.biome.OverworldBiomes.Preset.LARGE_BIOMES).size());
+        assertEquals(WorldSession.MAX_BIOME_AREAS + 1, evidence(large).groups(io.github.jriiik.seedfinder.biome.OverworldBiomes.Preset.NORMAL).size());
+    }
+
+    private static ScannedChunk netherChunk(int chunkX, int chunkZ) {
+        java.util.Map<Integer, List<String>> layers = new java.util.TreeMap<>();
+        layers.put(4, java.util.Collections.nCopies(16, "B..............."));
+        return new ScannedChunk("minecraft:the_nether", chunkX, chunkZ, layers);
+    }
+
+    @Test
+    void netherChunksFoundUnusableMakeRoomForOthers(@TempDir Path folder) throws IOException {
+        WorldSession session = new WorldSession(WORLD);
+        for (int i = 0; i < WorldSession.MAX_BEDROCK_CHUNKS; i++) {
+            assertTrue(session.offerBedrock(netherChunk(i, 0)));
+        }
+        assertFalse(session.wantsBedrock("minecraft:the_nether"));
+        session.leaveOutBedrock("minecraft:the_nether", List.of(new io.github.jriiik.seedfinder.world.ChunkPos(0, 0),
+            new io.github.jriiik.seedfinder.world.ChunkPos(1, 0)));
+        assertEquals(2, session.bedrockChunks("minecraft:the_nether"));
+        assertEquals(2, session.leftOutBedrockChunks("minecraft:the_nether"));
+        assertTrue(session.wantsBedrock("minecraft:the_nether"));
+        assertFalse(session.offerBedrock(netherChunk(0, 0)), "a chunk left out is not read again");
+        assertTrue(session.offerBedrock(netherChunk(7, 7)));
+
+        session.save(folder);
+        WorldSession loaded = WorldSession.load(folder, WORLD);
+        assertEquals(2, loaded.leftOutBedrockChunks("minecraft:the_nether"));
+        assertFalse(loaded.offerBedrock(netherChunk(1, 0)));
+        loaded.clearAll();
+        assertEquals(0, loaded.leftOutBedrockChunks("minecraft:the_nether"));
     }
 }

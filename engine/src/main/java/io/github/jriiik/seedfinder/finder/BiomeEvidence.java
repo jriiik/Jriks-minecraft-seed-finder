@@ -22,9 +22,10 @@ import java.util.function.BooleanSupplier;
  * structure seed (the lower 48 bits) is known, each of its 65,536 world seeds can be checked against the biomes seen.
  *
  * <p>When is a seed proven? The noted biomes are put into groups by position only: a group is the notes within
- * {@link #GROUP_RADIUS} blocks of its first note, and a group counts as evidence only when all its notes are at
- * least {@link #groupSpacing} blocks from every counted group (biomes close together are alike in every world, so
- * near groups are not independent). For each counted group, the number k of the other candidates that fit it
+ * {@link #GROUP_RADIUS} blocks of its first note, and groups count as evidence only when all their notes are at
+ * least {@link #groupSpacing} blocks apart (biomes close together are alike in every world, so near groups are not
+ * independent): as many as can be, chosen by the notes alone ({@link #groups}). For each counted group, the number k
+ * of the other candidates that fit it
  * estimates how often a wrong seed fits it: (k + {@link #PSEUDO_COUNT}) / M of the M candidates checked. A seed
  * is proven when it is the only candidate that fits every note and a wrong seed would fit all counted groups with
  * a chance of at most {@link #MAX_FALSE_FIT_CHANCE} over all the seeds it could have been mistaken for:
@@ -72,6 +73,10 @@ public final class BiomeEvidence {
             return biome.length;
         }
 
+        int distinctBiomes() {
+            return (int) java.util.Arrays.stream(biome).distinct().count();
+        }
+
         /** Horizontal distance between the boxes around two clusters' notes (never more than between any two notes). */
         double distanceTo(Cluster other) {
             long dx = Math.max(0, Math.max(other.minX - maxX, minX - other.maxX));
@@ -103,7 +108,7 @@ public final class BiomeEvidence {
         this.noted = valid.size();
         this.notes = informative(valid);
         this.problems = List.copyOf(found);
-        this.clusters = cluster(notes, biomes, hashedSeed);
+        this.clusters = cluster(this.notes, biomes, hashedSeed);
     }
 
     /**
@@ -188,9 +193,19 @@ public final class BiomeEvidence {
                 }
                 key.append(';');
             }
-            clusters.add(new Cluster(minX, maxX, minZ, maxZ, biome, quarts, key.toString()));
+            clusters.add(new Cluster(minX, maxX, minZ, maxZ, biome, quarts, digest(key.toString())));
         }
         return List.copyOf(clusters);
+    }
+
+    /** A short stand-in for a place's notes in cache keys (SHA-256: two different places never share one). */
+    private static String digest(String text) {
+        try {
+            return java.util.HexFormat.of().formatHex(java.security.MessageDigest.getInstance("SHA-256")
+                .digest(text.getBytes(java.nio.charset.StandardCharsets.UTF_8)));
+        } catch (java.security.NoSuchAlgorithmException e) {
+            throw new IllegalStateException("every Java runtime has SHA-256", e);
+        }
     }
 
     /**
@@ -268,20 +283,67 @@ public final class BiomeEvidence {
         return preset == OverworldBiomes.Preset.LARGE_BIOMES ? 16_384 : 4_096;
     }
 
-    /** The places that count as separate groups of evidence in a world of this preset (by position only, in order). */
-    public List<Integer> groups(OverworldBiomes.Preset preset) {
-        int spacing = groupSpacing(preset);
-        List<Integer> counted = new ArrayList<>();
+    /** Up to this many places, {@link #groups} finds the most places that can count together; above it, it picks greedily. */
+    private static final int EXACT_GROUP_CHOICE = 16;
+
+    private final Map<OverworldBiomes.Preset, List<Integer>> groups = new java.util.EnumMap<>(OverworldBiomes.Preset.class);
+
+    /**
+     * The places that count as separate groups of evidence in a world of this preset, in note order: as many places
+     * as can all be {@link #groupSpacing} apart, preferring places with more biomes, then more notes, then those noted
+     * first. The choice depends on the notes only, never on the seeds checked, so the counts the rule uses stay fair.
+     */
+    public synchronized List<Integer> groups(OverworldBiomes.Preset preset) {
+        return groups.computeIfAbsent(preset, p -> chooseGroups(groupSpacing(p)));
+    }
+
+    private List<Integer> chooseGroups(int spacing) {
+        List<Integer> order = new ArrayList<>();
         for (int i = 0; i < clusters.size(); i++) {
-            boolean far = true;
-            for (int g : counted) {
-                far &= clusters.get(i).distanceTo(clusters.get(g)) >= spacing;
-            }
-            if (far) {
-                counted.add(i);
+            order.add(i);
+        }
+        order.sort(java.util.Comparator.comparingInt((Integer i) -> -clusters.get(i).distinctBiomes())
+            .thenComparingInt(i -> -clusters.get(i).size())
+            .thenComparingInt(i -> i));
+        List<Integer> best = new ArrayList<>();
+        if (order.size() <= EXACT_GROUP_CHOICE) {
+            choose(order, 0, new ArrayList<>(), best, spacing);
+        } else {
+            for (int place : order) {
+                if (farFromAll(place, best, spacing)) {
+                    best.add(place);
+                }
             }
         }
-        return counted;
+        best.sort(null);
+        return List.copyOf(best);
+    }
+
+    /** Depth first, taking places before leaving them out: the first largest set found is the one preferred. */
+    private void choose(List<Integer> order, int next, List<Integer> chosen, List<Integer> best, int spacing) {
+        if (chosen.size() > best.size()) {
+            best.clear();
+            best.addAll(chosen);
+        }
+        if (next >= order.size() || chosen.size() + (order.size() - next) <= best.size()) {
+            return;
+        }
+        int place = order.get(next);
+        if (farFromAll(place, chosen, spacing)) {
+            chosen.add(place);
+            choose(order, next + 1, chosen, best, spacing);
+            chosen.remove(chosen.size() - 1);
+        }
+        choose(order, next + 1, chosen, best, spacing);
+    }
+
+    private boolean farFromAll(int place, List<Integer> chosen, int spacing) {
+        for (int other : chosen) {
+            if (clusters.get(place).distanceTo(clusters.get(other)) < spacing) {
+                return false;
+            }
+        }
+        return true;
     }
 
     // ------------------------------------------------------------------ checking candidates
@@ -352,7 +414,7 @@ public final class BiomeEvidence {
 
     /**
      * Remembers which candidates fit each place, so that a search run again after a new place was noted only checks
-     * the new place. Thread-safe; keeps the most recently used entries (8 KB each).
+     * the new place. Thread-safe; keeps the most recently used entries (about 8 KB each).
      */
     public static final class ScanCache {
 

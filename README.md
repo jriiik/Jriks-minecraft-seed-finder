@@ -30,7 +30,6 @@ Minecraft version (**26.3**).
 | Fabric client mod: notes structures and bedrock while you play and finds the seed by itself | ✅ first version |
 | The mod recognizes villages, pillager outposts, trial chambers, ancient cities, trail ruins and camps by itself | ✅ done |
 | The mod recognizes desert pyramids, jungle temples, swamp huts, igloos, shipwrecks, ocean ruins and ruined portals by itself | ✅ done |
-| Full seed from biomes, structure seed from nether bedrock alone | 🔜 later |
 
 ## Trying the command-line app
 
@@ -137,7 +136,9 @@ depends on the whole seed. With bedrock notes, the finder checks every one of th
 
 What the answers mean:
 
-- **"Found the full seed"**: exactly one world seed fits all of your bedrock.
+- **"Found the full seed"**: exactly one world seed fits all of your bedrock, and there is enough of it that a wrong
+  structure seed would have a fitting seed only by a rare chance. With less (or with many structure seeds to choose
+  from) it says **"One world seed fits all of your bedrock"** instead, and how far to trust it.
 - **"N world seeds fit"**: the area was too small. The finder names a few columns where they differ; add those.
 - **"No world seed fits all of your bedrock"**: the finder lists the blocks that don't fit. Usually a height was
   noted wrong; check those spots, fix them and run again.
@@ -152,6 +153,9 @@ but it can replace the structures (next section).
 the structure seed, and one chunk of each gives it, in about a second, without any structures: note them as
 `bedrock-layer nether x y z` lines (rows of `B` for bedrock and `.` for netherrack, see `seedfinder full-seed --help`;
 `seedfinder bedrock --seed <seed> --dimension nether --layers` shows what they look like) and run `find` on the file.
+Structures in the same file are used too: the answer must fit both. When they disagree (a structure noted in the
+wrong place or from older chunks, or nether chunks of another world), the seeds of both sides are checked against the
+hashed seed, the overworld bedrock and the biomes, and a structure that doesn't fit the seed found is named.
 Both the floor and the roof are needed (each alone leaves several possible seeds); bedrock at y 4 or y 123, and
 gaps at y 1 or y 126, tell the most. About one structure seed in four has a "twin" with exactly the same nether
 bedrock, so the answer may be two structure seeds; the hashed seed, structures, overworld bedrock or biomes then tell
@@ -174,8 +178,13 @@ candidates, place by place:
 
 - The biomes of **one area** (what you see around you, a few hundred blocks across) prove a seed that Minecraft
   picked by itself or that came from text, because only one or two of the 65,536 seeds could be such a seed.
-- **Any other seed** needs biomes from a **second area at least 4,096 blocks away** (16,384 in a "large biomes"
-  world): biomes close together are alike in every world, so near places don't count twice.
+- **Any other seed** needs biomes from a **second area whose notes are at least 4,096 blocks from the first one's**
+  (16,384 in a "large biomes" world): biomes close together are alike in every world, so near places don't count
+  twice. Which places count is decided from the notes alone: as many as can all be that far apart, places with more
+  biomes first.
+- Seeds that Minecraft picks itself or that text gives are only named as "likely" when the biome notes don't rule
+  them out. If the overworld bedrock fits another seed perfectly while the biomes point elsewhere, neither is
+  presented as found.
 - Large-biome and amplified worlds are recognized (they are tried after normal ones); a line `preset large_biomes`
   in the notes says it outright.
 
@@ -207,11 +216,12 @@ itself. It needs Minecraft **26.3** with **Fabric Loader** (0.19.5 or newer) and
    the mod notes nothing.
 4. Play. The mod then:
    - reads the bedrock floor of chunks around you (overworld and nether). In the nether, one chunk's floor and roof
-     give the structure seed by themselves, without any structures;
+     give the structure seed by themselves, without any structures. Nether chunks made by Minecraft 1.17 or older
+     (their bedrock doesn't follow the seed) are left out and make room for others;
    - reads the biomes the game stored around you (about 100 chunks, at the surface and three cave depths), and again
-     when you are more than 4,096 blocks from the last area (up to four areas). One area proves a seed Minecraft
-     picked itself or a text seed; a second area proves any seed. In a world whose biomes come from a data pack or
-     mod, biomes are not used;
+     when you are about 4,500 blocks from every area noted (up to four areas, plus one far enough away for
+     large-biome worlds). One area proves a seed Minecraft picked itself or a text seed; a second area proves any
+     seed. In a world whose biomes come from a data pack or mod, biomes are not used;
    - recognizes **villages, pillager outposts, trial chambers, ancient cities, trail ruins, camps, desert pyramids,
      jungle temples, swamp huts, igloos, shipwrecks, ocean ruins and ruined portals** you come near, from their
      blocks, and notes the chunk where each one starts (see below). Ruined portals in the nether are only noted after

@@ -711,9 +711,9 @@ public final class NetherBedrockSearch {
      *   <li>Without one, the chunks not found to fit no seed are searched together (this is how scattered notes, chunks
      *       with only one surface known, or a chunk whose result was only a list of candidates get combined).</li>
      *   <li>When nothing fits them together, one of them may be from an older version or misread: with at most
-     *       {@link #MAX_LEAVE_OUT_CHUNKS} of them, each is left out in turn, and when exactly one try finds seeds and
-     *       its result is proven, that is the result and the chunk left out is reported
-     *       ({@link ChunkStatus#CONTRADICTS}).</li>
+     *       {@link #MAX_LEAVE_OUT_CHUNKS} of them, each is left out in turn, and when exactly one try finds seeds,
+     *       that is the result and the chunk left out is reported ({@link ChunkStatus#CONTRADICTS}): proven, or as
+     *       candidates when no chunk gave candidates on its own.</li>
      *   <li>Without a result from that either, the first chunk that gave candidates (not proven) is reported.</li>
      * </ol>
      * Every search run here is one more chance for notes that don't follow the formula to fit a wrong key, so a result
@@ -797,7 +797,9 @@ public final class NetherBedrockSearch {
                         leftOut = chunk;
                     }
                 }
-                if (tries == 1 && found.proven() && searches.falseKeys <= MAX_FALSE_FIT_CHANCE) {
+                // Exactly one chunk spoils the rest: the result without it (as candidates when not proven, unless a
+                // chunk gave candidates on its own, which are used then).
+                if (tries == 1 && (found.proven() && searches.falseKeys <= MAX_FALSE_FIT_CHANCE || candidates == null)) {
                     ChunkPos misfit = leftOut;
                     rest.stream().filter(chunk -> !chunk.equals(misfit)).forEach(chunk -> status.put(chunk, ChunkStatus.USED));
                     status.put(misfit, ChunkStatus.CONTRADICTS);

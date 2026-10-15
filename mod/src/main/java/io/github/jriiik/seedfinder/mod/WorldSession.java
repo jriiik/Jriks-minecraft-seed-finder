@@ -33,6 +33,10 @@ import java.util.OptionalLong;
  */
 final class WorldSession {
 
+    /** A chunk whose bedrock is left out (see {@link #leaveOutBedrock}). */
+    record LeftOutChunk(String dimension, int chunkX, int chunkZ) {
+    }
+
     /** A structure noted in this world: its set, a block in its start chunk, and how it was found. */
     record NotedStructure(String set, int x, int z, String source) {
     }
@@ -51,11 +55,18 @@ final class WorldSession {
     static final int BIOME_AREA_RADIUS = 192;
     static final int MAX_BIOME_CHUNKS_PER_AREA = 100;
     /**
-     * A new area only this far from the others: biomes closer together are alike in every world, so only areas this far
-     * apart count separately (two such areas prove any seed; large-biome worlds need them 4 times farther apart).
+     * Biomes closer together than this are alike in every world, so only areas whose notes are this far apart count
+     * separately (two such areas prove any seed); large-biome worlds need {@link #LARGE_BIOME_AREA_SPACING}.
      */
     static final int BIOME_AREA_SPACING = BiomeEvidence.groupSpacing(OverworldBiomes.Preset.NORMAL);
+    static final int LARGE_BIOME_AREA_SPACING = BiomeEvidence.groupSpacing(OverworldBiomes.Preset.LARGE_BIOMES);
+    /** Areas spaced for a normal world; then one more, far enough from one of them to count in a large-biome world. */
     static final int MAX_BIOME_AREAS = 4;
+    /** How far an area's notes reach from its first chunk's corner, both ways together: 2 x the radius, plus a chunk's cells. */
+    private static final int BIOME_AREA_REACH = 2 * BIOME_AREA_RADIUS + 12;
+
+    /** At most this many chunks found unusable are left out per dimension; then no more of its bedrock is read. */
+    static final int MAX_LEFT_OUT_BEDROCK_CHUNKS = 32;
     /** Characters that stand for biomes in the saved file (each file has its own list of biomes). */
     private static final String BIOME_CHARS = "0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ+/";
 
@@ -86,6 +97,11 @@ final class WorldSession {
     private final List<String> disagreements = new ArrayList<>();
     private int removals;
     private final List<ScannedChunk> bedrock = new ArrayList<>();
+    /**
+     * Chunks whose bedrock the search found unusable (nether chunks made before 1.18, or changed): left out of the
+     * notes, never read again, and not counted against {@link #MAX_BEDROCK_CHUNKS}. Entries: dimension, chunk x, z.
+     */
+    private final List<LeftOutChunk> leftOutBedrock = new ArrayList<>();
     private final List<BiomeChunk> biomes = new ArrayList<>();
     /** The first chunk of each biome area (block x, z of its north-west corner). */
     private final List<int[]> biomeAreas = new ArrayList<>();
@@ -180,10 +196,13 @@ final class WorldSession {
      * the notes are checked and don't contradict it (or the hashed seed is genuine).
      */
     OptionalLong worldSeed() {
+        if (typedSeedCheck != null && hashedSeedIsGenuine()) {
+            return typedSeed; // single player: its hash is the world's own hashed seed
+        }
         if (result != null && result.worldSeed().isPresent()) {
             return result.worldSeed();
         }
-        boolean trusted = typedSeedCheck != null && (typedSeedCheck.verdict() != SeedCheck.Verdict.CONTRADICTED || hashedSeedIsGenuine());
+        boolean trusted = typedSeedCheck != null && typedSeedCheck.verdict() != SeedCheck.Verdict.CONTRADICTED;
         return trusted ? typedSeed : OptionalLong.empty();
     }
 
@@ -389,15 +408,40 @@ final class WorldSession {
         return (int) bedrock.stream().filter(chunk -> chunk.dimension().equals(dimension)).count();
     }
 
+    /** Whether this dimension's bedrock is still wanted: fewer than {@link #MAX_BEDROCK_CHUNKS} kept, and not too many left out. */
+    boolean wantsBedrock(String dimension) {
+        return bedrockChunks(dimension) < MAX_BEDROCK_CHUNKS && leftOutBedrockChunks(dimension) < MAX_LEFT_OUT_BEDROCK_CHUNKS;
+    }
+
     /** Keeps the chunk if this dimension still needs bedrock; returns whether it was kept. */
     boolean offerBedrock(ScannedChunk chunk) {
-        if (bedrockChunks(chunk.dimension()) >= MAX_BEDROCK_CHUNKS || bedrock.stream().anyMatch(c ->
-            c.dimension().equals(chunk.dimension()) && c.chunkX() == chunk.chunkX() && c.chunkZ() == chunk.chunkZ())) {
+        if (!wantsBedrock(chunk.dimension()) || bedrock.stream().anyMatch(c ->
+            c.dimension().equals(chunk.dimension()) && c.chunkX() == chunk.chunkX() && c.chunkZ() == chunk.chunkZ())
+            || leftOutBedrock.contains(new LeftOutChunk(chunk.dimension(), chunk.chunkX(), chunk.chunkZ()))) {
             return false;
         }
         bedrock.add(chunk);
         version++;
         return true;
+    }
+
+    int leftOutBedrockChunks(String dimension) {
+        return (int) leftOutBedrock.stream().filter(chunk -> chunk.dimension().equals(dimension)).count();
+    }
+
+    /**
+     * Leaves out the bedrock of chunks the search found unusable (made by an older Minecraft version, or changed): their
+     * notes are dropped and the chunks are not read again, so newer chunks can take their place. Main thread.
+     */
+    void leaveOutBedrock(String dimension, List<io.github.jriiik.seedfinder.world.ChunkPos> chunks) {
+        for (io.github.jriiik.seedfinder.world.ChunkPos chunk : chunks) {
+            LeftOutChunk left = new LeftOutChunk(dimension, chunk.x(), chunk.z());
+            boolean dropped = bedrock.removeIf(c -> c.dimension().equals(dimension) && c.chunkX() == chunk.x() && c.chunkZ() == chunk.z());
+            if (dropped && !leftOutBedrock.contains(left)) {
+                leftOutBedrock.add(left);
+                version++;
+            }
+        }
     }
 
     List<BiomeChunk> biomes() {
@@ -438,17 +482,26 @@ final class WorldSession {
         if (area >= 0) {
             return biomes.stream().filter(c -> biomeArea(c.chunkX(), c.chunkZ()) == area).count() < MAX_BIOME_CHUNKS_PER_AREA;
         }
-        if (biomeAreas.size() >= MAX_BIOME_AREAS) {
+        if (biomeAreas.size() > MAX_BIOME_AREAS || !biomeAreas.stream().allMatch(first -> apart(first, chunkX, chunkZ, BIOME_AREA_SPACING))) {
             return false;
         }
-        for (int[] center : biomeAreas) {
-            long dx = chunkX * 16L - center[0];
-            long dz = chunkZ * 16L - center[1];
-            if (dx * dx + dz * dz < (long) BIOME_AREA_SPACING * BIOME_AREA_SPACING) {
-                return false;
-            }
-        }
-        return true;
+        // The last area only for large-biome worlds: far enough from one of the others to count there too.
+        return biomeAreas.size() < MAX_BIOME_AREAS || biomeAreas.stream().anyMatch(first -> apart(first, chunkX, chunkZ, LARGE_BIOME_AREA_SPACING));
+    }
+
+    /**
+     * Whether an area starting at this chunk is sure to have all its notes at least {@code spacing} blocks from those
+     * of the area starting at {@code first}, measured between the boxes around their notes as the seed search does.
+     */
+    private static boolean apart(int[] first, int chunkX, int chunkZ, int spacing) {
+        long gapX = Math.max(0, Math.abs(chunkX * 16L - first[0]) - BIOME_AREA_REACH);
+        long gapZ = Math.max(0, Math.abs(chunkZ * 16L - first[1]) - BIOME_AREA_REACH);
+        return gapX * gapX + gapZ * gapZ >= (long) spacing * spacing;
+    }
+
+    /** About how far (in blocks, rounded up) a new area's first chunk must be from the other areas' first chunks. */
+    static int biomeAreaDistance(int spacing) {
+        return (spacing + BIOME_AREA_REACH + 99) / 100 * 100;
     }
 
     /** Keeps the chunk's biomes if they are wanted (see {@link #wantsBiomes}); returns whether they were kept. */
@@ -486,6 +539,7 @@ final class WorldSession {
         disagreements.clear();
         typedSeedCheck = null;
         bedrock.clear();
+        leftOutBedrock.clear();
         biomes.clear();
         biomeAreas.clear();
         foreignBiome = null;
@@ -626,6 +680,15 @@ final class WorldSession {
             bedrockArray.add(c);
         }
         json.add("bedrock", bedrockArray);
+        JsonArray leftOut = new JsonArray();
+        for (LeftOutChunk chunk : leftOutBedrock) {
+            JsonObject c = new JsonObject();
+            c.addProperty("dimension", chunk.dimension());
+            c.addProperty("chunk_x", chunk.chunkX());
+            c.addProperty("chunk_z", chunk.chunkZ());
+            leftOut.add(c);
+        }
+        json.add("left_out_bedrock", leftOut);
         List<String> palette = new ArrayList<>();
         JsonArray biomeArray = new JsonArray();
         for (BiomeChunk chunk : biomes) {
@@ -790,6 +853,12 @@ final class WorldSession {
                     layers.put(Integer.parseInt(layer.getKey()), rows);
                 }
                 session.bedrock.add(new ScannedChunk(c.get("dimension").getAsString(), c.get("chunk_x").getAsInt(), c.get("chunk_z").getAsInt(), layers));
+            }
+            if (json.has("left_out_bedrock")) {
+                for (JsonElement element : json.getAsJsonArray("left_out_bedrock")) {
+                    JsonObject c = element.getAsJsonObject();
+                    session.leftOutBedrock.add(new LeftOutChunk(c.get("dimension").getAsString(), c.get("chunk_x").getAsInt(), c.get("chunk_z").getAsInt()));
+                }
             }
             readBiomes(json, session);
         } catch (IOException | RuntimeException e) {

@@ -277,8 +277,28 @@ extra group, with a chance of at most 1 in 1,000 over all the seeds it could be 
 one loaded area with two or more biomes was fitted by none of the 65,535 others; it proves a seed Minecraft picked
 itself or a text seed (only 1 to 3 such seeds per structure seed), while any other seed needs a second area at least
 4,096 blocks away (16,384 in large-biome worlds, whose noises are 4 times coarser). A test guards that the estimate is
-never below the real count of wrong seeds that fit. Areas that are all one biome (often ocean) fit hundreds of seeds
-and prove little.
+never below the real count of wrong seeds that fit, for each preset (there, groups at the spacing fit together 1.00 to
+1.04 times as often as independent ones). Areas that are all one biome (often ocean) fit hundreds of seeds and prove
+little.
+
+**After an adversarial review** (each finding checked by a second agent trying to disprove it; no case of a wrong
+biome or a wrong proven seed was found, but several ways the results were used afterwards were fixed):
+
+- *The search as a whole.* When the structures and a proven nether result disagree, the seeds of both sides are
+  kept and the hashed seed, overworld bedrock or biomes decide (one side is wrong: a structure noted in the wrong
+  place, or nether chunks of another world); a structure that doesn't fit the seed found is named. A nether list cut
+  off because too many seeds fit is never used as if complete. In single player the hashed seed is the world's own,
+  so when no candidate has it the structure seeds are known to be wrong and nothing else is tried. A seed the biomes
+  prove is not presented when the overworld bedrock fits another seed perfectly, and seeds Minecraft picks itself
+  are only named as likely when the biomes don't rule them out. After a nether search only the overworld's bedrock
+  is checked for the full seed, so nether chunks made by 1.17 or older no longer count against every seed.
+- *Biomes.* Only the notes worth checking are used (misspelled biome names no longer stop the check), and which
+  places count is chosen from the notes alone: as many as can be far apart, places with more biomes first.
+- *The command-line app* searches the nether bedrock together with the structures, as the mod does, and calls a
+  bedrock fit "found" only with the same rule as the mod (enough bedrock for the number of structure seeds).
+- *The mod* starts a new biome area only where its notes will be the full spacing from the others (about 4,500
+  blocks between first chunks; one more area for large-biome worlds), loads the biome list off the main thread, and
+  lets nether chunks made by older versions make room for others.
 
 ## Things that can't work
 

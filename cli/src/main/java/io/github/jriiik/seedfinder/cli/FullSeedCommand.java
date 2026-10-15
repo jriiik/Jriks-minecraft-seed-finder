@@ -99,6 +99,6 @@ final class FullSeedCommand implements Callable<Integer> {
         }
         int threadCount = Threads.resolve(commandLine, threads);
         FullSeedReport.Biomes biomes = FullSeedReport.Biomes.of(out, observations, minecraft);
-        return FullSeedReport.run(out, data, structureSeeds, evidence, biomes, observations.hashedSeed(), threadCount) ? 0 : 1;
+        return FullSeedReport.run(out, data, structureSeeds, evidence, biomes, observations.hashedSeed(), threadCount).named() ? 0 : 1;
     }
 }

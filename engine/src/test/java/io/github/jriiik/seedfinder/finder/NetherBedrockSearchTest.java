@@ -674,6 +674,25 @@ class NetherBedrockSearchTest {
     }
 
     /**
+     * Two floors only (a hole in each roof), one of them no seed made: the other's candidates are kept, though they
+     * can't be proven, and the chunk that spoils them is named.
+     */
+    @Test
+    void candidatesWithoutTheChunkThatSpoilsThemAreKept() {
+        long worldSeed = 4_242_424_242L;
+        List<BedrockObservation> blocks = new ArrayList<>(chunk(worldSeed, 3, 3, FLOOR_YS));
+        for (BedrockObservation block : randomChunk(new Random(13), -5, 7)) {
+            if (block.y() <= 4) {
+                blocks.add(block);
+            }
+        }
+        NetherBedrockSearch.Finding finding = SEARCH.find(blocks, THREADS, NEVER, (search, pieces) -> { });
+        assertFalse(finding.proven());
+        assertTrue(finding.structureSeeds().contains(Seeds.structureSeed(worldSeed)), finding.toString());
+        assertEquals(List.of(new ChunkPos(-5, 7)), finding.unusableChunks());
+    }
+
+    /**
      * Candidates of a chunk with only a little roof, a few real roof blocks and a few blocks no seed made: whatever the
      * order, the world's structure seed stays among the candidates (a weak chunk may not rule it out).
      */

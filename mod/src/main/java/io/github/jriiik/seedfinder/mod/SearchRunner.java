@@ -40,8 +40,12 @@ final class SearchRunner {
     /** The structure step is the slow part; it is kept while the structures stay the same. */
     private String cachedFor;
     private WorldSeedSearch.StructureStep cachedStep;
-    /** Which seeds fit each biome area, kept so a search after a change only checks what changed (8 KB each). */
-    private final BiomeEvidence.ScanCache biomeCache = new BiomeEvidence.ScanCache(96);
+    /**
+     * Which seeds fit each biome area, kept so a search after a change only checks what changed (8 KB each): room for
+     * every structure seed checked, under every preset, in every area.
+     */
+    private final BiomeEvidence.ScanCache biomeCache = new BiomeEvidence.ScanCache(
+        BiomeEvidence.MAX_STRUCTURE_SEEDS * BiomeEvidence.PRESET_ORDER.size() * (WorldSession.MAX_BIOME_AREAS + 1));
 
     SearchRunner(VersionData data) {
         this.data = data;
@@ -78,6 +82,7 @@ final class SearchRunner {
         int version = session.version();
         List<String> lines = session.notesLines();
         OptionalLong typedSeed = session.typedSeed();
+        boolean genuine = session.hashedSeedIsGenuine();
         // The structure step also searches the nether bedrock, so it is kept while both stay the same.
         String structureKey = session.world() + "\n" + String.join("\n", session.structureLines()) + "\n" + session.bedrock().stream()
             .filter(chunk -> chunk.dimension().equals(NetherBedrockSearch.NETHER))
@@ -109,11 +114,12 @@ final class SearchRunner {
                     : WorldSeedSearch.structureSeeds(data, notes.structures(), notes.bedrock(), threads, () -> false,
                         (done, total) -> percent = (int) (100 * done / total),
                         (search, pieces) -> percent = pieces * 100 / NetherBedrockSearch.PIECES);
-                WorldSeedSearch.Result result = WorldSeedSearch.fullSeed(step, notes.bedrock(), biomes, notes.hashedSeed(), threads);
+                WorldSeedSearch.HashedSeed hashedSeed = new WorldSeedSearch.HashedSeed(notes.hashedSeed(), genuine);
+                WorldSeedSearch.Result result = WorldSeedSearch.fullSeed(step, notes.bedrock(), biomes, hashedSeed, threads);
                 if (result.stage() == WorldSeedSearch.Stage.NO_STRUCTURE_SEED && !typedSeedConfirmed && !notes.structures().isEmpty()) {
                     // One structure that doesn't follow the seed (older chunks, a command, a copy) spoils the search. Not
                     // worth the many searches when the notes already confirm the typed seed (they say which ones don't fit).
-                    result = WorldSeedSearch.withoutMisfit(data, notes.structures(), notes.bedrock(), biomes, notes.hashedSeed(), threads)
+                    result = WorldSeedSearch.withoutMisfit(data, notes.structures(), notes.bedrock(), step.nether(), biomes, hashedSeed, threads)
                         .orElse(result);
                 }
                 return new Outcome(structureKey, step, result);
@@ -130,7 +136,23 @@ final class SearchRunner {
                 }
                 session.setResult(version, outcome == null ? null : outcome.result(),
                     error == null ? null : String.valueOf(error.getCause() != null ? error.getCause().getMessage() : error.getMessage()));
+                if (outcome != null && outcome.step() != null) {
+                    // Nether chunks no seed makes (or that contradict a proven result) free their place for others.
+                    outcome.step().nether().ifPresent(finding -> session.leaveOutBedrock(NetherBedrockSearch.NETHER, unusable(finding)));
+                }
             }, Minecraft.getInstance());
+    }
+
+    /**
+     * The nether chunks to leave out: those no seed fits on their own (searched completely), and those that contradict a
+     * proven result. A chunk that only contradicts unproven candidates is kept: it may be the one that is right.
+     */
+    static List<io.github.jriiik.seedfinder.world.ChunkPos> unusable(NetherBedrockSearch.Finding finding) {
+        return finding.chunks().stream()
+            .filter(report -> report.status() == NetherBedrockSearch.ChunkStatus.FITS_NO_SEED
+                || report.status() == NetherBedrockSearch.ChunkStatus.CONTRADICTS && finding.proven())
+            .map(NetherBedrockSearch.ChunkReport::chunk)
+            .toList();
     }
 
     /** What a search found; all null when there were no structures to search with. */

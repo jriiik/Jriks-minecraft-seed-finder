@@ -10,6 +10,7 @@ import java.nio.file.Path;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
+import java.util.concurrent.CompletableFuture;
 import net.fabricmc.api.ClientModInitializer;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientChunkEvents;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
@@ -46,7 +47,8 @@ public final class SeedFinderClient implements ClientModInitializer {
     static KeyMapping openKey;
     private static SearchRunner runner;
     private static final TypedSeedRunner TYPED_SEEDS = new TypedSeedRunner();
-    private static volatile Set<String> overworldBiomes;
+    /** The overworld biome ids, loaded in the background on first need (a few hundred ms); main thread only. */
+    private static CompletableFuture<Set<String>> overworldBiomes;
     /** The current world's notes; only touched on the game's main thread. */
     private static WorldSession session;
     private static StructureRecognition recognition;
@@ -174,14 +176,20 @@ public final class SeedFinderClient implements ClientModInitializer {
         }
     }
 
-    /** The overworld biome ids of this version (other biomes mean a data pack or mod changes the world). */
+    /**
+     * The overworld biome ids of this version (other biomes mean a data pack or mod changes the world), or null while
+     * they are still being loaded off the main thread (or failed to load).
+     */
     private static Set<String> overworldBiomes() {
-        Set<String> known = overworldBiomes;
-        if (known == null) {
-            known = Set.copyOf(OverworldBiomes.of(MinecraftVersion.V26_3, OverworldBiomes.Preset.NORMAL).parameters().biomes());
-            overworldBiomes = known;
+        if (overworldBiomes == null) {
+            overworldBiomes = CompletableFuture.supplyAsync(
+                () -> Set.copyOf(OverworldBiomes.of(MinecraftVersion.V26_3, OverworldBiomes.Preset.NORMAL).parameters().biomes()));
+            overworldBiomes.exceptionally(error -> {
+                LOG.warn("Could not load the overworld biomes; biomes are not noted", error);
+                return null;
+            });
         }
-        return known;
+        return overworldBiomes.isDone() && !overworldBiomes.isCompletedExceptionally() ? overworldBiomes.join() : null;
     }
 
     /** Notes the chunk's biomes when they are wanted (overworld, not superflat, an area that still needs chunks). */
@@ -190,7 +198,11 @@ public final class SeedFinderClient implements ClientModInitializer {
             || !current.wantsBiomes(chunk.getPos().x(), chunk.getPos().z())) {
             return;
         }
-        switch (BiomeScanner.scan(chunk, overworldBiomes())) {
+        Set<String> known = overworldBiomes();
+        if (known == null) {
+            return; // still loading: the loaded chunks are looked at again every 2 seconds
+        }
+        switch (BiomeScanner.scan(chunk, known)) {
             case BiomeScanner.Read read -> current.offerBiomes(read.chunk());
             case BiomeScanner.Unknown unknown -> current.foreignBiomeSeen(unknown.biome());
         }
@@ -202,7 +214,7 @@ public final class SeedFinderClient implements ClientModInitializer {
             return Optional.empty();
         }
         return data().bedrockDimension(level.dimension().identifier().toString())
-            .filter(dimension -> !dimension.rules().isEmpty() && current.bedrockChunks(dimension.id()) < WorldSession.MAX_BEDROCK_CHUNKS);
+            .filter(dimension -> !dimension.rules().isEmpty() && current.wantsBedrock(dimension.id()));
     }
 
     /** Chunks that were already loaded when collecting was switched on, nearest first. */
