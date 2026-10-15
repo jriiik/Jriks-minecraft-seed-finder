@@ -227,6 +227,32 @@ final class StructureRecognition {
         return Set.copyOf(setAside);
     }
 
+    /**
+     * What rigid recognition knows about a chunk, and what a scan of the loaded chunks around it finds there (for the
+     * in-game test's messages; slow).
+     */
+    String describeRigid(int chunkX, int chunkZ) {
+        if (tracker == null) {
+            return "no rigid tracker here";
+        }
+        View view = new View();
+        RigidRecognizer recognizer = tracker.recognizer();
+        StringBuilder text = new StringBuilder(tracker.describe(chunkX, chunkZ, view));
+        int minY = level.getMinY();
+        int maxY = level.getMaxY();
+        text.append("; scan: ").append(recognizer.scan(view, chunkX - 3, chunkX + 3, chunkZ - 3, chunkZ + 3, minY, maxY, false));
+        Map<Long, int[]> triggers = new HashMap<>();
+        List<RigidRecognizer.Candidate> own = recognizer.candidates(chunkX, chunkZ, (x, z) -> triggers.computeIfAbsent(ChunkPos.pack(x, z),
+            key -> recognizer.triggersOf(view, x, z, minY, maxY)));
+        for (RigidRecognizer.Candidate candidate : own) {
+            RigidRecognizer.Detection d = recognizer.verify(candidate, view, false);
+            if (d != null) {
+                text.append("; fit ").append(d).append(" acceptable ").append(recognizer.acceptable(d, view));
+            }
+        }
+        return text.toString();
+    }
+
     /** A structure was placed by command there: if it was taken for a start, that is taken back. */
     void placed(String set, int chunkX, int chunkZ) {
         Integer setSpacing = spacing.get(set);

@@ -24,7 +24,8 @@ import java.util.function.BooleanSupplier;
  * and most chunks are done then. If one passes, the chunk is judged with the fits of every chunk within
  * {@link #RIVALS} chunks of it, each fit compared over its whole extent: so a wrong fit next to a real structure
  * always meets the real one, complete (fits that share blocks never start farther apart). That needs everything the
- * fits read loaded and read: the chunks within {@link #reach}. Either way the answer is what
+ * fits read loaded and read: the chunks within {@link #rivalReach}, and within {@link #reach} when a small ocean
+ * ruin among them needs the cluster test, which reads farther. Either way the answer is what
  * {@link RigidRecognizer#resolve} gives for the chunk on the fits of the chunks within {@link #RIVALS}, compared in
  * full with the blocks as last read: when a chunk is read again, what was learned from its blocks is learned afresh
  * (blocks that change in a loaded chunk are not seen). Each chunk is judged once. Two accepted fits of one set that are
@@ -59,6 +60,8 @@ public final class RigidTracker {
     private final boolean nether;
     /** How far from a chunk everything must be loaded and read to judge it on its own fits. */
     private final int ownReach;
+    /** How far from a chunk everything must be loaded and read to judge it with its rivals (no cluster test). */
+    private final int rivalReach;
     /** How far from a chunk everything must be loaded and read to judge it with its rivals. */
     private final int reach;
     private final RigidRecognizer.Votes votes;
@@ -102,6 +105,8 @@ public final class RigidTracker {
         boolean[] verified;
         /** Whether a fit here that could start here is acceptable; null until known. */
         Boolean ownAcceptable;
+        /** Judging this chunk needs a cluster test: everything within {@link #reach} must be there. */
+        boolean wide;
         /** The answers of the cluster test. */
         final Map<RigidRecognizer.Detection, Boolean> clusterPiece = new IdentityHashMap<>();
 
@@ -157,7 +162,8 @@ public final class RigidTracker {
         this.recognizer = recognizer;
         this.nether = nether;
         this.ownReach = recognizer.readSpan();
-        this.reach = RIVALS + Math.max(recognizer.readSpan(), recognizer.clusterSpan());
+        this.rivalReach = RIVALS + Math.max(recognizer.span(), recognizer.readSpan());
+        this.reach = Math.max(rivalReach, RIVALS + recognizer.clusterSpan());
         this.votes = recognizer.votes();
     }
 
@@ -165,9 +171,17 @@ public final class RigidTracker {
         return recognizer;
     }
 
-    /** How far from a chunk everything must be loaded and read before a start there is reported. */
+    /**
+     * How far from a chunk everything must be loaded and read before a start there is reported: at most this far
+     * (when a small ocean ruin among the fits needs the cluster test), and at least {@link #rivalReach}.
+     */
     public int reach() {
         return reach;
+    }
+
+    /** How far from a chunk everything must be loaded and read before a start there is reported, when no fit needs the cluster test. */
+    public int rivalReach() {
+        return rivalReach;
     }
 
     /** The trigger blocks of a chunk were read ({@link RigidRecognizer#pack}); call again when it is loaded again. */
@@ -292,6 +306,39 @@ public final class RigidTracker {
         return clusterTest;
     }
 
+    /** What the tracker knows about a chunk (for the log and tests). */
+    public String describe(int chunkX, int chunkZ, BlockView view) {
+        long key = RigidRecognizer.chunkKey(chunkX, chunkZ);
+        Origin origin = origins.get(key);
+        int[] found = triggers.get(key);
+        return "chunk " + chunkX + ", " + chunkZ + ": " + (found == null ? "not read" : found.length + " trigger blocks")
+            + (judged.contains(key) ? ", judged" : "") + (pending.contains(key) ? ", waiting" : "") + (toCheck.contains(key) ? ", to look at" : "")
+            + (job != null && job.key == key ? ", being judged (stage " + job.stage + ")" : "")
+            + ", own chunks around " + (around(key, ownReach, view) ? "ready" : "not ready") + ", rivals "
+            + (around(key, origin != null ? rivalsReach(origin) : rivalReach, view) ? "ready" : "not ready")
+            + (origin == null ? ", no fits counted" : ", " + (origin.candidates == null ? "votes not counted" : origin.candidates.size() + " candidates")
+                + ", own acceptable " + origin.ownAcceptable) + missing(key, view);
+    }
+
+    /** The chunks within reach that are not read or not loaded (for {@link #describe}). */
+    private String missing(long key, BlockView view) {
+        List<String> missing = new ArrayList<>();
+        int chunkX = (int) (key >> 32);
+        int chunkZ = (int) key;
+        Origin origin = origins.get(key);
+        int radius = origin != null ? rivalsReach(origin) : rivalReach;
+        for (int x = chunkX - radius; x <= chunkX + radius; x++) {
+            for (int z = chunkZ - radius; z <= chunkZ + radius; z++) {
+                boolean read = triggers.containsKey(RigidRecognizer.chunkKey(x, z));
+                boolean loaded = view.isLoaded(x, z);
+                if (!read || !loaded) {
+                    missing.add(x + "," + z + (read ? "" : " not read") + (loaded ? "" : " not loaded"));
+                }
+            }
+        }
+        return missing.isEmpty() ? "" : "; missing " + missing;
+    }
+
     /** Chunks waiting to be judged, the one being judged included (for tests and the log). */
     public int pendingCount() {
         return pending.size() + (job == null ? 0 : 1);
@@ -304,7 +351,7 @@ public final class RigidTracker {
      */
     public List<RigidRecognizer.Detection> work(BlockView view, BooleanSupplier timeUp) {
         List<RigidRecognizer.Detection> found = new ArrayList<>();
-        if (job != null && !around(job.key, job.stage == OWN ? ownReach : reach, view)) {
+        if (job != null && !around(job.key, job.stage == OWN ? ownReach : rivalsReach(job.own), view)) {
             // Something unloaded since the last call: go on later. (What was learned so far is kept.)
             stopJob();
         }
@@ -343,7 +390,7 @@ public final class RigidTracker {
             }
             Origin own = origins.get(key);
             boolean withRivals = own != null && Boolean.TRUE.equals(own.ownAcceptable);
-            if (!around(key, withRivals ? reach : ownReach, view)) {
+            if (!around(key, withRivals ? rivalsReach(own) : ownReach, view)) {
                 continue;
             }
             pending.remove(key);
@@ -434,7 +481,7 @@ public final class RigidTracker {
                     // Nothing here can be reported, whatever the rivals.
                     return true;
                 }
-                if (!around(j.key, reach, view)) {
+                if (!around(j.key, rivalsReach(own), view)) {
                     // Rivals are needed, and not everything around is there yet.
                     stopJob();
                     return false;
@@ -485,6 +532,14 @@ public final class RigidTracker {
             default -> {
                 RigidRecognizer.Detection waiting = j.resolution.waitingFor();
                 if (waiting != null && clusterAnswer(waiting) == null) {
+                    if (!j.own.wide) {
+                        // The cluster test reads farther than the fits: from now on this chunk waits for all of it.
+                        j.own.wide = true;
+                        if (!around(j.key, reach, view)) {
+                            stopJob();
+                            return false;
+                        }
+                    }
                     clusterStep(waiting, view);
                     return false;
                 }
@@ -501,6 +556,11 @@ public final class RigidTracker {
                 return true;
             }
         }
+    }
+
+    /** How far everything must be read to judge the chunk of this origin with its rivals. */
+    private int rivalsReach(Origin own) {
+        return own.wide ? reach : rivalReach;
     }
 
     /** The origin of the job's batch at this index (x-major over the chunks within {@link #RIVALS}). */

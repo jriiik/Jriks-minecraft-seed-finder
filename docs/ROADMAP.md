@@ -163,7 +163,7 @@ Typical searches take well under a second. Villages-only searches need more stru
   separation can't both exist, a fit that mostly explains blocks already explained is dropped, and when another
   start chunk fits about as well nothing is noted. A chunk where none of its own fits passes is done once its
   neighbours are read; otherwise the mod judges it with the fits of the chunks within 2 as rivals, once everything
-  they and the cluster test read is loaded (4 chunks around it in the overworld, 3 in the nether), so a wrong fit
+  they read is loaded (3 chunks around it; 4 when a small ocean ruin needs the cluster test), so a wrong fit
   next to a real structure always meets the real one whole.
 
 **What we learned while testing:**
@@ -215,9 +215,11 @@ Typical searches take well under a second. Villages-only searches need more stru
 - *Rigid recognition never holds up the game for long.* It works in small steps (at most 512 blocks read per step,
   1 ms per tick plus whatever the chunk scan leaves of its 2 ms). A chunk where nothing fits is done as soon as its
   neighbours are read; one with a fit waits until everything its rivals and the ocean-ruin cluster test read is
-  loaded (4 chunks around it in the overworld), so the answer never depends on what happens to be loaded. Checked
-  against the first version on worlds made by the game's code: the same answer for every one of about 1.3 million
-  placements compared (votes, fit, cluster test) and in every area, also with anti-xray-style fake blocks. In busy
+  loaded (3 chunks around it, 4 when the cluster test is needed), so the answer never depends on what happens to be
+  loaded. (Minecraft keeps a bit less loaded than the render distance, so a structure is judged once the player is
+  within about render distance minus 5 chunks.) Checked against the first version on worlds made by the game's
+  code: the same answer for every one of about 1.3 million placements compared (votes, fit, cluster test) and in
+  every area, also with anti-xray-style fake blocks. In busy
   areas (villages, temples, ocean ruins) judging takes about 0.4 ms of work per chunk; on an anti-xray server that
   sends 1 in 21 hidden blocks as obsidian and 1 in 21 as mossy cobblestone, about 7 ms, which only means it catches
   up more slowly there.

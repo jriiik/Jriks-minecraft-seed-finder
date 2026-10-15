@@ -62,7 +62,8 @@ the client already received.
     in small pieces: `Votes`, `Verification`, `ClusterTest` (budgeted by work, reusable `ClusterBuffers`),
     `Resolution`) and `RigidTracker` (the mod's chunk-by-chunk driver: a chunk none of whose own
     fits is acceptable is done once its `readSpan` is read; otherwise it is judged with the fits of the chunks within
-    `RIVALS` = 2, once everything within `reach` = `RIVALS + max(readSpan, clusterSpan)` is loaded and read, so the
+    `RIVALS` = 2, once everything within `rivalReach` = `RIVALS + max(span, readSpan)` is loaded and read, or within
+    `reach` = `RIVALS + clusterSpan` when a small ocean ruin in the batch needs the cluster test, so the
     answer never depends on what happens to be loaded; steps of at most `STEP_READS` = 512 block reads under a time
     budget; waiting chunks are looked at again when a chunk around them is read; a chunk read again makes it compare
     the fits around it afresh, its votes too if its trigger blocks changed; `forgetFarFrom` is done in slices by

@@ -257,6 +257,12 @@ public class SeedFinderGameTest implements FabricClientGameTest {
         }
         check(context.computeOnClient(client -> SeedFinderClient.recognition().setAside().contains(placed)),
             "the ruined portal placed with /place structure in chunk " + chunkX + ", " + chunkZ + " looks like a start by its blocks, and is set aside");
+        if (!context.computeOnClient(client -> SeedFinderClient.recognition().setAside().contains(template))) {
+            log("template chunk: " + context.computeOnClient(client -> SeedFinderClient.recognition().describeRigid(templateChunkX, chunkZ)));
+            log("placed spots known: " + context.computeOnClient(client -> SeedFinderClient.session(client).wasPlaced("ruined_portals", templateChunkX, chunkZ))
+                + ", player in chunk " + context.computeOnClient(client -> client.player.chunkPosition()) + ", render distance "
+                + context.computeOnClient(client -> client.options.getEffectiveRenderDistance()));
+        }
         check(context.computeOnClient(client -> SeedFinderClient.recognition().setAside().contains(template)),
             "the portal template placed with /place template in chunk " + templateChunkX + ", " + chunkZ + " looks like a start by its blocks, and is set aside");
         context.waitTicks(40);

@@ -522,8 +522,9 @@ class RigidRecognizerTest {
             // Each call looks at a limited number of waiting chunks; at the end, call until all are decided.
             for (int calls = 0; calls < (i < chunks.size() ? 1 : 1000); calls++) {
                 for (RigidRecognizer.Detection d : tracker.work(world, () -> false)) {
-                    for (int dx = -tracker.reach(); dx <= tracker.reach(); dx++) {
-                        for (int dz = -tracker.reach(); dz <= tracker.reach(); dz++) {
+                    int needed = recognizer.needsClusterCheck(d) ? tracker.reach() : tracker.rivalReach();
+                    for (int dx = -needed; dx <= needed; dx++) {
+                        for (int dz = -needed; dz <= needed; dz++) {
                             assertTrue(scanned.contains(RigidRecognizer.chunkKey(d.chunkX() + dx, d.chunkZ() + dz)), d + " decided too early");
                         }
                     }
@@ -968,7 +969,45 @@ class RigidRecognizerTest {
         assertEquals(1, recognizer.readSpan());
         assertEquals(2, recognizer.clusterSpan());
         assertEquals(RigidTracker.RIVALS + 2, new RigidTracker(recognizer, false).reach());
+        assertEquals(RigidTracker.RIVALS + 1, new RigidTracker(recognizer, false).rivalReach());
         assertEquals(0, new RigidRecognizer(poses(pyramid(), RigidKind.DESERT_PYRAMID, "pyramid"), rules(Set.of())).clusterSpan());
+
+        // Only a fit that needs the cluster test waits for everything it reads; others are judged sooner.
+        List<int[]> above = new ArrayList<>();
+        for (int x = -14; x <= 14; x++) {
+            above.add(new int[] {x, 1, 0});
+        }
+        List<RigidLayout> layouts = new ArrayList<>(List.of(new Template(line, above).layout(RigidKind.OCEAN_RUIN, "line")));
+        layouts.addAll(poses(portal(), RigidKind.RUINED_PORTAL, "portal"));
+        recognizer = new RigidRecognizer(layouts, rules(Set.of()));
+        World world = new World().load(-12, 12);
+        world.stoneTop = 39;
+        world.waterTop = 62;
+        world.place(portal(), 0, 70, 0, "minecraft:air");
+        world.place(new Template(line, above), 5 * 16, 40, 0, null);
+        RigidTracker tracker = new RigidTracker(recognizer, false);
+        int near = tracker.rivalReach();
+        for (int x = -near; x <= 5 + near; x++) {
+            for (int z = -near; z <= near; z++) {
+                tracker.chunkScanned(x, z, recognizer.triggersOf(world, x, z, MIN_Y, MAX_Y));
+            }
+        }
+        List<RigidRecognizer.Detection> found = new ArrayList<>();
+        for (int i = 0; i < 200; i++) {
+            found.addAll(tracker.work(world, () -> false));
+        }
+        assertEquals(List.of("RUINED_PORTAL 0,0 y 70"), found(found));
+        for (int x = -tracker.reach(); x <= 5 + tracker.reach(); x++) {
+            for (int z = -tracker.reach(); z <= tracker.reach(); z++) {
+                if (Math.abs(z) > near || x < -near || x > 5 + near) {
+                    tracker.chunkScanned(x, z, recognizer.triggersOf(world, x, z, MIN_Y, MAX_Y));
+                }
+            }
+        }
+        for (int i = 0; i < 200; i++) {
+            found.addAll(tracker.work(world, () -> false));
+        }
+        assertEquals(List.of("OCEAN_RUIN 5,0 y 40", "RUINED_PORTAL 0,0 y 70"), found(found));
     }
 
     @Test
