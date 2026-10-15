@@ -57,10 +57,15 @@ the client already received.
     corners, via tables by trigger class, position in the chunk and chunk offset; `verify` leaves out only fits that
     can never be accepted or be a rival; `acceptable` = thresholds, empty spots, ocean water, biome in 3 x 3 cells
     +-16 blocks; `isClusterPiece` by voting; `resolve` strongest first: separation, overlap >= 0.3, ambiguity; reports
-    only chunks where the set can start) and `RigidTracker` (the mod's chunk-by-chunk driver: judges a chunk with
-    the fits of the chunks within `RIVALS` = 2, once everything within `RIVALS + span` is loaded and read; small
-    steps under a time budget). Keep the thresholds unless a measurement on chunks made by the game's code shows a
-    change is safe.
+    only chunks where the set can start; each step also comes in small pieces: `Votes`, `Verification`,
+    `ClusterTest`, `Resolution`) and `RigidTracker` (the mod's chunk-by-chunk driver: a chunk none of whose own
+    fits is acceptable is done once its `readSpan` is read; otherwise it is judged with the fits of the chunks within
+    `RIVALS` = 2, once everything within `reach` = `RIVALS + max(readSpan, clusterSpan)` is loaded and read, so the
+    answer never depends on what happens to be loaded; steps of at most `STEP_READS` = 512 block reads under a time
+    budget; waiting chunks are looked at again when a chunk around them is read). Any change must give the same
+    answers: compare with the committed version on chunks made by the game's code (scratch probe, every vote count,
+    fit, cluster test and tracker answer). Keep the thresholds unless a measurement on chunks made by the game's
+    code shows a change is safe.
 - `cli/`: picocli app `seedfinder` (`find`, `full-seed`, `typed-seed`, `structure-seed`, `locate`, `bedrock`,
   `structures`, `versions`).
 - `mod/`: Fabric client mod for 26.3 (Loom, non-remapping, Mojang names; the engine is nested as jar-in-jar, Gson
@@ -77,8 +82,9 @@ the client already received.
   templates from the game jar placed as `rigid_structures.json` says (turned with the game's
   `StructureTemplate.transform`), and pyramids, temples and huts by running the game's own piece code in a
   `SyntheticLevel` (an in-memory `WorldGenLevel`; no reflection or proxies). `StructureRecognition` scans loaded
-  chunks for anchor and trigger blocks on the main thread (2 ms per tick, resumable scans; rigid judging gets at most
-  1 ms of it, one tracker per dimension) and notes recognized starts; `WorldSession`
+  chunks for anchor and trigger blocks on the main thread (2 ms per tick, resumable scans; rigid judging gets 1 ms
+  of it first and whatever is left at the end, one tracker per dimension; the rigid recognizers are made in the
+  background with the layouts) and notes recognized starts; `WorldSession`
   keys notes by address + hashed seed (`WorldIdentity.key`), checks recognized starts against all notes of their
   placement region, and persists starts not to note again (`removed_structures`: removed by the player, placed
   with /place, or contradicted). `WorldSeedSearch.withoutMisfit` retries a failed search leaving out one structure

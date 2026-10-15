@@ -1,87 +1,171 @@
 package io.github.jriiik.seedfinder.recognize;
 
-import java.util.ArrayDeque;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.IdentityHashMap;
+import java.util.Iterator;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
-import java.util.Optional;
 import java.util.Set;
 import java.util.function.BooleanSupplier;
 
 /**
  * Runs the {@link RigidRecognizer} on a world that loads chunk by chunk, a little at a time. The caller reports the
  * trigger blocks of each chunk as it reads it ({@link #chunkScanned}); the tracker then judges each chunk that may
- * hold a start once everything around it is loaded and read ({@link #work}).
+ * hold a start ({@link #work}), in steps that each read at most a few hundred blocks, so a time budget is never
+ * overrun by much.
  *
- * <p>A chunk is judged with the fits of every chunk within {@link #RIVALS} chunks of it, each fit compared over its
- * whole extent: so a wrong fit next to a real structure always meets the real one, complete (fits that share blocks
- * never start farther apart). That needs the chunks within {@code RIVALS + span} of the judged chunk loaded. Each chunk
- * is judged once. Two accepted fits of one set that are farther apart than that but closer than the set's separation
- * can't both be starts; unlike a scan of one big window, which keeps the stronger, the tracker reports both, and
- * {@link RecognizedStarts} then finds them in one placement region and reports neither: a miss, never a wrong start.
+ * <p>A chunk is first judged on its own fits: those whose set can start there are verified and tested
+ * ({@link RigidRecognizer#acceptable}); that needs only the chunks within {@link RigidRecognizer#readSpan} of it,
+ * and most chunks are done then. If one passes, the chunk is judged with the fits of every chunk within
+ * {@link #RIVALS} chunks of it, each fit compared over its whole extent: so a wrong fit next to a real structure
+ * always meets the real one, complete (fits that share blocks never start farther apart). That needs everything the
+ * fits read loaded and read: the chunks within {@link #reach}. Either way the answer is the one a scan of a window
+ * holding all those chunks gives for the chunk. Each chunk is judged once. Two accepted fits of one set that are
+ * farther apart than {@link #RIVALS} but closer than the set's separation can't both be starts; unlike a scan of one
+ * big window, which keeps the stronger, the tracker reports both, and {@link RecognizedStarts} then finds them in one
+ * placement region and reports neither: a miss, never a wrong start.
  */
 public final class RigidTracker {
 
     /** Rival fits are those whose start chunk is within this many chunks of the judged one. */
     public static final int RIVALS = 2;
-    /** Chunks looked at per call when searching for one that is ready to be judged. */
+    /** Blocks read per step at most. */
+    static final int STEP_READS = 512;
+    /** Trigger blocks counted per step at most. */
+    static final int STEP_TRIGGERS = 512;
+    /** Chunks looked at per call when searching for one that can be worked on. */
     private static final int READY_CHECKS = 64;
+    /**
+     * Waiting chunks looked at again per call although nothing new was read around them (a chunk may load again
+     * without being read again).
+     */
+    private static final int IDLE_CHECKS = 4;
+
+    private static final int OWN = 0;
+    private static final int GATHER = 1;
+    private static final int VERIFY = 2;
+    private static final int RESOLVE = 3;
 
     private final RigidRecognizer recognizer;
     private final boolean nether;
-    /** How far from a judged chunk everything must be loaded and read. */
+    /** How far from a chunk everything must be loaded and read to judge it on its own fits. */
+    private final int ownReach;
+    /** How far from a chunk everything must be loaded and read to judge it with its rivals. */
     private final int reach;
+    private final RigidRecognizer.Votes votes;
     private final Map<Long, int[]> triggers = new HashMap<>();
-    /** Chunks that may hold a start and are not judged yet, in the order they came up. */
-    private final ArrayDeque<Long> pending = new ArrayDeque<>();
-    private final Set<Long> pendingSet = new HashSet<>();
+    /** Chunks that may hold a start and are not judged yet (in the order they are looked at when idle). */
+    private final LinkedHashSet<Long> pending = new LinkedHashSet<>();
+    /** Waiting chunks to look at: a chunk around them was read since they were last looked at. */
+    private final LinkedHashSet<Long> toCheck = new LinkedHashSet<>();
     private final Set<Long> judged = new HashSet<>();
-    private final Map<Long, List<RigidRecognizer.Candidate>> candidates = new HashMap<>();
-    private final Map<RigidRecognizer.Candidate, Optional<RigidRecognizer.Detection>> verified = new HashMap<>();
-    /**
-     * The chunk being judged (when {@code jobCandidates} is not null): the fits around it are gathered one chunk at a
-     * time, then verified one by one, across as many calls as needed.
-     */
-    private long job;
-    private List<RigidRecognizer.Candidate> jobCandidates;
-    private int jobGathered;
-    private int jobNext;
+    /** What is known about the fits with their origin on each chunk's corner. */
+    private final Map<Long, Origin> origins = new HashMap<>();
+    private Job job;
+    private int idleChecks;
+    /** The piece of work in progress: votes for an origin, a fit's comparison, a cluster test. */
+    private Origin voting;
+    private int votingSource;
+    private int votingNext;
+    private RigidRecognizer.Verification verification;
+    private Origin verifyingOrigin;
+    private int verifyingIndex;
+    private RigidRecognizer.ClusterTest clusterTest;
+
+    /** The fits with their origin on one chunk's corner. */
+    private static final class Origin {
+        final long key;
+        /** In the order {@link RigidRecognizer#candidates} gives them; null until the votes are counted. */
+        List<RigidRecognizer.Candidate> candidates;
+        /** For each candidate, once verified: the fit, or null when it cannot matter. */
+        RigidRecognizer.Detection[] detections;
+        boolean[] verified;
+        /** Whether a fit here that could start here is acceptable; null until known. */
+        Boolean ownAcceptable;
+        /** The answers of the cluster test. */
+        final Map<RigidRecognizer.Detection, Boolean> clusterPiece = new IdentityHashMap<>();
+
+        Origin(long key) {
+            this.key = key;
+        }
+
+        void voted(List<RigidRecognizer.Candidate> candidates) {
+            this.candidates = candidates;
+            detections = new RigidRecognizer.Detection[candidates.size()];
+            verified = new boolean[candidates.size()];
+        }
+    }
+
+    /** The chunk being judged, and how far along. */
+    private static final class Job {
+        final long key;
+        final Origin own;
+        int stage;
+        int index;
+        int candidate;
+        RigidRecognizer.Resolution resolution;
+
+        Job(long key, Origin own, int stage) {
+            this.key = key;
+            this.own = own;
+            this.stage = stage;
+        }
+    }
 
     public RigidTracker(RigidRecognizer recognizer, boolean nether) {
         this.recognizer = recognizer;
         this.nether = nether;
-        this.reach = RIVALS + recognizer.span();
+        this.ownReach = recognizer.readSpan();
+        this.reach = RIVALS + Math.max(recognizer.readSpan(), recognizer.clusterSpan());
+        this.votes = recognizer.votes();
     }
 
     public RigidRecognizer recognizer() {
         return recognizer;
     }
 
-    /** How far from a chunk everything must be loaded and read before it is judged. */
+    /** How far from a chunk everything must be loaded and read before a start there is reported. */
     public int reach() {
         return reach;
     }
 
     /** The trigger blocks of a chunk were read ({@link RigidRecognizer#pack}); call again when it is loaded again. */
     public void chunkScanned(int chunkX, int chunkZ, int[] found) {
-        int span = recognizer.span();
-        if (triggers.put(RigidRecognizer.chunkKey(chunkX, chunkZ), found.clone()) != null) {
-            // Read again: the votes of the chunks around it are counted afresh.
+        long key = RigidRecognizer.chunkKey(chunkX, chunkZ);
+        int[] before = triggers.put(key, found.clone());
+        if (before == null || !Arrays.equals(before, found)) {
+            // The votes of the origins around it change: they are counted afresh when needed.
+            int span = recognizer.span();
+            boolean dropped = false;
             for (int x = chunkX - span; x <= chunkX + span; x++) {
                 for (int z = chunkZ - span; z <= chunkZ + span; z++) {
-                    candidates.remove(RigidRecognizer.chunkKey(x, z));
+                    dropped |= origins.remove(RigidRecognizer.chunkKey(x, z)) != null;
                 }
+            }
+            if (dropped && job != null && near(job.key, chunkX, chunkZ, reach)) {
+                stopJob();
             }
         }
         if (found.length > 0) {
+            int span = recognizer.span();
             for (int x = chunkX - span; x <= chunkX + span; x++) {
                 for (int z = chunkZ - span; z <= chunkZ + span; z++) {
-                    long key = RigidRecognizer.chunkKey(x, z);
-                    if (!judged.contains(key) && pendingSet.add(key)) {
-                        pending.add(key);
+                    long around = RigidRecognizer.chunkKey(x, z);
+                    if (!judged.contains(around) && (job == null || job.key != around)) {
+                        pending.add(around);
                     }
+                }
+            }
+        }
+        for (int x = chunkX - reach; x <= chunkX + reach; x++) {
+            for (int z = chunkZ - reach; z <= chunkZ + reach; z++) {
+                long around = RigidRecognizer.chunkKey(x, z);
+                if (pending.contains(around)) {
+                    toCheck.add(around);
                 }
             }
         }
@@ -89,127 +173,323 @@ public final class RigidTracker {
 
     /** Forgets what was found more than {@code radius} chunks from the given chunk (in either direction). */
     public void forgetFarFrom(int chunkX, int chunkZ, int radius) {
-        triggers.keySet().removeIf(key -> far(key, chunkX, chunkZ, radius));
-        candidates.keySet().removeIf(key -> far(key, chunkX, chunkZ, radius));
-        verified.keySet().removeIf(candidate -> Math.abs(candidate.chunkX() - chunkX) > radius || Math.abs(candidate.chunkZ() - chunkZ) > radius);
-        pending.removeIf(key -> far(key, chunkX, chunkZ, radius));
-        pendingSet.removeIf(key -> far(key, chunkX, chunkZ, radius));
-        if (jobCandidates != null && far(job, chunkX, chunkZ, radius)) {
-            jobCandidates = null;
+        triggers.keySet().removeIf(key -> !near(key, chunkX, chunkZ, radius));
+        pending.removeIf(key -> !near(key, chunkX, chunkZ, radius));
+        toCheck.removeIf(key -> !near(key, chunkX, chunkZ, radius));
+        judged.removeIf(key -> !near(key, chunkX, chunkZ, radius));
+        origins.keySet().removeIf(key -> !near(key, chunkX, chunkZ, radius));
+        if (job != null && !near(job.key, chunkX, chunkZ, radius)) {
+            job = null;
+            voting = null;
+            verification = null;
+            verifyingOrigin = null;
+            clusterTest = null;
         }
     }
 
-    private static boolean far(long key, int chunkX, int chunkZ, int radius) {
-        return Math.abs((int) (key >> 32) - chunkX) > radius || Math.abs((int) key - chunkZ) > radius;
+    private static boolean near(long key, int chunkX, int chunkZ, int radius) {
+        return Math.abs((int) (key >> 32) - chunkX) <= radius && Math.abs((int) key - chunkZ) <= radius;
     }
 
-    /** Chunks waiting to be judged (for tests and the log). */
+    /** Chunks waiting to be judged, the one being judged included (for tests and the log). */
     public int pendingCount() {
-        return pending.size();
+        return pending.size() + (job == null ? 0 : 1);
     }
 
     /**
-     * Does work until {@code timeUp} says stop or nothing is ready: picks a chunk whose surroundings are loaded and
-     * read, gathers and verifies the fits around it, and decides; each step is small, and a chunk may take several
-     * calls. Returns the fits accepted in the chunks decided.
+     * Does work until {@code timeUp} says stop or nothing can be done: picks a chunk whose surroundings are loaded
+     * and read and judges it, one small step at a time (a chunk may take many calls). Returns the fits accepted in
+     * the chunks decided.
      */
     public List<RigidRecognizer.Detection> work(BlockView view, BooleanSupplier timeUp) {
         List<RigidRecognizer.Detection> found = new ArrayList<>();
-        if (jobCandidates != null && !ready(job, view)) {
-            // Something unloaded since the last call: decide later. (What was verified stays valid.)
-            jobCandidates = null;
-            if (pendingSet.add(job)) {
-                pending.add(job);
-            }
+        if (job != null && !around(job.key, job.stage == OWN ? ownReach : reach, view)) {
+            // Something unloaded since the last call: go on later. (What was learned so far is kept.)
+            stopJob();
         }
-        int side = 2 * RIVALS + 1;
+        idleChecks = 0;
         while (!timeUp.getAsBoolean()) {
-            if (jobCandidates == null) {
+            if (job == null) {
                 if (!startJob(view, timeUp)) {
                     break;
                 }
-            } else if (jobGathered < side * side) {
-                int x = (int) (job >> 32) + jobGathered / side - RIVALS;
-                int z = (int) job + jobGathered % side - RIVALS;
-                jobGathered++;
-                jobCandidates.addAll(candidatesOf(RigidRecognizer.chunkKey(x, z)));
-            } else if (jobNext < jobCandidates.size()) {
-                RigidRecognizer.Candidate candidate = jobCandidates.get(jobNext++);
-                if (!verified.containsKey(candidate)) {
-                    verified.put(candidate, Optional.ofNullable(recognizer.verify(candidate, view, nether)));
-                }
-            } else {
-                int chunkX = (int) (job >> 32);
-                int chunkZ = (int) job;
-                List<RigidRecognizer.Detection> batch = jobCandidates.stream().map(verified::get).flatMap(Optional::stream).toList();
-                for (RigidRecognizer.Detection d : recognizer.resolve(batch, view, d -> recognizer.isClusterPiece(d, view))) {
-                    if (d.chunkX() == chunkX && d.chunkZ() == chunkZ) {
-                        found.add(d);
-                    }
-                }
-                judged.add(job);
-                jobCandidates = null;
+            } else if (step(view, found)) {
+                finishJob();
             }
         }
         return found;
     }
 
-    /** Finds a chunk ready to be judged and starts on it; false when none is ready (or the time is up). */
+    /** Finds a chunk that can be worked on and starts on it; false when there is none (or the time is up). */
     private boolean startJob(BlockView view, BooleanSupplier timeUp) {
-        int checks = Math.min(READY_CHECKS, pending.size());
-        for (int i = 0; i < checks; i++) {
+        for (int i = 0; i < READY_CHECKS; i++) {
             if (i > 0 && timeUp.getAsBoolean()) {
                 return false;
             }
-            long key = pending.poll();
-            List<RigidRecognizer.Candidate> own = candidatesOf(key);
-            if (own != null && own.stream().noneMatch(this::couldStart)) {
-                // Nothing here could ever be reported.
-                pendingSet.remove(key);
-                judged.add(key);
-                continue;
-            }
-            if (own == null || !ready(key, view)) {
+            Long key = poll(toCheck);
+            if (key == null) {
+                if (idleChecks >= IDLE_CHECKS || pending.isEmpty()) {
+                    return false;
+                }
+                idleChecks++;
+                key = poll(pending);
                 pending.add(key);
+            }
+            if (!pending.contains(key)) {
                 continue;
             }
-            pendingSet.remove(key);
-            job = key;
-            jobCandidates = new ArrayList<>();
-            jobGathered = 0;
-            jobNext = 0;
+            Origin own = origins.get(key);
+            boolean withRivals = own != null && Boolean.TRUE.equals(own.ownAcceptable);
+            if (!around(key, withRivals ? reach : ownReach, view)) {
+                continue;
+            }
+            pending.remove(key);
+            if (own == null) {
+                own = new Origin(key);
+                origins.put(key, own);
+            }
+            job = new Job(key, own, withRivals ? GATHER : OWN);
             return true;
         }
         return false;
+    }
+
+    private static Long poll(LinkedHashSet<Long> set) {
+        Iterator<Long> first = set.iterator();
+        if (!first.hasNext()) {
+            return null;
+        }
+        Long key = first.next();
+        first.remove();
+        return key;
+    }
+
+    /** The job waits again (for chunks around it to load, or to be counted afresh). */
+    private void stopJob() {
+        pending.add(job.key);
+        job = null;
+    }
+
+    /** The chunk is judged: what only its judging needed is forgotten. */
+    private void finishJob() {
+        long key = job.key;
+        judged.add(key);
+        job = null;
+        int x = (int) (key >> 32);
+        int z = (int) key;
+        for (int ox = x - RIVALS; ox <= x + RIVALS; ox++) {
+            for (int oz = z - RIVALS; oz <= z + RIVALS; oz++) {
+                long origin = RigidRecognizer.chunkKey(ox, oz);
+                if (origins.containsKey(origin) && !anyPendingNear(ox, oz)) {
+                    origins.remove(origin);
+                }
+            }
+        }
+    }
+
+    private boolean anyPendingNear(int chunkX, int chunkZ) {
+        for (int x = chunkX - RIVALS; x <= chunkX + RIVALS; x++) {
+            for (int z = chunkZ - RIVALS; z <= chunkZ + RIVALS; z++) {
+                if (pending.contains(RigidRecognizer.chunkKey(x, z))) {
+                    return true;
+                }
+            }
+        }
+        return false;
+    }
+
+    /** One small piece of the current job; true when the chunk is decided. */
+    private boolean step(BlockView view, List<RigidRecognizer.Detection> found) {
+        Job j = job;
+        int side = 2 * RIVALS + 1;
+        switch (j.stage) {
+            case OWN -> {
+                Origin own = j.own;
+                if (own.candidates == null) {
+                    vote(own);
+                    return false;
+                }
+                if (own.ownAcceptable == null) {
+                    while (j.candidate < own.candidates.size() && !couldStart(own.candidates.get(j.candidate))) {
+                        j.candidate++;
+                    }
+                    if (j.candidate < own.candidates.size()) {
+                        int i = j.candidate;
+                        if (!own.verified[i]) {
+                            verify(own, i, view);
+                        } else {
+                            j.candidate++;
+                            if (own.detections[i] != null && recognizer.acceptable(own.detections[i], view)) {
+                                own.ownAcceptable = true;
+                            }
+                        }
+                        return false;
+                    }
+                    own.ownAcceptable = false;
+                }
+                if (!own.ownAcceptable) {
+                    // Nothing here can be reported, whatever the rivals.
+                    return true;
+                }
+                if (!around(j.key, reach, view)) {
+                    // Rivals are needed, and not everything around is there yet.
+                    stopJob();
+                    return false;
+                }
+                j.stage = GATHER;
+                j.index = 0;
+                return false;
+            }
+            case GATHER -> {
+                while (j.index < side * side) {
+                    Origin origin = origin(j, j.index);
+                    if (origin.candidates == null) {
+                        vote(origin);
+                        return false;
+                    }
+                    j.index++;
+                }
+                j.stage = VERIFY;
+                j.index = 0;
+                j.candidate = 0;
+                return false;
+            }
+            case VERIFY -> {
+                while (j.index < side * side) {
+                    Origin origin = origin(j, j.index);
+                    while (j.candidate < origin.candidates.size()) {
+                        if (!origin.verified[j.candidate]) {
+                            verify(origin, j.candidate, view);
+                            return false;
+                        }
+                        j.candidate++;
+                    }
+                    j.index++;
+                    j.candidate = 0;
+                }
+                List<RigidRecognizer.Detection> batch = new ArrayList<>();
+                for (int i = 0; i < side * side; i++) {
+                    for (RigidRecognizer.Detection d : origin(j, i).detections) {
+                        if (d != null) {
+                            batch.add(d);
+                        }
+                    }
+                }
+                j.resolution = recognizer.resolution(batch);
+                j.stage = RESOLVE;
+                return false;
+            }
+            default -> {
+                RigidRecognizer.Detection waiting = j.resolution.waitingFor();
+                if (waiting != null && clusterAnswer(waiting) == null) {
+                    clusterStep(waiting, view);
+                    return false;
+                }
+                if (!j.resolution.step(view, this::clusterAnswer)) {
+                    return false;
+                }
+                int chunkX = (int) (j.key >> 32);
+                int chunkZ = (int) j.key;
+                for (RigidRecognizer.Detection d : j.resolution.result()) {
+                    if (d.chunkX() == chunkX && d.chunkZ() == chunkZ) {
+                        found.add(d);
+                    }
+                }
+                return true;
+            }
+        }
+    }
+
+    /** The origin of the job's batch at this index (x-major over the chunks within {@link #RIVALS}). */
+    private Origin origin(Job j, int index) {
+        int side = 2 * RIVALS + 1;
+        long key = RigidRecognizer.chunkKey((int) (j.key >> 32) + index / side - RIVALS, (int) j.key + index % side - RIVALS);
+        Origin origin = origins.get(key);
+        if (origin == null) {
+            origin = new Origin(key);
+            origins.put(key, origin);
+        }
+        return origin;
     }
 
     private boolean couldStart(RigidRecognizer.Candidate candidate) {
         return recognizer.rules(candidate.layout().kind()).couldStartIn(candidate.chunkX(), candidate.chunkZ());
     }
 
-    /** Whether everything within {@link #reach} chunks is loaded and read. */
-    private boolean ready(long key, BlockView view) {
+    /** Counts up to {@link #STEP_TRIGGERS} votes for an origin (its chunks within span are read). */
+    private void vote(Origin origin) {
+        int span = recognizer.span();
+        int side = 2 * span + 1;
+        int originX = (int) (origin.key >> 32);
+        int originZ = (int) origin.key;
+        if (voting != origin) {
+            voting = origin;
+            votingSource = 0;
+            votingNext = 0;
+            votes.start(originX, originZ);
+        }
+        int budget = STEP_TRIGGERS;
+        while (votingSource < side * side && budget > 0) {
+            int sourceX = originX + votingSource / side - span;
+            int sourceZ = originZ + votingSource % side - span;
+            int[] found = triggers.get(RigidRecognizer.chunkKey(sourceX, sourceZ));
+            int to = Math.min(found.length, votingNext + budget);
+            votes.add(sourceX, sourceZ, found, votingNext, to);
+            budget -= Math.max(1, to - votingNext);
+            votingNext = to;
+            if (votingNext == found.length) {
+                votingSource++;
+                votingNext = 0;
+            }
+        }
+        if (votingSource == side * side) {
+            origin.voted(votes.candidates());
+            voting = null;
+        }
+    }
+
+    /** Compares up to {@link #STEP_READS} blocks of a fit. */
+    private void verify(Origin origin, int index, BlockView view) {
+        if (verifyingOrigin != origin || verifyingIndex != index || verification == null) {
+            verification = recognizer.verification(origin.candidates.get(index), nether);
+            verifyingOrigin = origin;
+            verifyingIndex = index;
+        }
+        if (verification.step(view, STEP_READS)) {
+            origin.detections[index] = verification.result();
+            origin.verified[index] = true;
+            verification = null;
+            verifyingOrigin = null;
+        }
+    }
+
+    private Boolean clusterAnswer(RigidRecognizer.Detection d) {
+        Origin origin = origins.get(RigidRecognizer.chunkKey(d.chunkX(), d.chunkZ()));
+        return origin == null ? null : origin.clusterPiece.get(d);
+    }
+
+    /** One step of the cluster test of a fit in the batch. */
+    private void clusterStep(RigidRecognizer.Detection d, BlockView view) {
+        if (clusterTest == null || clusterTest.detection() != d) {
+            clusterTest = recognizer.clusterTest(d);
+        }
+        if (clusterTest.step(view, STEP_READS)) {
+            origins.get(RigidRecognizer.chunkKey(d.chunkX(), d.chunkZ())).clusterPiece.put(d, clusterTest.isClusterPiece());
+            clusterTest = null;
+        }
+    }
+
+    /** Whether everything within {@code radius} chunks is loaded and read. */
+    private boolean around(long key, int radius, BlockView view) {
         int chunkX = (int) (key >> 32);
         int chunkZ = (int) key;
-        for (int x = chunkX - reach; x <= chunkX + reach; x++) {
-            for (int z = chunkZ - reach; z <= chunkZ + reach; z++) {
+        for (int x = chunkX - radius; x <= chunkX + radius; x++) {
+            for (int z = chunkZ - radius; z <= chunkZ + radius; z++) {
                 if (!triggers.containsKey(RigidRecognizer.chunkKey(x, z)) || !view.isLoaded(x, z)) {
                     return false;
                 }
             }
         }
         return true;
-    }
-
-    /** The fits with their origin on this chunk's corner; null until the chunks around it are read. */
-    private List<RigidRecognizer.Candidate> candidatesOf(long key) {
-        List<RigidRecognizer.Candidate> known = candidates.get(key);
-        if (known == null) {
-            known = recognizer.candidates((int) (key >> 32), (int) key, (x, z) -> triggers.get(RigidRecognizer.chunkKey(x, z)));
-            if (known != null) {
-                candidates.put(key, known);
-            }
-        }
-        return known;
     }
 }

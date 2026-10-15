@@ -14,6 +14,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.function.Function;
 import java.util.function.Predicate;
 
 /**
@@ -113,6 +114,7 @@ public final class RigidRecognizer {
         private final int skipped;
         private final double balanced;
         private final boolean classesCovered;
+        private final boolean spotsLookedAt;
         private final int emptyChecked;
         private final int emptyFilled;
         private final int emptyWater;
@@ -121,14 +123,15 @@ public final class RigidRecognizer {
         /** The matched blocks' positions ({@link #position}), sorted. */
         final long[] matchedPositions;
 
-        Detection(Candidate candidate, int matched, int checked, int skipped, double balanced, boolean classesCovered, int emptyChecked,
-                  int emptyFilled, int emptyWater, int topsChecked, int topsOpen, long[] matchedPositions) {
+        Detection(Candidate candidate, int matched, int checked, int skipped, double balanced, boolean classesCovered, boolean spotsLookedAt,
+                  int emptyChecked, int emptyFilled, int emptyWater, int topsChecked, int topsOpen, long[] matchedPositions) {
             this.candidate = candidate;
             this.matched = matched;
             this.checked = checked;
             this.skipped = skipped;
             this.balanced = balanced;
             this.classesCovered = classesCovered;
+            this.spotsLookedAt = spotsLookedAt;
             this.emptyChecked = emptyChecked;
             this.emptyFilled = emptyFilled;
             this.emptyWater = emptyWater;
@@ -194,6 +197,14 @@ public final class RigidRecognizer {
             return classesCovered;
         }
 
+        /**
+         * Whether the empty spots and (ocean ruins) column tops were looked at: only for fits that pass the thresholds
+         * on their blocks, since for others they can't change anything.
+         */
+        public boolean spotsLookedAt() {
+            return spotsLookedAt;
+        }
+
         /** Empty spots of the layout that were seen, those holding the structure's own material, and water. */
         public int emptyChecked() {
             return emptyChecked;
@@ -227,11 +238,12 @@ public final class RigidRecognizer {
 
         @Override
         public String toString() {
-            return String.format(java.util.Locale.ROOT,
-                "%s start chunk (%d, %d) origin (%d, %d, %d) %s: matched %d/%d (%.2f) balanced %.2f, skipped %d, empty filled %d/%d, water %d,"
-                    + " open tops %d/%d, votes %d",
-                kind().structureSet(), chunkX(), chunkZ(), x(), y(), z(), layout().variant(), matched, checked, score(), balanced, skipped,
-                emptyFilled, emptyChecked, emptyWater, topsOpen, topsChecked, candidate.votes());
+            String spots = spotsLookedAt ? String.format(java.util.Locale.ROOT, "empty filled %d/%d, water %d, open tops %d/%d", emptyFilled,
+                emptyChecked, emptyWater, topsOpen, topsChecked) : "empty spots not looked at";
+            return String.format(java.util.Locale.ROOT, "%s start chunk (%d, %d) origin (%d, %d, %d) %s: matched %d/%d (%.2f) balanced %.2f, skipped %d, %s,"
+                    + " votes %d",
+                kind().structureSet(), chunkX(), chunkZ(), x(), y(), z(), layout().variant(), matched, checked, score(), balanced, skipped, spots,
+                candidate.votes());
         }
     }
 
@@ -247,12 +259,16 @@ public final class RigidRecognizer {
     /** How many chunks from its origin chunk a layout's blocks reach. */
     private final int span;
     private final int side;
+    /** How many chunks from its origin chunk judging a fit on its own reads: blocks, empty spots, biome cells. */
+    private final int readSpan;
+    /** How many chunks from a fit's origin chunk the cluster test reads. */
+    private final int clusterSpan;
     /**
      * For each trigger class, position within the chunk ((x & 15) * 16 + (z & 15)) and chunk offset from the origin
-     * chunk: the layout entries (layout index << 16 | entry index) that put the origin on a chunk corner.
+     * chunk: the layout entries that put the origin on a chunk corner, as layout index << 12 | (dy & 0xFFF).
      */
     private final int[][] table;
-    private ClusterIndex clusterIndex;
+    private final ClusterIndex clusterIndex;
 
     /** A recognizer for one dimension: the kinds whose structure sets appear there, with their rules from the data. */
     public static RigidRecognizer create(List<RigidLayout> layouts, VersionData data, String dimension) {
@@ -271,7 +287,7 @@ public final class RigidRecognizer {
         return new RigidRecognizer(layouts, rules);
     }
 
-    /** Layouts of kinds without rules are left out. */
+    /** Layouts of kinds without rules are left out. (Takes some tens of milliseconds: make it off the game's thread.) */
     public RigidRecognizer(List<RigidLayout> layouts, Map<RigidKind, Rules> rules) {
         this.rules = rules.isEmpty() ? Map.of() : Collections.unmodifiableMap(new EnumMap<>(rules));
         this.layouts = layouts.stream().filter(layout -> rules.containsKey(layout.kind())).toList();
@@ -279,19 +295,29 @@ public final class RigidRecognizer {
             throw new IllegalArgumentException("too many layouts: " + this.layouts.size());
         }
         int reach = 0;
+        int reads = 0;
         for (RigidLayout layout : this.layouts) {
-            if (layout.size() >= 1 << 16) {
-                throw new IllegalArgumentException("layout too big: " + layout);
-            }
             for (int e = 0; e < layout.size(); e++) {
+                if (layout.dy[e] < -2048 || layout.dy[e] > 2047) {
+                    throw new IllegalArgumentException("layout too tall: " + layout);
+                }
                 for (String c : layout.trigger[e]) {
                     triggerClasses.computeIfAbsent(c, key -> triggerClasses.size());
                 }
                 reach = Math.max(reach, Math.max(Math.abs(layout.dx[e] >> 4), Math.abs(layout.dz[e] >> 4)));
             }
+            for (int e = 0; e < layout.ex.length; e++) {
+                reads = Math.max(reads, Math.max(Math.abs(layout.ex[e] >> 4), Math.abs(layout.ez[e] >> 4)));
+            }
+        }
+        for (RigidKind kind : this.rules.keySet()) {
+            // The biome cells next to the chunk's middle or corner (biomeFits).
+            int at = kind.biomeAtCorner() ? 0 : 8;
+            reads = Math.max(reads, Math.max(Math.abs(Math.floorDiv(at - 4, 16)), Math.floorDiv(at + 4, 16)));
         }
         span = reach;
         side = 2 * span + 1;
+        readSpan = Math.max(span, reads);
         List<List<Integer>> cells = new ArrayList<>();
         int size = triggerClasses.size() * 256 * side * side;
         for (int i = 0; i < size; i++) {
@@ -305,7 +331,7 @@ public final class RigidRecognizer {
                     if (cells.get(cell) == null) {
                         cells.set(cell, new ArrayList<>());
                     }
-                    cells.get(cell).add(li << 16 | e);
+                    cells.get(cell).add((li << 12) | (layout.dy[e] & 0xFFF));
                 }
             }
         }
@@ -314,6 +340,14 @@ public final class RigidRecognizer {
             if (cells.get(i) != null) {
                 table[i] = cells.get(i).stream().mapToInt(Integer::intValue).toArray();
             }
+        }
+        clusterIndex = clusterIndex(this.layouts);
+        if (clusterIndex.layouts.length == 0) {
+            clusterSpan = 0;
+        } else {
+            clusterSpan = Math.max(
+                Math.max(Math.abs(Math.floorDiv(clusterIndex.minDx - CLUSTER_REACH, 16)), Math.floorDiv(clusterIndex.maxDx + CLUSTER_REACH, 16)),
+                Math.max(Math.abs(Math.floorDiv(clusterIndex.minDz - CLUSTER_REACH, 16)), Math.floorDiv(clusterIndex.maxDz + CLUSTER_REACH, 16)));
         }
     }
 
@@ -334,9 +368,22 @@ public final class RigidRecognizer {
         return rules.get(kind);
     }
 
-    /** How many chunks from its origin chunk a layout's blocks can be. */
+    /** How many chunks from its origin chunk a layout's blocks can be (and so the blocks that vote for it). */
     public int span() {
         return span;
+    }
+
+    /**
+     * How many chunks from its origin chunk {@link #verify} and {@link #acceptable} read: the layout's blocks, its
+     * empty spots and the biome cells.
+     */
+    public int readSpan() {
+        return readSpan;
+    }
+
+    /** How many chunks from a fit's origin chunk {@link #isClusterPiece} reads (0 when there are no small ocean ruins). */
+    public int clusterSpan() {
+        return clusterSpan;
     }
 
     /** The trigger class of a block id ({@code minecraft:cobblestone}), or -1 when the block does not vote. */
@@ -376,33 +423,142 @@ public final class RigidRecognizer {
      * Placements in chunks where their set cannot start are included: they still compete in {@link #resolve}.
      */
     public List<Candidate> candidates(int chunkX, int chunkZ, Triggers triggers) {
-        Map<Integer, int[]> votes = new HashMap<>();
-        for (int sourceX = chunkX - span; sourceX <= chunkX + span; sourceX++) {
-            for (int sourceZ = chunkZ - span; sourceZ <= chunkZ + span; sourceZ++) {
-                int[] found = triggers.at(sourceX, sourceZ);
-                if (found == null) {
-                    return null;
+        int[][] found = new int[side * side][];
+        for (int i = 0; i < found.length; i++) {
+            found[i] = triggers.at(chunkX + i / side - span, chunkZ + i % side - span);
+            if (found[i] == null) {
+                return null;
+            }
+        }
+        Votes votes = votes();
+        votes.start(chunkX, chunkZ);
+        for (int i = 0; i < found.length; i++) {
+            votes.add(chunkX + i / side - span, chunkZ + i % side - span, found[i], 0, found[i].length);
+        }
+        return votes.candidates();
+    }
+
+    /** A vote counter, to be used again for one chunk after another ({@link Votes#start}). */
+    public Votes votes() {
+        return new Votes();
+    }
+
+    /**
+     * Counts the votes for the placements whose origin is on one chunk's corner, a slice of trigger blocks at a time:
+     * {@link #candidates} in small steps.
+     */
+    public final class Votes {
+        private int chunkX;
+        private int chunkZ;
+        /** Open addressing: keys (layout index << 12 | origin height & 0xFFF, -1 when free) and their votes. */
+        private int[] keys = new int[1 << 12];
+        private int[] counts = new int[1 << 12];
+        /** The slots in use, in the order they were taken. */
+        private int[] used = new int[1 << 11];
+        private int size;
+
+        private Votes() {
+            Arrays.fill(keys, -1);
+        }
+
+        /** Starts counting for the placements whose origin is on this chunk's corner. */
+        public void start(int chunkX, int chunkZ) {
+            for (int i = 0; i < size; i++) {
+                keys[used[i]] = -1;
+                counts[used[i]] = 0;
+            }
+            size = 0;
+            this.chunkX = chunkX;
+            this.chunkZ = chunkZ;
+        }
+
+        /** Counts the votes of {@code triggers[from]} to {@code triggers[to - 1]}, the trigger blocks of a chunk within {@link #span}. */
+        public void add(int sourceX, int sourceZ, int[] triggers, int from, int to) {
+            int offset = (sourceX - chunkX + span) * side + sourceZ - chunkZ + span;
+            if (offset < 0 || offset >= side * side || Math.abs(sourceZ - chunkZ) > span) {
+                throw new IllegalArgumentException("chunk " + sourceX + ", " + sourceZ + " is too far from " + chunkX + ", " + chunkZ);
+            }
+            for (int i = from; i < to; i++) {
+                int packed = triggers[i];
+                int[] entries = table[((packed >>> 20) * 256 + (packed >> 4 & 15) * 16 + (packed & 15)) * side * side + offset];
+                if (entries == null) {
+                    continue;
                 }
-                int offset = (sourceX - chunkX + span) * side + sourceZ - chunkZ + span;
-                for (int packed : found) {
-                    int[] entries = table[((packed >>> 20) * 256 + (packed >> 4 & 15) * 16 + (packed & 15)) * side * side + offset];
-                    if (entries == null) {
-                        continue;
-                    }
-                    int y = packed << 12 >> 20;
-                    for (int entry : entries) {
-                        int originY = y - layouts.get(entry >>> 16).dy[entry & 0xFFFF];
-                        votes.computeIfAbsent((entry >>> 16) << 12 | originY & 0xFFF, key -> new int[1])[0]++;
-                    }
+                int y = packed << 12 >> 20;
+                for (int entry : entries) {
+                    increment((entry & ~0xFFF) | ((y - (entry << 20 >> 20)) & 0xFFF));
                 }
             }
         }
-        int[] keys = votes.entrySet().stream().filter(entry -> entry.getValue()[0] >= MIN_VOTES).mapToInt(Map.Entry::getKey).sorted().toArray();
-        List<Candidate> candidates = new ArrayList<>(keys.length);
-        for (int key : keys) {
-            candidates.add(new Candidate(layouts.get(key >>> 12), chunkX * 16, key << 20 >> 20, chunkZ * 16, votes.get(key)[0]));
+
+        private void increment(int key) {
+            int mask = keys.length - 1;
+            int slot = slot(key, mask);
+            while (true) {
+                int found = keys[slot];
+                if (found == key) {
+                    counts[slot]++;
+                    return;
+                }
+                if (found == -1) {
+                    keys[slot] = key;
+                    counts[slot] = 1;
+                    used[size++] = slot;
+                    if (size * 2 >= keys.length) {
+                        // At most half full: then probing stays short, and the slots in use fit into used.
+                        grow();
+                    }
+                    return;
+                }
+                slot = (slot + 1) & mask;
+            }
         }
-        return candidates;
+
+        private static int slot(int key, int mask) {
+            int h = key * 0x9E3779B9;
+            return (h ^ (h >>> 16)) & mask;
+        }
+
+        private void grow() {
+            int[] oldKeys = keys;
+            int[] oldCounts = counts;
+            int[] oldUsed = used;
+            int oldSize = size;
+            keys = new int[oldKeys.length * 2];
+            counts = new int[oldKeys.length * 2];
+            used = new int[oldKeys.length];
+            Arrays.fill(keys, -1);
+            int mask = keys.length - 1;
+            size = 0;
+            for (int i = 0; i < oldSize; i++) {
+                int key = oldKeys[oldUsed[i]];
+                int slot = slot(key, mask);
+                while (keys[slot] != -1) {
+                    slot = (slot + 1) & mask;
+                }
+                keys[slot] = key;
+                counts[slot] = oldCounts[oldUsed[i]];
+                used[size++] = slot;
+            }
+        }
+
+        /** The placements with at least {@link #MIN_VOTES} votes so far, by layout and then height. */
+        public List<Candidate> candidates() {
+            long[] picked = new long[size];
+            int n = 0;
+            for (int i = 0; i < size; i++) {
+                if (counts[used[i]] >= MIN_VOTES) {
+                    picked[n++] = (long) keys[used[i]] << 32 | counts[used[i]];
+                }
+            }
+            Arrays.sort(picked, 0, n);
+            List<Candidate> candidates = new ArrayList<>(n);
+            for (int i = 0; i < n; i++) {
+                int key = (int) (picked[i] >>> 32);
+                candidates.add(new Candidate(layouts.get(key >>> 12), chunkX * 16, key << 20 >> 20, chunkZ * 16, (int) picked[i]));
+            }
+            return candidates;
+        }
     }
 
     /**
@@ -410,37 +566,110 @@ public final class RigidRecognizer {
      * what acceptance or a rival needs ({@code minScore - AMBIGUITY_MARGIN}).
      */
     public Detection verify(Candidate candidate, BlockView view, boolean nether) {
-        RigidLayout layout = candidate.layout();
-        RigidKind kind = layout.kind();
-        double floor = kind.minScore() - AMBIGUITY_MARGIN - 1e-9;
-        int originX = candidate.x();
-        int originY = candidate.y();
-        int originZ = candidate.z();
-        int matched = 0;
-        int misses = 0;
-        int skipped = 0;
-        int remaining = layout.informativeCount;
-        int[] groupChecked = new int[layout.groupTotal.length];
-        double weightMatched = 0;
-        double weightChecked = 0;
-        long[] positions = new long[layout.informativeCount];
-        for (int e = 0; e < layout.size(); e++) {
-            if (!layout.informative[e]) {
-                continue;
+        Verification verification = verification(candidate, nether);
+        verification.step(view, Integer.MAX_VALUE);
+        return verification.result();
+    }
+
+    /** {@link #verify} in small steps. */
+    public Verification verification(Candidate candidate, boolean nether) {
+        return new Verification(candidate, nether);
+    }
+
+    /**
+     * The comparison of a placement with the world ({@link #verify}), a few blocks at a time. The empty spots and
+     * column tops are only looked at for fits that pass the thresholds: for others they can't change anything.
+     */
+    public static final class Verification {
+        private static final int BLOCKS = 0;
+        private static final int TOPS = 1;
+        private static final int SPOTS = 2;
+        private static final int DONE = 3;
+
+        private final Candidate candidate;
+        private final RigidLayout layout;
+        private final boolean nether;
+        private final double floor;
+        private final int[] groupChecked;
+        private final long[] positions;
+        private int stage = BLOCKS;
+        private int next;
+        private int matched;
+        private int misses;
+        private int skipped;
+        private int remaining;
+        private double weightMatched;
+        private double weightChecked;
+        private boolean classesCovered = true;
+        private boolean spotsLookedAt;
+        private int topsChecked;
+        private int topsOpen;
+        private int emptyChecked;
+        private int emptyFilled;
+        private int emptyWater;
+        private Detection result;
+
+        private Verification(Candidate candidate, boolean nether) {
+            this.candidate = candidate;
+            this.layout = candidate.layout();
+            this.nether = nether;
+            this.floor = layout.kind().minScore() - AMBIGUITY_MARGIN - 1e-9;
+            this.remaining = layout.informativeCount;
+            this.groupChecked = new int[layout.groupTotal.length];
+            this.positions = new long[layout.informativeCount];
+        }
+
+        /** Reads at most {@code reads} blocks (at least one); true once the comparison is done. */
+        public boolean step(BlockView view, int reads) {
+            int left = Math.max(1, reads);
+            while (stage != DONE) {
+                if (stage == BLOCKS) {
+                    if (next == layout.size()) {
+                        blocksDone();
+                    } else if (layout.informative[next]) {
+                        if (left-- == 0) {
+                            return false;
+                        }
+                        block(view, next++);
+                    } else {
+                        next++;
+                    }
+                } else if (stage == TOPS) {
+                    if (next == layout.colX.length) {
+                        stage = SPOTS;
+                        next = 0;
+                    } else {
+                        if (left-- == 0) {
+                            return false;
+                        }
+                        top(view, next++);
+                    }
+                } else if (next == layout.ex.length) {
+                    finish();
+                } else {
+                    if (left-- == 0) {
+                        return false;
+                    }
+                    spot(view, next++);
+                }
             }
+            return true;
+        }
+
+        private void block(BlockView view, int e) {
             remaining--;
-            int x = originX + layout.dx[e];
-            int y = originY + layout.dy[e];
-            int z = originZ + layout.dz[e];
+            int x = candidate.x() + layout.dx[e];
+            int y = candidate.y() + layout.dy[e];
+            int z = candidate.z() + layout.dz[e];
             String id = view.blockAt(x, y, z);
             if (id == null) {
-                continue;
+                return;
             }
             String found = RigidBlocks.canonical(id);
             if (portalSpread(layout, e, found, nether)) {
                 skipped++;
                 weightChecked += layout.weight[e];
-                continue;
+                return;
             }
             groupChecked[layout.group[e]]++;
             weightChecked += layout.weight[e];
@@ -451,47 +680,54 @@ public final class RigidRecognizer {
                 misses++;
                 // Even if every block still to come matched, the score would stay too low to matter.
                 if ((double) (matched + remaining) / (matched + misses + remaining) < floor) {
-                    return null;
+                    stage = DONE;
                 }
             }
         }
-        int checked = matched + misses;
-        boolean classesCovered = true;
-        if (skipped > 0) {
-            // With blocks left unjudged, at least two of the layout's kinds of block (of 3 or more blocks each) must
-            // still be judged on a quarter of their blocks: an obsidian frame alone is not a ruined portal.
-            int big = 0;
-            int covered = 0;
-            for (int g = 0; g < layout.groupTotal.length; g++) {
-                if (layout.groupTotal[g] >= 3) {
-                    big++;
-                    if (groupChecked[g] * 4 >= layout.groupTotal[g]) {
-                        covered++;
+
+        private void blocksDone() {
+            if (skipped > 0) {
+                // With blocks left unjudged, at least two of the layout's kinds of block (of 3 or more blocks each) must
+                // still be judged on a quarter of their blocks: an obsidian frame alone is not a ruined portal.
+                int big = 0;
+                int covered = 0;
+                for (int g = 0; g < layout.groupTotal.length; g++) {
+                    if (layout.groupTotal[g] >= 3) {
+                        big++;
+                        if (groupChecked[g] * 4 >= layout.groupTotal[g]) {
+                            covered++;
+                        }
                     }
                 }
+                classesCovered = covered >= Math.min(2, big);
             }
-            classesCovered = covered >= Math.min(2, big);
+            if (passesThresholds(layout, matched, matched + misses, skipped, balanced(), classesCovered)) {
+                spotsLookedAt = true;
+                stage = layout.kind() == RigidKind.OCEAN_RUIN ? TOPS : SPOTS;
+                next = 0;
+            } else {
+                finish();
+            }
         }
-        int topsChecked = 0;
-        int topsOpen = 0;
-        if (kind == RigidKind.OCEAN_RUIN) {
-            for (int c = 0; c < layout.colX.length; c++) {
-                int y = originY + layout.colTop[c] + 1;
-                String id = view.blockAt(originX + layout.colX[c], y, originZ + layout.colZ[c]);
-                if (id != null) {
-                    topsChecked++;
-                    String found = RigidBlocks.canonical(id);
-                    if (RigidBlocks.WATERY.contains(found) || found.equals("air") && y >= SEA_LEVEL) {
-                        topsOpen++;
-                    }
+
+        private double balanced() {
+            return weightChecked == 0 ? 0 : weightMatched / weightChecked;
+        }
+
+        private void top(BlockView view, int c) {
+            int y = candidate.y() + layout.colTop[c] + 1;
+            String id = view.blockAt(candidate.x() + layout.colX[c], y, candidate.z() + layout.colZ[c]);
+            if (id != null) {
+                topsChecked++;
+                String found = RigidBlocks.canonical(id);
+                if (RigidBlocks.WATERY.contains(found) || found.equals("air") && y >= SEA_LEVEL) {
+                    topsOpen++;
                 }
             }
         }
-        int emptyChecked = 0;
-        int emptyFilled = 0;
-        int emptyWater = 0;
-        for (int e = 0; e < layout.ex.length; e++) {
-            String id = view.blockAt(originX + layout.ex[e], originY + layout.ey[e], originZ + layout.ez[e]);
+
+        private void spot(BlockView view, int e) {
+            String id = view.blockAt(candidate.x() + layout.ex[e], candidate.y() + layout.ey[e], candidate.z() + layout.ez[e]);
             if (id != null) {
                 emptyChecked++;
                 String found = RigidBlocks.canonical(id);
@@ -503,10 +739,26 @@ public final class RigidRecognizer {
                 }
             }
         }
-        long[] sorted = Arrays.copyOf(positions, matched);
-        Arrays.sort(sorted);
-        return new Detection(candidate, matched, checked, skipped, weightChecked == 0 ? 0 : weightMatched / weightChecked, classesCovered,
-            emptyChecked, emptyFilled, emptyWater, topsChecked, topsOpen, sorted);
+
+        private void finish() {
+            long[] sorted = Arrays.copyOf(positions, matched);
+            Arrays.sort(sorted);
+            result = new Detection(candidate, matched, matched + misses, skipped, balanced(), classesCovered, spotsLookedAt, emptyChecked,
+                emptyFilled, emptyWater, topsChecked, topsOpen, sorted);
+            stage = DONE;
+        }
+
+        public Candidate candidate() {
+            return candidate;
+        }
+
+        /** The fit once {@link #step} has returned true; null when it cannot matter. */
+        public Detection result() {
+            if (stage != DONE) {
+                throw new IllegalStateException("not done yet");
+            }
+            return result;
+        }
     }
 
     /**
@@ -542,15 +794,21 @@ public final class RigidRecognizer {
         return Math.min(MIN_MATCHED, (int) Math.ceil(0.7 * layout.informativeCount()));
     }
 
+    /** The thresholds on a fit's blocks: enough matched, overall and class by class, and enough of them judged. */
+    private static boolean passesThresholds(RigidLayout layout, int matched, int checked, int skipped, double balanced, boolean classesCovered) {
+        RigidKind kind = layout.kind();
+        double score = checked == 0 ? 0 : (double) matched / checked;
+        return matched >= minMatched(layout) && score >= kind.minScore() && balanced >= kind.minBalanced() && classesCovered
+            && checked + skipped >= MIN_COVERAGE * layout.informativeCount();
+    }
+
     /**
      * Whether a fit passes on its own: the thresholds, the empty spots, open water for ocean ruins, and the biome.
      * (The cluster test and the comparison with other fits are separate.)
      */
     public boolean acceptable(Detection d, BlockView view) {
         RigidKind kind = d.kind();
-        RigidLayout layout = d.layout();
-        if (d.matched() < minMatched(layout) || d.score() < kind.minScore() || d.balanced() < kind.minBalanced() || !d.classesCovered()
-            || d.checked() + d.skipped() < MIN_COVERAGE * layout.informativeCount()) {
+        if (!passesThresholds(d.layout(), d.matched(), d.checked(), d.skipped(), d.balanced(), d.classesCovered()) || !d.spotsLookedAt()) {
             return false;
         }
         if (d.emptyChecked() >= MIN_EMPTY_CHECKED && d.emptyFilled() > kind.maxFilled() * d.emptyChecked()) {
@@ -606,79 +864,149 @@ public final class RigidRecognizer {
         if (!needsClusterCheck(d)) {
             return false;
         }
-        ClusterIndex index = clusterIndex();
-        int need = minMatched(d.layout());
-        int fromX = d.x() - CLUSTER_REACH;
-        int fromY = d.y() - CLUSTER_HEIGHT;
-        int fromZ = d.z() - CLUSTER_REACH;
-        int countX = 2 * CLUSTER_REACH + 1;
-        int countY = 2 * CLUSTER_HEIGHT + 1;
-        int countZ = 2 * CLUSTER_REACH + 1;
-        int minX = fromX + index.minDx;
-        int minY = fromY + index.minDy;
-        int minZ = fromZ + index.minDz;
-        int sizeX = countX - 1 + index.maxDx - index.minDx + 1;
-        int sizeY = countY - 1 + index.maxDy - index.minDy + 1;
-        int sizeZ = countZ - 1 + index.maxDz - index.minDz + 1;
-        boolean[] visible = new boolean[sizeX * sizeY * sizeZ];
-        int[] votes = new int[index.layouts.length * countX * countY * countZ];
-        for (int x = 0; x < sizeX; x++) {
-            for (int y = 0; y < sizeY; y++) {
-                for (int z = 0; z < sizeZ; z++) {
-                    String id = view.blockAt(minX + x, minY + y, minZ + z);
-                    if (id == null) {
-                        continue;
-                    }
-                    visible[(x * sizeY + y) * sizeZ + z] = true;
-                    int[] entries = index.byClass.get(RigidBlocks.canonical(id));
-                    if (entries == null) {
-                        continue;
-                    }
-                    for (int entry : entries) {
-                        RigidLayout layout = index.layouts[entry >>> 16];
-                        int e = entry & 0xFFFF;
-                        int ox = minX + x - layout.dx[e] - fromX;
-                        int oy = minY + y - layout.dy[e] - fromY;
-                        int oz = minZ + z - layout.dz[e] - fromZ;
-                        if (ox >= 0 && ox < countX && oy >= 0 && oy < countY && oz >= 0 && oz < countZ) {
-                            votes[(((entry >>> 16) * countX + ox) * countY + oy) * countZ + oz]++;
-                        }
-                    }
+        ClusterTest test = clusterTest(d);
+        while (!test.step(view, Integer.MAX_VALUE)) {
+            // next layout
+        }
+        return test.isClusterPiece();
+    }
+
+    /** {@link #isClusterPiece} in small steps (for a small ocean ruin, {@link #needsClusterCheck}). */
+    public ClusterTest clusterTest(Detection d) {
+        if (!needsClusterCheck(d)) {
+            throw new IllegalArgumentException("no cluster test for " + d);
+        }
+        return new ClusterTest(d);
+    }
+
+    /** The cluster test of one fit: the area around it read a few blocks at a time, then the off-grid fits counted. */
+    public final class ClusterTest {
+        private static final int COUNT_X = 2 * CLUSTER_REACH + 1;
+        private static final int COUNT_Y = 2 * CLUSTER_HEIGHT + 1;
+        private static final int COUNT_Z = 2 * CLUSTER_REACH + 1;
+
+        private final Detection d;
+        private final int need;
+        private final int fromX;
+        private final int fromY;
+        private final int fromZ;
+        private final int minX;
+        private final int minY;
+        private final int minZ;
+        private final int sizeX;
+        private final int sizeY;
+        private final int sizeZ;
+        private boolean[] visible;
+        private int[] votes;
+        private int nextRead;
+        private int nextLayout;
+        private int nextOriginX;
+        private double best;
+
+        private ClusterTest(Detection d) {
+            this.d = d;
+            ClusterIndex index = clusterIndex;
+            need = minMatched(d.layout());
+            fromX = d.x() - CLUSTER_REACH;
+            fromY = d.y() - CLUSTER_HEIGHT;
+            fromZ = d.z() - CLUSTER_REACH;
+            minX = fromX + index.minDx;
+            minY = fromY + index.minDy;
+            minZ = fromZ + index.minDz;
+            sizeX = COUNT_X - 1 + index.maxDx - index.minDx + 1;
+            sizeY = COUNT_Y - 1 + index.maxDy - index.minDy + 1;
+            sizeZ = COUNT_Z - 1 + index.maxDz - index.minDz + 1;
+        }
+
+        /**
+         * Reads at most {@code reads} blocks of the area (at least one), or counts the fits of one layout at one
+         * sideways offset; true once done.
+         */
+        public boolean step(BlockView view, int reads) {
+            if (votes == null) {
+                visible = new boolean[sizeX * sizeY * sizeZ];
+                votes = new int[clusterIndex.layouts.length * COUNT_X * COUNT_Y * COUNT_Z];
+                return false;
+            }
+            if (nextRead < visible.length) {
+                int to = (int) Math.min(visible.length, (long) nextRead + Math.max(1, reads));
+                for (; nextRead < to; nextRead++) {
+                    read(view, nextRead / (sizeY * sizeZ), nextRead / sizeZ % sizeY, nextRead % sizeZ);
+                }
+                return false;
+            }
+            if (nextLayout < clusterIndex.layouts.length) {
+                count(nextLayout, nextOriginX);
+                if (++nextOriginX == COUNT_X) {
+                    nextOriginX = 0;
+                    nextLayout++;
+                }
+            }
+            return nextLayout == clusterIndex.layouts.length;
+        }
+
+        private void read(BlockView view, int x, int y, int z) {
+            String id = view.blockAt(minX + x, minY + y, minZ + z);
+            if (id == null) {
+                return;
+            }
+            visible[(x * sizeY + y) * sizeZ + z] = true;
+            int[] entries = clusterIndex.byClass.get(RigidBlocks.canonical(id));
+            if (entries == null) {
+                return;
+            }
+            for (int entry : entries) {
+                RigidLayout layout = clusterIndex.layouts[entry >>> 16];
+                int e = entry & 0xFFFF;
+                int ox = minX + x - layout.dx[e] - fromX;
+                int oy = minY + y - layout.dy[e] - fromY;
+                int oz = minZ + z - layout.dz[e] - fromZ;
+                if (ox >= 0 && ox < COUNT_X && oy >= 0 && oy < COUNT_Y && oz >= 0 && oz < COUNT_Z) {
+                    votes[(((entry >>> 16) * COUNT_X + ox) * COUNT_Y + oy) * COUNT_Z + oz]++;
                 }
             }
         }
-        double best = 0;
-        for (int li = 0; li < index.layouts.length; li++) {
-            RigidLayout layout = index.layouts[li];
-            for (int ox = 0; ox < countX; ox++) {
-                for (int oz = 0; oz < countZ; oz++) {
-                    if ((fromX + ox & 15) == 0 && (fromZ + oz & 15) == 0) {
+
+        private void count(int li, int ox) {
+            RigidLayout layout = clusterIndex.layouts[li];
+            for (int oz = 0; oz < COUNT_Z; oz++) {
+                if ((fromX + ox & 15) == 0 && (fromZ + oz & 15) == 0) {
+                    continue;
+                }
+                for (int oy = 0; oy < COUNT_Y; oy++) {
+                    int matched = votes[((li * COUNT_X + ox) * COUNT_Y + oy) * COUNT_Z + oz];
+                    if (matched < need) {
                         continue;
                     }
-                    for (int oy = 0; oy < countY; oy++) {
-                        int matched = votes[((li * countX + ox) * countY + oy) * countZ + oz];
-                        if (matched < need) {
-                            continue;
-                        }
-                        int checked = 0;
-                        for (int e = 0; e < layout.size(); e++) {
-                            if (layout.informative[e]) {
-                                int x = fromX + ox + layout.dx[e] - minX;
-                                int y = fromY + oy + layout.dy[e] - minY;
-                                int z = fromZ + oz + layout.dz[e] - minZ;
-                                if (visible[(x * sizeY + y) * sizeZ + z]) {
-                                    checked++;
-                                }
+                    int checked = 0;
+                    for (int e = 0; e < layout.size(); e++) {
+                        if (layout.informative[e]) {
+                            int x = fromX + ox + layout.dx[e] - minX;
+                            int y = fromY + oy + layout.dy[e] - minY;
+                            int z = fromZ + oz + layout.dz[e] - minZ;
+                            if (visible[(x * sizeY + y) * sizeZ + z]) {
+                                checked++;
                             }
                         }
-                        if (checked > 0) {
-                            best = Math.max(best, (double) matched / checked);
-                        }
+                    }
+                    if (checked > 0) {
+                        best = Math.max(best, (double) matched / checked);
                     }
                 }
             }
         }
-        return best > d.score() + CLUSTER_MARGIN;
+
+        public Detection detection() {
+            return d;
+        }
+
+        /** The answer once {@link #step} has returned true. */
+        public boolean isClusterPiece() {
+            if (nextLayout < clusterIndex.layouts.length || votes == null) {
+                throw new IllegalStateException("not done yet");
+            }
+            return best > d.score() + CLUSTER_MARGIN;
+        }
     }
 
     /** The small-ruin layouts and, for each block class, their telling entries that accept it. */
@@ -686,40 +1014,36 @@ public final class RigidRecognizer {
                                 int maxDz) {
     }
 
-    private synchronized ClusterIndex clusterIndex() {
-        if (clusterIndex == null) {
-            List<RigidLayout> small = layouts.stream()
-                .filter(layout -> layout.kind() == RigidKind.OCEAN_RUIN && layout.informativeCount() < SMALL_RUIN).toList();
-            Map<String, List<Integer>> byClass = new HashMap<>();
-            int[] bounds = {0, 0, 0, 0, 0, 0};
-            boolean first = true;
-            for (int li = 0; li < small.size(); li++) {
-                RigidLayout layout = small.get(li);
-                for (int e = 0; e < layout.size(); e++) {
-                    if (!layout.informative[e]) {
-                        continue;
-                    }
-                    for (String c : layout.accept[e]) {
-                        byClass.computeIfAbsent(c, key -> new ArrayList<>()).add(li << 16 | e);
-                    }
-                    if (first) {
-                        bounds = new int[] {layout.dx[e], layout.dx[e], layout.dy[e], layout.dy[e], layout.dz[e], layout.dz[e]};
-                        first = false;
-                    }
-                    bounds[0] = Math.min(bounds[0], layout.dx[e]);
-                    bounds[1] = Math.max(bounds[1], layout.dx[e]);
-                    bounds[2] = Math.min(bounds[2], layout.dy[e]);
-                    bounds[3] = Math.max(bounds[3], layout.dy[e]);
-                    bounds[4] = Math.min(bounds[4], layout.dz[e]);
-                    bounds[5] = Math.max(bounds[5], layout.dz[e]);
+    private static ClusterIndex clusterIndex(List<RigidLayout> layouts) {
+        List<RigidLayout> small = layouts.stream()
+            .filter(layout -> layout.kind() == RigidKind.OCEAN_RUIN && layout.informativeCount() < SMALL_RUIN).toList();
+        Map<String, List<Integer>> byClass = new HashMap<>();
+        int[] bounds = {0, 0, 0, 0, 0, 0};
+        boolean first = true;
+        for (int li = 0; li < small.size(); li++) {
+            RigidLayout layout = small.get(li);
+            for (int e = 0; e < layout.size(); e++) {
+                if (!layout.informative[e]) {
+                    continue;
                 }
+                for (String c : layout.accept[e]) {
+                    byClass.computeIfAbsent(c, key -> new ArrayList<>()).add(li << 16 | e);
+                }
+                if (first) {
+                    bounds = new int[] {layout.dx[e], layout.dx[e], layout.dy[e], layout.dy[e], layout.dz[e], layout.dz[e]};
+                    first = false;
+                }
+                bounds[0] = Math.min(bounds[0], layout.dx[e]);
+                bounds[1] = Math.max(bounds[1], layout.dx[e]);
+                bounds[2] = Math.min(bounds[2], layout.dy[e]);
+                bounds[3] = Math.max(bounds[3], layout.dy[e]);
+                bounds[4] = Math.min(bounds[4], layout.dz[e]);
+                bounds[5] = Math.max(bounds[5], layout.dz[e]);
             }
-            Map<String, int[]> entries = new HashMap<>();
-            byClass.forEach((c, list) -> entries.put(c, list.stream().mapToInt(Integer::intValue).toArray()));
-            clusterIndex = new ClusterIndex(small.toArray(new RigidLayout[0]), entries, bounds[0], bounds[1], bounds[2], bounds[3], bounds[4],
-                bounds[5]);
         }
-        return clusterIndex;
+        Map<String, int[]> entries = new HashMap<>();
+        byClass.forEach((c, list) -> entries.put(c, list.stream().mapToInt(Integer::intValue).toArray()));
+        return new ClusterIndex(small.toArray(new RigidLayout[0]), entries, bounds[0], bounds[1], bounds[2], bounds[3], bounds[4], bounds[5]);
     }
 
     /**
@@ -733,15 +1057,76 @@ public final class RigidRecognizer {
      *                     everything else
      */
     public List<Detection> resolve(List<Detection> detections, BlockView view, Predicate<Detection> clusterPiece) {
-        List<Detection> order = new ArrayList<>(detections);
-        order.sort(STRONGEST_FIRST);
-        List<Detection> accepted = new ArrayList<>();
-        for (Detection d : order) {
-            if (acceptable(d, view) && !conflicts(d, accepted) && !ambiguous(d, order) && !(needsClusterCheck(d) && clusterPiece.test(d))) {
-                accepted.add(d);
-            }
+        Resolution resolution = resolution(detections);
+        while (!resolution.step(view, clusterPiece::test)) {
+            // next fit
         }
-        return accepted.stream().filter(d -> rules.get(d.kind()).couldStartIn(d.chunkX(), d.chunkZ())).toList();
+        return resolution.result();
+    }
+
+    /** {@link #resolve} one fit at a time. */
+    public Resolution resolution(List<Detection> detections) {
+        return new Resolution(detections);
+    }
+
+    /** The decision among verified fits ({@link #resolve}), one fit per step. */
+    public final class Resolution {
+        private final List<Detection> order;
+        private final List<Detection> accepted = new ArrayList<>();
+        private int next;
+        /** The fit that passed everything but the cluster test, which has no answer yet. */
+        private Detection waiting;
+
+        private Resolution(List<Detection> detections) {
+            order = new ArrayList<>(detections);
+            order.sort(STRONGEST_FIRST);
+        }
+
+        /**
+         * Decides the next fit; true once all are decided. {@code clusterPiece} gives the cluster test's answer for a
+         * fit, or null when it is not known yet: then the fit waits ({@link #waitingFor}) and is decided by a later
+         * call.
+         */
+        public boolean step(BlockView view, Function<Detection, Boolean> clusterPiece) {
+            if (next < order.size()) {
+                Detection d = order.get(next);
+                if (waiting != d) {
+                    if (!acceptable(d, view) || conflicts(d, accepted) || ambiguous(d, order)) {
+                        next++;
+                        return next == order.size();
+                    }
+                    if (!needsClusterCheck(d)) {
+                        accepted.add(d);
+                        next++;
+                        return next == order.size();
+                    }
+                    waiting = d;
+                }
+                Boolean piece = clusterPiece.apply(d);
+                if (piece == null) {
+                    return false;
+                }
+                waiting = null;
+                if (!piece) {
+                    accepted.add(d);
+                }
+                next++;
+            }
+            return next == order.size();
+        }
+
+        /** The fit whose cluster test is needed before the next step can decide it, or null. */
+        public Detection waitingFor() {
+            return waiting;
+        }
+
+        /** The fits accepted, in chunks where their set can start (once all are decided). */
+        public List<Detection> result() {
+            if (next < order.size()) {
+                throw new IllegalStateException("not done yet");
+            }
+            return accepted.stream().filter(d -> rules.get(d.kind()).couldStartIn(d.chunkX(), d.chunkZ())).toList();
+        }
     }
 
     private boolean conflicts(Detection d, List<Detection> accepted) {

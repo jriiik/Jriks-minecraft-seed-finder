@@ -52,7 +52,7 @@ final class StructureRecognition {
     static final String SOURCE = "recognized automatically";
     /** Work at most this long per tick (2 ms of the 50 ms a tick has). */
     private static final long BUDGET_NANOS = 2_000_000L;
-    /** Of that, judging rigid structures gets at most this much. */
+    /** Of that, judging rigid structures gets this much first (and what is left once nothing else is to do). */
     private static final long RIGID_BUDGET_NANOS = 1_000_000L;
     /** Placements waiting for chunks to load are checked again every 2 seconds. */
     private static final int RETRY_TICKS = 40;
@@ -68,8 +68,11 @@ final class StructureRecognition {
     private static CompletableFuture<StartPieceRecognizer> recognizer;
     /** The rigid-structure layouts, built once from the game's files and code in the background. */
     private static CompletableFuture<RigidLibrary.Library> rigidLibrary;
-    /** A rigid-structure recognizer per dimension (the kinds that appear there), made when first needed. */
-    private static final Map<String, RigidRecognizer> RIGID_RECOGNIZERS = new HashMap<>();
+    /**
+     * A rigid-structure recognizer per dimension where rigid structures appear, made in the background with the
+     * layouts (set before {@link #rigidLibrary} completes).
+     */
+    private static volatile Map<String, RigidRecognizer> rigidRecognizers = Map.of();
 
     private final VersionData data;
     /** The dimensions the recognized structure sets can appear in. */
@@ -151,6 +154,18 @@ final class StructureRecognition {
                 library.problems().forEach(problem -> SeedFinderClient.LOG.warn("Structure recognition: {}", problem));
                 SeedFinderClient.LOG.info("Structure recognition: {} layouts of {} rigid structure kinds", library.layouts().size(),
                     library.layouts().stream().map(RigidLayout::kind).distinct().count());
+                Set<String> dimensions = new HashSet<>();
+                for (RigidKind kind : RigidKind.values()) {
+                    data.structureSet(kind.structureSet()).ifPresent(set -> dimensions.addAll(data.dimensionsOf(set)));
+                }
+                Map<String, RigidRecognizer> made = new HashMap<>();
+                for (String dimension : dimensions) {
+                    RigidRecognizer recognizer = RigidRecognizer.create(library.layouts(), data, dimension);
+                    if (!recognizer.layouts().isEmpty()) {
+                        made.put(dimension, recognizer);
+                    }
+                }
+                rigidRecognizers = Map.copyOf(made);
                 return library;
             });
             rigidLibrary = rigidLibrary.exceptionally(error -> {
@@ -191,19 +206,6 @@ final class StructureRecognition {
             rigid.layouts().forEach(layout -> sets.add(layout.kind().structureSet()));
         }
         return sets;
-    }
-
-    /** The rigid-structure recognizer for a dimension, or null when no rigid structure appears there (main thread). */
-    private static RigidRecognizer rigidRecognizer(RigidLibrary.Library library, VersionData data, String dimension) {
-        RigidRecognizer known = RIGID_RECOGNIZERS.get(dimension);
-        if (known == null && !RIGID_RECOGNIZERS.containsKey(dimension)) {
-            known = RigidRecognizer.create(library.layouts(), data, dimension);
-            if (known.layouts().isEmpty()) {
-                known = null;
-            }
-            RIGID_RECOGNIZERS.put(dimension, known);
-        }
-        return known;
     }
 
     /** The starts found so far in this world (for the in-game test). */
@@ -253,7 +255,7 @@ final class StructureRecognition {
         }
         if (!trackerMade) {
             trackerMade = true;
-            RigidRecognizer rigidRecognizer = rigidRecognizer(rigid, data, level.dimension().identifier().toString());
+            RigidRecognizer rigidRecognizer = rigidRecognizers.get(level.dimension().identifier().toString());
             tracker = rigidRecognizer == null ? null : new RigidTracker(rigidRecognizer, level.dimension() == Level.NETHER);
             // Chunks read before the tracker was there have no trigger blocks noted: read them again.
             scanAllLoaded = true;
@@ -297,13 +299,7 @@ final class StructureRecognition {
         View view = new View();
         if (tracker != null) {
             long rigidEnd = start + RIGID_BUDGET_NANOS;
-            List<RigidRecognizer.Detection> detections = tracker.work(view, () -> System.nanoTime() > rigidEnd);
-            for (RigidRecognizer.Detection d : detections) {
-                SeedFinderClient.LOG.info("Recognized {}", d);
-                if (starts.add(d.kind().structureSet(), spacing.get(d.kind().structureSet()), d.chunkX(), d.chunkZ())) {
-                    updateNotes(session);
-                }
-            }
+            noteRigid(tracker.work(view, () -> System.nanoTime() > rigidEnd), session);
         }
         while (System.nanoTime() < end) {
             if (!toCheck.isEmpty()) {
@@ -319,6 +315,19 @@ final class StructureRecognition {
                 foundCount = 0;
             } else {
                 break;
+            }
+        }
+        if (tracker != null && System.nanoTime() < end) {
+            // Nothing else to do: judging rigid structures may use the rest of the budget.
+            noteRigid(tracker.work(view, () -> System.nanoTime() > end), session);
+        }
+    }
+
+    private void noteRigid(List<RigidRecognizer.Detection> detections, WorldSession session) {
+        for (RigidRecognizer.Detection d : detections) {
+            SeedFinderClient.LOG.info("Recognized {}", d);
+            if (starts.add(d.kind().structureSet(), spacing.get(d.kind().structureSet()), d.chunkX(), d.chunkZ())) {
+                updateNotes(session);
             }
         }
     }

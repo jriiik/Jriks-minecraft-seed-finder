@@ -621,6 +621,250 @@ class RigidRecognizerTest {
         assertEquals(2, starts.conflicting().size());
     }
 
+    /** Counts the blocks and biomes read. */
+    private static final class Counting implements BlockView {
+        final BlockView view;
+        long reads;
+
+        Counting(BlockView view) {
+            this.view = view;
+        }
+
+        @Override
+        public boolean isLoaded(int chunkX, int chunkZ) {
+            return view.isLoaded(chunkX, chunkZ);
+        }
+
+        @Override
+        public String blockAt(int x, int y, int z) {
+            reads++;
+            return view.blockAt(x, y, z);
+        }
+
+        @Override
+        public String biomeAt(int x, int y, int z) {
+            reads++;
+            return view.biomeAt(x, y, z);
+        }
+    }
+
+    /** Many small random layouts and a world strewn with their blocks: many placements get votes. */
+    private static List<RigidLayout> randomLayouts(int count, long seed) {
+        Random random = new Random(seed);
+        List<String> ids = List.of("minecraft:orange_terracotta", "minecraft:blue_terracotta", "minecraft:cut_sandstone", "minecraft:chiseled_sandstone");
+        List<RigidLayout> layouts = new ArrayList<>();
+        for (int i = 0; i < count; i++) {
+            List<Block> blocks = new ArrayList<>();
+            for (int b = 0; b < 30; b++) {
+                blocks.add(new Block(random.nextInt(20) - 2, random.nextInt(8), random.nextInt(20) - 2, ids.get(random.nextInt(ids.size()))));
+            }
+            layouts.add(new Template(blocks, List.of(new int[] {30, 0, 30})).layout(RigidKind.DESERT_PYRAMID, "random " + i));
+        }
+        return layouts;
+    }
+
+    private static World strewn(long seed) {
+        Random random = new Random(seed);
+        List<String> ids = List.of("minecraft:orange_terracotta", "minecraft:blue_terracotta", "minecraft:cut_sandstone", "minecraft:chiseled_sandstone");
+        World world = new World().load(-4, 4);
+        for (int i = 0; i < 200_000; i++) {
+            world.set(random.nextInt(5 * 16) - 32, random.nextInt(MAX_Y + 1), random.nextInt(5 * 16) - 32, ids.get(random.nextInt(ids.size())));
+        }
+        return world;
+    }
+
+    @Test
+    void votesCountedAFewBlocksAtATimeAreTheSameAsAllAtOnce() {
+        RigidRecognizer recognizer = new RigidRecognizer(randomLayouts(40, 3), rules(Set.of()));
+        World world = strewn(5);
+        Map<Long, int[]> triggers = new HashMap<>();
+        for (int x = -3; x <= 3; x++) {
+            for (int z = -3; z <= 3; z++) {
+                triggers.put(RigidRecognizer.chunkKey(x, z), recognizer.triggersOf(world, x, z, MIN_Y, MAX_Y));
+            }
+        }
+        RigidRecognizer.Votes votes = recognizer.votes();
+        int span = recognizer.span();
+        for (int[] origin : new int[][] {{0, 0}, {1, -1}, {0, 0}}) {
+            List<RigidRecognizer.Candidate> all = recognizer.candidates(origin[0], origin[1], (x, z) -> triggers.get(RigidRecognizer.chunkKey(x, z)));
+            assertTrue(all.size() > 300, "candidates: " + all.size());
+            // The same counter, used again, in slices of 7 trigger blocks.
+            votes.start(origin[0], origin[1]);
+            for (int x = origin[0] - span; x <= origin[0] + span; x++) {
+                for (int z = origin[1] - span; z <= origin[1] + span; z++) {
+                    int[] found = triggers.get(RigidRecognizer.chunkKey(x, z));
+                    for (int from = 0; from < found.length; from += 7) {
+                        votes.add(x, z, found, from, Math.min(found.length, from + 7));
+                    }
+                }
+            }
+            assertEquals(all, votes.candidates());
+        }
+        // A chunk not looked at yet: no answer.
+        assertNull(recognizer.candidates(4, 4, (x, z) -> triggers.get(RigidRecognizer.chunkKey(x, z))));
+    }
+
+    @Test
+    void aComparisonDoneABlockAtATimeIsTheSame() {
+        Template pyramid = pyramid();
+        List<RigidLayout> layouts = new ArrayList<>(poses(pyramid, RigidKind.DESERT_PYRAMID, "pyramid"));
+        layouts.add(smallRuin().layout(RigidKind.OCEAN_RUIN, "ruin"));
+        RigidRecognizer recognizer = new RigidRecognizer(layouts, rules(Set.of()));
+        World world = new World().load(-4, 4);
+        world.stoneTop = 39;
+        world.waterTop = 62;
+        world.place(pyramid.damaged(0.3, 4), 0, 70, 0, "minecraft:air");
+        world.place(smallRuin(), 16, 40, 16, null);
+        int compared = 0;
+        int detected = 0;
+        for (int cx = -1; cx <= 1; cx++) {
+            for (int cz = -1; cz <= 1; cz++) {
+                Map<Long, int[]> triggers = new HashMap<>();
+                for (int x = cx - 1; x <= cx + 1; x++) {
+                    for (int z = cz - 1; z <= cz + 1; z++) {
+                        triggers.put(RigidRecognizer.chunkKey(x, z), recognizer.triggersOf(world, x, z, MIN_Y, MAX_Y));
+                    }
+                }
+                for (RigidRecognizer.Candidate candidate : recognizer.candidates(cx, cz, (x, z) -> triggers.get(RigidRecognizer.chunkKey(x, z)))) {
+                    RigidRecognizer.Detection whole = recognizer.verify(candidate, world, false);
+                    Counting counting = new Counting(world);
+                    RigidRecognizer.Verification verification = recognizer.verification(candidate, false);
+                    long before = 0;
+                    while (!verification.step(counting, 1)) {
+                        assertTrue(counting.reads - before <= 1);
+                        before = counting.reads;
+                    }
+                    assertTrue(counting.reads - before <= 1);
+                    RigidRecognizer.Detection stepped = verification.result();
+                    compared++;
+                    if (whole == null) {
+                        assertNull(stepped);
+                        continue;
+                    }
+                    detected++;
+                    assertEquals(whole.toString(), stepped.toString());
+                    assertEquals(Double.doubleToLongBits(whole.balanced()), Double.doubleToLongBits(stepped.balanced()));
+                    assertTrue(java.util.Arrays.equals(whole.matchedPositions, stepped.matchedPositions));
+                    assertEquals(recognizer.acceptable(whole, world), recognizer.acceptable(stepped, world));
+                }
+            }
+        }
+        assertTrue(compared > 10 && detected >= 2, compared + " compared, " + detected + " detected");
+    }
+
+    @Test
+    void theClusterTestDoneAFewBlocksAtATimeIsTheSame() {
+        Template ruin = smallRuin();
+        RigidRecognizer recognizer = new RigidRecognizer(List.of(ruin.layout(RigidKind.OCEAN_RUIN, "ruin"),
+            ruin.turned(2).layout(RigidKind.OCEAN_RUIN, "ruin turned 2")), rules(Set.of()));
+        for (int shift = 0; shift <= 1; shift++) {
+            World world = new World().load(-4, 4);
+            world.stoneTop = 39;
+            world.waterTop = 62;
+            world.place(ruin, shift, 40, 0, null);
+            RigidRecognizer.Detection grid = recognizer.verify(new RigidRecognizer.Candidate(recognizer.layouts().get(0), 0, 40, 0, 3), world, false);
+            assertNotNull(grid);
+            RigidRecognizer.ClusterTest test = recognizer.clusterTest(grid);
+            Counting counting = new Counting(world);
+            long before = 0;
+            while (!test.step(counting, 10)) {
+                assertTrue(counting.reads - before <= 10);
+                before = counting.reads;
+            }
+            assertEquals(recognizer.isClusterPiece(grid, world), test.isClusterPiece());
+            assertEquals(shift == 1, test.isClusterPiece());
+        }
+    }
+
+    @Test
+    void theTrackerNeverReadsMuchInOneStep() {
+        Template pyramid = pyramid();
+        Template ruin = smallRuin();
+        List<RigidLayout> layouts = new ArrayList<>(poses(pyramid, RigidKind.DESERT_PYRAMID, "pyramid"));
+        layouts.add(ruin.layout(RigidKind.OCEAN_RUIN, "ruin"));
+        layouts.add(ruin.turned(2).layout(RigidKind.OCEAN_RUIN, "ruin turned 2"));
+        RigidRecognizer recognizer = new RigidRecognizer(layouts, rules(Set.of()));
+        World world = new World().load(-10, 10);
+        world.stoneTop = 39;
+        world.waterTop = 62;
+        world.place(pyramid, 0, 70, 0, "minecraft:air");
+        world.place(ruin, 2 * 16, 40, 4 * 16, null);
+        // One block off the chunk grid: a cluster ruin, whose grid fit is left out.
+        world.place(ruin, 5 * 16 + 1, 40, 5 * 16, null);
+        Counting counting = new Counting(world);
+        RigidTracker tracker = new RigidTracker(recognizer, false);
+        for (int x = -10; x <= 10; x++) {
+            for (int z = -10; z <= 10; z++) {
+                tracker.chunkScanned(x, z, recognizer.triggersOf(world, x, z, MIN_Y, MAX_Y));
+            }
+        }
+        List<RigidRecognizer.Detection> detections = new ArrayList<>();
+        long[] most = {0};
+        long[] before = {0};
+        for (int calls = 0; calls < 100_000 && tracker.pendingCount() > 0; calls++) {
+            detections.addAll(tracker.work(counting, () -> {
+                most[0] = Math.max(most[0], counting.reads - before[0]);
+                before[0] = counting.reads;
+                return false;
+            }));
+            most[0] = Math.max(most[0], counting.reads - before[0]);
+            before[0] = counting.reads;
+        }
+        assertEquals(List.of("DESERT_PYRAMID 0,0 y 70", "OCEAN_RUIN 2,4 y 40"), found(detections));
+        assertTrue(most[0] <= RigidTracker.STEP_READS, "most reads in one step: " + most[0]);
+        // Nothing left to do: a call reads nothing.
+        long reads = counting.reads;
+        tracker.work(counting, () -> false);
+        assertEquals(reads, counting.reads);
+    }
+
+    @Test
+    void aChunkWhereNothingFitsIsJudgedWithoutWaitingForItsRivals() {
+        Template pyramid = pyramid();
+        List<RigidLayout> layouts = new ArrayList<>(poses(pyramid, RigidKind.DESERT_PYRAMID, "pyramid"));
+        layouts.addAll(poses(portal(), RigidKind.RUINED_PORTAL, "portal"));
+        RigidRecognizer recognizer = new RigidRecognizer(layouts, rules(Set.of()));
+        World world = new World().load(-8, 8);
+        // A few blocks of the pyramid: enough votes to compare, far from enough to fit.
+        int placed = 0;
+        for (Block block : pyramid.blocks()) {
+            if (placed++ % 9 == 0) {
+                world.set(block.x(), 70 + block.y(), block.z(), block.id());
+            }
+        }
+        RigidTracker tracker = new RigidTracker(recognizer, false);
+        assertTrue(tracker.reach() > recognizer.readSpan() + recognizer.span());
+        int read = recognizer.readSpan() + recognizer.span();
+        for (int x = -read; x <= read; x++) {
+            for (int z = -read; z <= read; z++) {
+                tracker.chunkScanned(x, z, recognizer.triggersOf(world, x, z, MIN_Y, MAX_Y));
+            }
+        }
+        int[] none = new int[0];
+        assertFalse(recognizer.candidates(0, 0, (x, z) -> Math.max(Math.abs(x), Math.abs(z)) <= read ? recognizer.triggersOf(world, x, z, MIN_Y, MAX_Y)
+            : none).isEmpty());
+        assertTrue(tracker.pendingCount() > 0);
+        for (int i = 0; i < 100; i++) {
+            assertEquals(List.of(), tracker.work(world, () -> false));
+        }
+        assertEquals(0, tracker.pendingCount());
+    }
+
+    @Test
+    void theTrackerWaitsForEverythingTheClusterTestReads() {
+        // A small ruin 29 blocks long: the cluster test around a fit reads 24 blocks to either side of its origin.
+        List<Block> line = new ArrayList<>();
+        for (int x = -14; x <= 14; x++) {
+            line.add(new Block(x, 0, 0, "minecraft:stone_bricks"));
+        }
+        RigidRecognizer recognizer = new RigidRecognizer(List.of(new Template(line, List.of()).layout(RigidKind.OCEAN_RUIN, "line")), rules(Set.of()));
+        assertEquals(1, recognizer.span());
+        assertEquals(1, recognizer.readSpan());
+        assertEquals(2, recognizer.clusterSpan());
+        assertEquals(RigidTracker.RIVALS + 2, new RigidTracker(recognizer, false).reach());
+        assertEquals(0, new RigidRecognizer(poses(pyramid(), RigidKind.DESERT_PYRAMID, "pyramid"), rules(Set.of())).clusterSpan());
+    }
+
     @Test
     void layoutsMergeStackedTemplatesAndApplyEachKindsRules() {
         List<RigidLayout.Entry> entries = List.of(
