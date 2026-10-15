@@ -624,4 +624,30 @@ class SeedFinderCliTest {
         assertTrue(unknownPreset.err().contains("unknown world preset 'tiny'"), unknownPreset.err());
         assertFalse(unknownPreset.err().contains("Write each structure"), unknownPreset.err());
     }
+
+    @Test
+    void aFewNetherBlocksNarrowTheStructureSeeds(@org.junit.jupiter.api.io.TempDir java.nio.file.Path folder) throws java.io.IOException {
+        List<String> layers = run("bedrock", "--seed", "12345", "--dimension", "nether", "--layers").out().lines().toList();
+        int header = layers.indexOf("bedrock-layer nether 0 4 0");
+        assertTrue(header >= 0, String.join("\n", layers));
+        List<String> lines = new java.util.ArrayList<>(List.of("desert_pyramid 272 80", "swamp_hut 256 -144", "village 336 80",
+            "shipwreck -128 32", "ruined_portal 16 0"));
+        lines.addAll(layers.subList(header, header + 3)); // the header and 2 rows: 32 blocks, too few to search on their own
+        java.nio.file.Path file = folder.resolve("notes.txt");
+        java.nio.file.Files.write(file, lines);
+        Result result = run(find("--file", file.toString()));
+        assertTrue(result.out().contains("only 12345 fits all 32 bedrock blocks"), result.out());
+        assertTrue(result.out().contains("it is 5794443870565576761."), result.out());
+    }
+
+    @Test
+    void findLeavesOutAStructureThatDoesntFit(@org.junit.jupiter.api.io.TempDir java.nio.file.Path folder) throws java.io.IOException {
+        java.nio.file.Path file = folder.resolve("notes.txt");
+        String structures = String.join("\n", EXAMPLE).replace(':', ' ').replace(',', ' ').replace("village 336 80", "village 352 80");
+        java.nio.file.Files.writeString(file, structures + "\nhashed-seed " + io.github.jriiik.seedfinder.Seeds.hashedSeed(12345L) + "\n");
+        Result result = run(find("--file", file.toString()));
+        assertEquals(0, result.exitCode(), result.out() + result.err());
+        assertTrue(result.out().contains("Found the full seed: 12345\n"), result.out());
+        assertTrue(result.out().contains("villages at block (352, 80) doesn't fit it"), result.out());
+    }
 }

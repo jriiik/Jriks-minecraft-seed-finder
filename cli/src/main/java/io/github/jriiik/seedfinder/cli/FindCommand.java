@@ -161,21 +161,32 @@ final class FindCommand implements Callable<Integer> {
             step = step.withNether(searchNether(out, commandLine.getErr(), data, read, threadCount));
             reportCombined(out, step, found);
         }
+        // Nether chunks the search found unusable are left out; the rest of the nether notes still count.
+        List<io.github.jriiik.seedfinder.bedrock.BedrockObservation> forFullSeed = WorldSeedSearch.bedrockForFullSeed(read.bedrock(), step);
+        WorldSeedSearch.BiomeInput biomeInput = biomes == null ? WorldSeedSearch.BiomeInput.NONE
+            : new WorldSeedSearch.BiomeInput(biomes.evidence(), null, () -> false);
         if (!step.searched() || step.structureSeeds().isEmpty()) {
+            if (plan.canSearch() && found.isEmpty() && retryWithoutMisfit(out, data, observations, forFullSeed, step, biomeInput, read, threadCount)) {
+                return 0;
+            }
+            read.hashedSeed().ifPresent(hashed -> out.println("If the world's seed was typed (as text or a short number), the hashed seed alone "
+                + "gives it: " + typedSeedCommand(hashed)));
             return 1;
         }
         List<Long> seeds = step.structureSeeds();
         FullSeedReport.Outcome outcome = FullSeedReport.Outcome.NOTHING;
         if (seeds.size() <= FullSeedFinder.MAX_STRUCTURE_SEEDS) {
-            // After the nether search only the overworld bedrock is left to check (the nether's was used).
-            BedrockEvidence forFullSeed = new BedrockEvidence(WorldSeedSearch.bedrockForFullSeed(read.bedrock(), step.nether()));
-            outcome = FullSeedReport.run(out, data, seeds, forFullSeed, biomes, read.hashedSeed(), threadCount);
+            outcome = FullSeedReport.run(out, data, seeds, new BedrockEvidence(forFullSeed), biomes, read.hashedSeed(), threadCount);
             if (outcome.worldSeed().isPresent()) {
-                List<StructureObservation> misfits = SeedCheck.misfits(data, plan.observations(), outcome.worldSeed().getAsLong());
-                for (StructureObservation misfit : misfits) {
+                long worldSeed = outcome.worldSeed().getAsLong();
+                for (StructureObservation misfit : SeedCheck.misfits(data, plan.observations(), worldSeed)) {
                     out.printf("%s at block (%d, %d) doesn't fit this seed: noted in the wrong place, from chunks made by an older Minecraft%n",
                         misfit.set().shortId(), misfit.chunk().minBlockX(), misfit.chunk().minBlockZ());
                     out.println("version, or placed by a command or copied.");
+                }
+                if (step.netherDisagrees() && step.nether().map(f -> !f.structureSeeds().contains(worldSeed & 0xFFFF_FFFF_FFFFL)).orElse(false)) {
+                    out.println("The nether bedrock noted doesn't fit this seed (nether chunks of another world, or made by an older Minecraft");
+                    out.println("version?).");
                 }
             }
         } else if (!read.bedrock().isEmpty() || biomes != null) {
@@ -185,9 +196,44 @@ final class FindCommand implements Callable<Integer> {
         out.println("To compare with a world whose seed you know: seedfinder structure-seed <that world's seed>");
         // Without overworld bedrock or biomes, finding the structure seed is the result; with them, the full seed has to
         // come out too.
-        boolean fullSeedNotes = !WorldSeedSearch.bedrockForFullSeed(read.bedrock(), step.nether()).isEmpty() || biomes != null;
-        boolean structureSeedFound = !found.isEmpty() && !step.netherDisagrees() || step.nether().map(NetherBedrockSearch.Finding::proven).orElse(false);
+        boolean fullSeedNotes = forFullSeed.stream().anyMatch(note -> note.dimension().dependsOnFullSeed()) || biomes != null;
+        boolean netherProven = step.nether().map(NetherBedrockSearch.Finding::proven).orElse(false);
+        boolean bothSides = step.netherDisagrees() && !found.isEmpty();
+        boolean structureSeedFound = !bothSides && (!found.isEmpty() && !step.netherDisagrees() || netherProven);
         return outcome.named() || !fullSeedNotes && structureSeedFound ? 0 : 1;
+    }
+
+    /**
+     * When no seed fits all the structures: tries again without each one in turn, as the mod does, and reports a seed
+     * proven without it (by the hashed seed, bedrock or biomes). Returns whether one was found.
+     */
+    private static boolean retryWithoutMisfit(PrintWriter out, VersionData data, List<StructureObservation> structures,
+                                              List<io.github.jriiik.seedfinder.bedrock.BedrockObservation> bedrock, WorldSeedSearch.StructureStep step,
+                                              WorldSeedSearch.BiomeInput biomes, ObservationReader.Observations read, int threads) {
+        boolean proof = read.hashedSeed().isPresent() || bedrock.stream().anyMatch(note -> note.dimension().dependsOnFullSeed()) || biomes.evidence() != null;
+        if (!proof || structures.size() > WorldSeedSearch.MAX_MISFIT_CHECKS) {
+            return false;
+        }
+        out.println("Trying again without each structure in turn (one may not follow the seed)...");
+        out.flush();
+        java.util.Optional<WorldSeedSearch.Result> retry = WorldSeedSearch.withoutMisfit(data, structures, bedrock, step.nether(), biomes,
+            WorldSeedSearch.HashedSeed.of(read.hashedSeed()), threads);
+        if (retry.isEmpty()) {
+            out.println("Leaving out one structure doesn't give a seed that can be proven either.");
+            return false;
+        }
+        WorldSeedSearch.Result result = retry.get();
+        StructureObservation left = result.leftOut().orElseThrow();
+        out.println("Found the full seed: " + result.worldSeed().getAsLong());
+        out.println("It is the only seed that fits the other structures and " + switch (result.proof().orElseThrow()) {
+            case HASHED_SEED -> "has the hashed seed in your notes.";
+            case BEDROCK -> "all of the bedrock noted.";
+            case BIOMES -> "the biome notes (a wrong seed would fit them only by a rare chance).";
+        });
+        out.printf("%s at block (%d, %d) doesn't fit it: noted in the wrong place, from chunks made by an older Minecraft version, or%n",
+            left.set().shortId(), left.chunk().minBlockX(), left.chunk().minBlockZ());
+        out.println("placed by a command or copied. Leave it out of your notes.");
+        return true;
     }
 
     /** Searches the nether bedrock and says what came out. */
@@ -227,7 +273,9 @@ final class FindCommand implements Callable<Integer> {
             out.println("1.17 or older (its bedrock doesn't follow the seed), or something was noted wrong there. It is left out.");
         }
         List<Long> seeds = finding.structureSeeds();
-        if (seeds.isEmpty()) {
+        if (seeds.isEmpty() && !finding.unusableChunks().isEmpty() && finding.unusableChunks().size() < finding.chunks().size()) {
+            out.println("The rest of the nether bedrock is not enough to search on its own.");
+        } else if (seeds.isEmpty()) {
             out.println("No structure seed fits the nether bedrock. Check the notes (rows go from north to south, each row from west");
             out.println("to east, below a line with the north-west block), and that the chunks were made by Minecraft 1.18 or newer.");
         } else if (finding.capped()) {
@@ -255,14 +303,14 @@ final class FindCommand implements Callable<Integer> {
             return;
         }
         List<Long> seeds = step.structureSeeds();
-        if (step.netherDisagrees() && step.nether().get().proven()) {
-            if (fromStructures.isEmpty()) {
-                out.println("No seed fits all the structures, so a structure doesn't follow the seed (noted in the wrong place, from older");
-                out.println("chunks, or placed by a command); the structure seed comes from the nether bedrock.");
-            } else {
-                out.println("The structures and the nether bedrock disagree: one side is wrong (a structure noted in the wrong place or from");
-                out.println("older chunks, or nether chunks of another world). The seeds of both are checked below.");
-            }
+        boolean proven = step.nether().get().proven();
+        if (fromStructures.isEmpty()) {
+            out.println("No seed fits all the structures, so one of them doesn't follow the seed (noted in the wrong place, from older");
+            out.println("chunks, or placed by a command); " + (proven ? "the structure seed comes from the nether bedrock."
+                : "the structure seeds the nether bedrock allows are checked instead."));
+        } else if (step.netherDisagrees() && proven) {
+            out.println("The structures and the nether bedrock disagree: one side is wrong (a structure noted in the wrong place or from");
+            out.println("older chunks, or nether chunks of another world). The seeds of both are checked below.");
         } else if (step.netherDisagrees()) {
             out.println("Note: none of the structure seeds the structures fit is among those the nether bedrock fits (older nether chunks,");
             out.println("or a block noted wrong?). The structures' seeds are used.");

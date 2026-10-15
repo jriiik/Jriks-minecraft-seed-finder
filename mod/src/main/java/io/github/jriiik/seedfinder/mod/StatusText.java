@@ -42,8 +42,10 @@ final class StatusText {
         int leftOut = session.leftOutBedrockChunks(NETHER);
         lines.add("Bedrock: " + chunks(session.bedrockChunks("minecraft:overworld"), "overworld") + ", "
             + chunks(session.bedrockChunks(NETHER), "nether") + (leftOut == 0 ? "" : " (" + leftOut + " more left out: made by an older Minecraft"
-                + " version, or changed)"));
-        lines.add(session.foreignBiome().isPresent()
+                + " version, or changed" + (leftOut >= WorldSession.LEFT_OUT_BEFORE_SPACING ? "; nether chunks near them are not read, those of"
+                + " newer land farther away are" : "") + ")"));
+        lines.add(SeedFinderClient.biomeListFailed() ? "Biomes: not noted, because the list of biomes could not be loaded (see the game log)."
+            : session.foreignBiome().isPresent()
             ? "Biomes: not noted, because this world has a biome the normal overworld doesn't have (" + session.foreignBiome().get()
                 + "): a data pack or mod changes it."
             : "Biomes: " + session.biomeChunks() + " chunk" + (session.biomeChunks() == 1 ? "" : "s") + " in " + session.biomeAreas() + " area"
@@ -318,12 +320,14 @@ final class StatusText {
         });
     }
 
-    /** The nether chunks the search found unusable. */
+    /** The nether chunks the search found unusable, and those that don't fit the candidates the others allow. */
     private static void unusableNetherLines(WorldSeedSearch.Result result, List<String> lines) {
         result.nether().ifPresent(finding -> {
+            List<io.github.jriiik.seedfinder.world.ChunkPos> leftOut = WorldSeedSearch.unusableNetherChunks(finding);
             for (io.github.jriiik.seedfinder.world.ChunkPos chunk : finding.unusableChunks()) {
-                lines.add("The nether bedrock of the chunk at " + chunk.minBlockX() + ", " + chunk.minBlockZ() + " fits no seed that fits the rest:"
-                    + " made by Minecraft 1.17 or older, or changed. It is left out.");
+                lines.add("The nether bedrock of the chunk at " + chunk.minBlockX() + ", " + chunk.minBlockZ() + (leftOut.contains(chunk)
+                    ? " fits no seed that fits the rest: made by Minecraft 1.17 or older, or changed. It is left out."
+                    : " doesn't fit the seeds the other nether chunks allow: one of them was made by Minecraft 1.17 or older, or changed."));
             }
         });
     }
@@ -396,7 +400,7 @@ final class StatusText {
         List<Long> likely = result.likelySeeds();
         if (!likely.isEmpty()) {
             lines.add("If nobody typed a seed, it is probably " + likely.stream().map(String::valueOf).collect(Collectors.joining(" or ")) + ".");
-        } else if (seeds.size() == 1 && result.biomes().map(BiomeEvidence.Decision::complete).orElse(false)
+        } else if (seeds.size() == 1 && !result.bedrockDisagrees() && result.biomes().map(BiomeEvidence.Decision::ruleOut).orElse(false)
             && !WorldSeedSearch.likelySeeds(seeds.get(0)).isEmpty()) {
             lines.add("The biomes seen rule out the seeds Minecraft picks itself and those typed text gives: the seed was typed as a number.");
         }
@@ -445,7 +449,8 @@ final class StatusText {
         }
         return switch (result.stage()) {
             case NEED_MORE_STRUCTURES -> "Seed Finder: " + notes + ", need more structures or nether bedrock";
-            case NO_STRUCTURE_SEED -> "Seed Finder: no seed fits the structures";
+            case NO_STRUCTURE_SEED -> "Seed Finder: " + (result.hashedSeedFitsNone() ? "the notes don't fit this world's hashed seed"
+                : result.plan().canSearch() ? "no seed fits the structures" : "no seed fits the notes");
             case STRUCTURE_SEED -> "Seed Finder: " + (result.structureSeeds().size() == 1
                 ? "structure seed " + result.structureSeeds().get(0) : result.structureSeeds().size() + " structure seeds") + ", " + notes;
             case WORLD_SEED -> "Seed Finder: world seed " + result.worldSeed().getAsLong();
@@ -458,7 +463,8 @@ final class StatusText {
             return session.worldSeed();
         }
         WorldSeedSearch.Result result = session.result();
-        return result != null && result.structureSeeds().size() == 1 ? OptionalLong.of(result.structureSeeds().get(0)) : OptionalLong.empty();
+        return result != null && result.stage() == WorldSeedSearch.Stage.STRUCTURE_SEED && result.structureSeeds().size() == 1
+            ? OptionalLong.of(result.structureSeeds().get(0)) : OptionalLong.empty();
     }
 
     private static String chunks(int count, String dimension) {

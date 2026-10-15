@@ -418,4 +418,23 @@ class WorldSessionTest {
         loaded.clearAll();
         assertEquals(0, loaded.leftOutBedrockChunks("minecraft:the_nether"));
     }
+
+    @Test
+    void manyChunksLeftOutKeepOnlyTheirSurroundingsFromBeingRead() {
+        WorldSession session = new WorldSession(WORLD);
+        // an old portal hub: every chunk around it is left out
+        for (int round = 0; round < WorldSession.LEFT_OUT_BEFORE_SPACING / WorldSession.MAX_BEDROCK_CHUNKS; round++) {
+            List<io.github.jriiik.seedfinder.world.ChunkPos> old = new java.util.ArrayList<>();
+            for (int i = 0; i < WorldSession.MAX_BEDROCK_CHUNKS; i++) {
+                int x = round * WorldSession.MAX_BEDROCK_CHUNKS + i;
+                assertTrue(session.offerBedrock(netherChunk(x, 0)));
+                old.add(new io.github.jriiik.seedfinder.world.ChunkPos(x, 0));
+            }
+            session.leaveOutBedrock("minecraft:the_nether", old);
+        }
+        assertTrue(session.leftOutBedrockChunks("minecraft:the_nether") >= WorldSession.LEFT_OUT_BEFORE_SPACING);
+        assertFalse(session.wantsBedrock("minecraft:the_nether", 20, 5), "next to the old land");
+        assertTrue(session.wantsBedrock("minecraft:the_nether", 60, 60), "new land farther away");
+        assertTrue(session.offerBedrock(netherChunk(60, 60)));
+    }
 }

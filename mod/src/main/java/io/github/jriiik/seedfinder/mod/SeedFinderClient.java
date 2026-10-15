@@ -170,7 +170,9 @@ public final class SeedFinderClient implements ClientModInitializer {
     private static void onChunkLoad(ClientLevel level, LevelChunk chunk) {
         WorldSession current = session(Minecraft.getInstance());
         if (current != null && current.collecting()) {
-            bedrockDimension(level, current).ifPresent(dimension -> BedrockScanner.scan(dimension, chunk).ifPresent(current::offerBedrock));
+            bedrockDimension(level, current)
+                .filter(dimension -> current.wantsBedrock(dimension.id(), chunk.getPos().x(), chunk.getPos().z()))
+                .ifPresent(dimension -> BedrockScanner.scan(dimension, chunk).ifPresent(current::offerBedrock));
             scanBiomes(level, current, chunk);
             recognition.chunkLoaded(level, chunk);
         }
@@ -190,6 +192,11 @@ public final class SeedFinderClient implements ClientModInitializer {
             });
         }
         return overworldBiomes.isDone() && !overworldBiomes.isCompletedExceptionally() ? overworldBiomes.join() : null;
+    }
+
+    /** True when the biome list could not be loaded (then biomes are never noted; see the game log). */
+    static boolean biomeListFailed() {
+        return overworldBiomes != null && overworldBiomes.isCompletedExceptionally();
     }
 
     /** Notes the chunk's biomes when they are wanted (overworld, not superflat, an area that still needs chunks). */
@@ -234,7 +241,8 @@ public final class SeedFinderClient implements ClientModInitializer {
                     LevelChunk chunk = level.getChunkSource().getChunk(centerX + dx, centerZ + dz, ChunkStatus.FULL, false);
                     if (chunk != null) {
                         Optional<BedrockDimension> dimension = bedrockDimension(level, current);
-                        dimension.ifPresent(rules -> BedrockScanner.scan(rules, chunk).ifPresent(current::offerBedrock));
+                        dimension.filter(rules -> current.wantsBedrock(rules.id(), chunk.getPos().x(), chunk.getPos().z()))
+                            .ifPresent(rules -> BedrockScanner.scan(rules, chunk).ifPresent(current::offerBedrock));
                         scanBiomes(level, current, chunk);
                     }
                 }

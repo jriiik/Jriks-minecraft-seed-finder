@@ -298,7 +298,14 @@ biome or a wrong proven seed was found, but several ways the results were used a
   bedrock fit "found" only with the same rule as the mod (enough bedrock for the number of structure seeds).
 - *The mod* starts a new biome area only where its notes will be the full spacing from the others (about 4,500
   blocks between first chunks; one more area for large-biome worlds), loads the biome list off the main thread, and
-  lets nether chunks made by older versions make room for others.
+  lets nether chunks made by older versions make room for others (once several are left out, chunks near them are
+  skipped, so the newer land farther away is read).
+
+A second review of these fixes found one regression, now fixed: nether notes that the nether search couldn't use
+(too few to search, a cut-off list, candidates set aside) were dropped from the final bedrock check, so a seed they
+rule out could be called found. Now only chunks found unusable for sure are left out (and all nether notes when a
+proven nether result disagrees with the structures, as both sides are then candidates). Likely seeds are only
+filtered by biomes when some seed fits them, and by overworld bedrock when some seed fits it.
 
 ## Things that can't work
 

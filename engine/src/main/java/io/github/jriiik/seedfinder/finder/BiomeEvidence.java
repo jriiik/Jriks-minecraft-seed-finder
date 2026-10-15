@@ -114,8 +114,8 @@ public final class BiomeEvidence {
     /**
      * The notes worth checking. Of the stored cells (from the mod, often whole areas), a cell inside a patch of one
      * biome says little more than its neighbours, and checking it costs time for every seed that fits the patch; so
-     * only cells next to a cell of another biome (borders, where the evidence is) and one cell per chunk (its
-     * north-west one) are kept. F3 notes are all kept. This depends only on the notes, never on the seeds checked,
+     * only cells next to a cell of another biome (borders, where the evidence is) and one cell per chunk and height
+     * (the first noted) are kept. F3 notes are all kept. This depends only on the notes, never on the seeds checked,
      * so the counts the rule uses are measured on exactly the notes kept.
      */
     private static List<BiomeObservation> informative(List<BiomeObservation> notes) {
@@ -127,6 +127,7 @@ public final class BiomeEvidence {
         }
         List<BiomeObservation> kept = new ArrayList<>();
         Set<List<Integer>> keptCells = new LinkedHashSet<>();
+        Set<List<Integer>> keptChunks = new LinkedHashSet<>();
         for (BiomeObservation note : notes) {
             if (!note.exactCell()) {
                 kept.add(note);
@@ -143,7 +144,7 @@ public final class BiomeEvidence {
                 String neighbour = cells.get(List.of(qx + step[0], qy, qz + step[1]));
                 border |= neighbour != null && !neighbour.equals(note.biome());
             }
-            if (border || (qx & 3) == 0 && (qz & 3) == 0) {
+            if (border || keptChunks.add(List.of(qx >> 2, qy, qz >> 2))) {
                 kept.add(note);
             }
         }
@@ -572,6 +573,14 @@ public final class BiomeEvidence {
         public boolean proven() {
             return seed.isPresent();
         }
+
+        /**
+         * True when the check can rule seeds out: it finished and some seed fits the notes. When no seed fits, the notes
+         * themselves don't follow the seed (older or changed chunks) and say nothing about any one seed.
+         */
+        public boolean ruleOut() {
+            return complete && !fitting.isEmpty();
+        }
     }
 
     /**
@@ -632,9 +641,12 @@ public final class BiomeEvidence {
     private double fitChance(List<Scan> scans, OverworldBiomes.Preset preset, long seed) {
         List<Scan> same = scans.stream().filter(scan -> scan.preset() == preset).toList();
         long candidates = (long) same.size() * CANDIDATES;
-        List<Integer> groups = groups(preset);
-        double chance = Math.pow(LIFT, groups.size() - 1);
-        for (int place : groups) {
+        // A wrong seed that fits every group fits any part of them too, so the smallest estimate over the parts holds:
+        // a group whose factor (LIFT x rate) is not below 1 is better left out.
+        double best = 1;
+        double product = 1;
+        boolean any = false;
+        for (int place : groups(preset)) {
             long others = 0;
             for (Scan scan : same) {
                 others += scan.count(place);
@@ -642,9 +654,14 @@ public final class BiomeEvidence {
                     others--;
                 }
             }
-            chance *= (double) (others + PSEUDO_COUNT) / candidates;
+            double rate = (double) (others + PSEUDO_COUNT) / candidates;
+            best = Math.min(best, rate);
+            if (LIFT * rate < 1) {
+                product *= LIFT * rate;
+                any = true;
+            }
         }
-        return chance;
+        return any ? product / LIFT : best;
     }
 
     /**

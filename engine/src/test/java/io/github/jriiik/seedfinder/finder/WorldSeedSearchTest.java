@@ -229,6 +229,7 @@ class WorldSeedSearchTest {
         assertEquals(WorldSeedSearch.Stage.STRUCTURE_SEED, result.stage());
         assertTrue(result.bedrockDisagrees());
         assertTrue(result.worldSeed().isEmpty());
+        assertTrue(result.likelySeeds().isEmpty(), "nor offered as likely: " + result.likelySeeds());
     }
 
     @Test
@@ -285,5 +286,56 @@ class WorldSeedSearchTest {
         WorldSeedSearch.Result result = WorldSeedSearch.fullSeed(step, notes, OptionalLong.empty(), 2);
         assertEquals(OptionalLong.of(12345L), result.worldSeed());
         assertEquals(Optional.of(WorldSeedSearch.Proof.BEDROCK), result.proof());
+    }
+
+    @Test
+    void netherNotesTooFewToSearchStillRuleOutSeeds() {
+        // A few nether floor blocks of another world (where its bedrock differs from 12345's): too few to search, but
+        // they still count against 12345, so the overworld bedrock alone doesn't make it certain.
+        io.github.jriiik.seedfinder.bedrock.BedrockDimension netherRules = DATA.bedrockDimension("nether").orElseThrow();
+        BedrockPattern right = new BedrockPattern(netherRules, 12345L);
+        BedrockPattern other = new BedrockPattern(netherRules, 999L);
+        List<BedrockObservation> notes = new java.util.ArrayList<>();
+        for (int i = 0; i < 256 && notes.size() < 12; i++) {
+            int x = i & 15;
+            int z = i >> 4;
+            if (right.isBedrock(x, 4, z) != other.isBedrock(x, 4, z)) {
+                notes.add(new BedrockObservation(netherRules, x, 4, z, other.isBedrock(x, 4, z)));
+            }
+        }
+        notes.addAll(bedrockOf(12345L));
+        List<StructureObservation> structures = ObservationReader.read(DATA, STRUCTURES_12345).structures();
+        WorldSeedSearch.StructureStep step = WorldSeedSearch.structureSeeds(DATA, structures, notes, 2, () -> false, (done, total) -> { },
+            (search, pieces) -> { });
+        assertTrue(step.nether().orElseThrow().structureSeeds().isEmpty());
+        assertEquals(notes.size(), WorldSeedSearch.bedrockForFullSeed(notes, step).size());
+        WorldSeedSearch.Result result = WorldSeedSearch.fullSeed(step, notes, OptionalLong.empty(), 2);
+        assertEquals(WorldSeedSearch.Stage.STRUCTURE_SEED, result.stage());
+        assertTrue(result.worldSeed().isEmpty());
+    }
+
+    @Test
+    void likelySeedsAreKeptWhenNoSeedFitsTheBiomes() {
+        // Biomes of another world: no seed of 12345 fits them, so they say nothing about how its seed was picked.
+        List<StructureObservation> structures = ObservationReader.read(DATA, STRUCTURES_12345).structures();
+        WorldSeedSearch.StructureStep step = WorldSeedSearch.structureSeeds(DATA, structures, 2, (done, total) -> { });
+        List<BiomeObservation> biomes = new java.util.ArrayList<>(
+            BiomeEvidenceTest.area(987_654_321_987L, io.github.jriiik.seedfinder.biome.OverworldBiomes.Preset.NORMAL, 100, -300, 4, 64));
+        biomes.addAll(BiomeEvidenceTest.area(987_654_321_987L, io.github.jriiik.seedfinder.biome.OverworldBiomes.Preset.NORMAL, 4500, -300, 4, 64));
+        WorldSeedSearch.Result result = WorldSeedSearch.fullSeed(step, List.of(), new WorldSeedSearch.BiomeInput(
+            new BiomeEvidence(MinecraftVersion.V26_3, biomes, OptionalLong.empty()), null, () -> false), OptionalLong.empty(), 4);
+        assertTrue(result.biomes().orElseThrow().fitting().isEmpty());
+        assertEquals(List.of(5794443870565576761L, 12345L), result.likelySeeds());
+    }
+
+    @Test
+    void likelySeedsTheBedrockRulesOutAreNotNamed() {
+        // A small bedrock patch of 12345: too little to be certain, but 5794443870565576761 doesn't fit it.
+        List<StructureObservation> structures = ObservationReader.read(DATA, STRUCTURES_12345).structures();
+        WorldSeedSearch.StructureStep step = WorldSeedSearch.structureSeeds(DATA, structures, 2, (done, total) -> { });
+        List<String> lines = BedrockText.heights(new BedrockPattern(DATA.bedrockDimension("overworld").orElseThrow(), 12345L), 0, 0, 6, 6);
+        WorldSeedSearch.Result result = WorldSeedSearch.fullSeed(step, ObservationReader.read(DATA, lines).bedrock(), OptionalLong.empty(), 2);
+        assertEquals(WorldSeedSearch.Stage.STRUCTURE_SEED, result.stage());
+        assertEquals(List.of(12345L), result.likelySeeds());
     }
 }

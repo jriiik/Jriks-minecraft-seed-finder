@@ -37,9 +37,12 @@ final class SearchRunner {
     private volatile int percent = -1;
     private int watchedVersion = -1;
     private int quietTicks;
-    /** The structure step is the slow part; it is kept while the structures stay the same. */
+    /** The structure search is the slow part; it is kept while the structures stay the same. */
     private String cachedFor;
     private WorldSeedSearch.StructureStep cachedStep;
+    /** The nether bedrock search, kept while the nether notes stay the same (on its own: chunks left out change only it). */
+    private String cachedNetherFor;
+    private NetherBedrockSearch.Finding cachedNether;
     /**
      * Which seeds fit each biome area, kept so a search after a change only checks what changed (8 KB each): room for
      * every structure seed checked, under every preset, in every area.
@@ -83,14 +86,15 @@ final class SearchRunner {
         List<String> lines = session.notesLines();
         OptionalLong typedSeed = session.typedSeed();
         boolean genuine = session.hashedSeedIsGenuine();
-        // The structure step also searches the nether bedrock, so it is kept while both stay the same.
-        String structureKey = session.world() + "\n" + String.join("\n", session.structureLines()) + "\n" + session.bedrock().stream()
+        String structureKey = session.world() + "\n" + String.join("\n", session.structureLines());
+        String netherKey = session.world() + "\n" + session.bedrock().stream()
             .filter(chunk -> chunk.dimension().equals(NetherBedrockSearch.NETHER))
             .map(chunk -> String.join("\n", chunk.notesLines()))
             .collect(java.util.stream.Collectors.joining("\n"));
         WorldSeedSearch.StructureStep reuse = structureKey.equals(cachedFor) ? cachedStep : null;
+        NetherBedrockSearch.Finding reuseNether = netherKey.equals(cachedNetherFor) ? cachedNether : null;
         running = true;
-        percent = reuse != null ? 100 : 0;
+        percent = reuse != null && (reuseNether != null || netherKey.equals(session.world() + "\n")) ? 100 : 0;
         CompletableFuture
             .supplyAsync(() -> {
                 ObservationReader.Observations notes = ObservationReader.read(data, lines);
@@ -108,12 +112,14 @@ final class SearchRunner {
                 }
                 boolean nether = notes.bedrock().stream().anyMatch(note -> note.dimension().id().equals(NetherBedrockSearch.NETHER));
                 if (notes.structures().isEmpty() && !nether) {
-                    return new Outcome(null, null, null);
+                    return new Outcome(null, null, null, null, null);
                 }
-                WorldSeedSearch.StructureStep step = reuse != null ? reuse
-                    : WorldSeedSearch.structureSeeds(data, notes.structures(), notes.bedrock(), threads, () -> false,
-                        (done, total) -> percent = (int) (100 * done / total),
+                WorldSeedSearch.StructureStep plain = reuse != null ? reuse
+                    : WorldSeedSearch.structureSeeds(data, notes.structures(), threads, (done, total) -> percent = (int) (100 * done / total));
+                NetherBedrockSearch.Finding finding = !nether ? null : reuseNether != null ? reuseNether
+                    : new NetherBedrockSearch(data).find(notes.bedrock(), threads, () -> false,
                         (search, pieces) -> percent = pieces * 100 / NetherBedrockSearch.PIECES);
+                WorldSeedSearch.StructureStep step = finding == null ? plain : plain.withNether(finding);
                 WorldSeedSearch.HashedSeed hashedSeed = new WorldSeedSearch.HashedSeed(notes.hashedSeed(), genuine);
                 WorldSeedSearch.Result result = WorldSeedSearch.fullSeed(step, notes.bedrock(), biomes, hashedSeed, threads);
                 if (result.stage() == WorldSeedSearch.Stage.NO_STRUCTURE_SEED && !typedSeedConfirmed && !notes.structures().isEmpty()) {
@@ -122,40 +128,36 @@ final class SearchRunner {
                     result = WorldSeedSearch.withoutMisfit(data, notes.structures(), notes.bedrock(), step.nether(), biomes, hashedSeed, threads)
                         .orElse(result);
                 }
-                return new Outcome(structureKey, step, result);
+                return new Outcome(structureKey, plain, netherKey, finding, result);
             }, WORKER)
             .whenCompleteAsync((outcome, error) -> {
                 running = false;
                 percent = -1;
-                if (outcome != null && outcome.step() != null) {
+                if (outcome != null && outcome.plain() != null) {
                     cachedFor = outcome.structureKey();
-                    cachedStep = outcome.step();
+                    cachedStep = outcome.plain();
+                    cachedNetherFor = outcome.netherKey();
+                    cachedNether = outcome.nether();
                 }
                 if (error != null) {
                     SeedFinderClient.LOG.warn("Search failed", error);
                 }
                 session.setResult(version, outcome == null ? null : outcome.result(),
                     error == null ? null : String.valueOf(error.getCause() != null ? error.getCause().getMessage() : error.getMessage()));
-                if (outcome != null && outcome.step() != null) {
+                if (outcome != null && outcome.nether() != null) {
                     // Nether chunks no seed makes (or that contradict a proven result) free their place for others.
-                    outcome.step().nether().ifPresent(finding -> session.leaveOutBedrock(NetherBedrockSearch.NETHER, unusable(finding)));
+                    session.leaveOutBedrock(NetherBedrockSearch.NETHER, WorldSeedSearch.unusableNetherChunks(outcome.nether()));
                 }
             }, Minecraft.getInstance());
     }
 
     /**
-     * The nether chunks to leave out: those no seed fits on their own (searched completely), and those that contradict a
-     * proven result. A chunk that only contradicts unproven candidates is kept: it may be the one that is right.
+     * What a search found; all null when there were no structures or nether bedrock to search with.
+     *
+     * @param plain  the structure search on its own
+     * @param nether the nether bedrock search, null without nether notes
      */
-    static List<io.github.jriiik.seedfinder.world.ChunkPos> unusable(NetherBedrockSearch.Finding finding) {
-        return finding.chunks().stream()
-            .filter(report -> report.status() == NetherBedrockSearch.ChunkStatus.FITS_NO_SEED
-                || report.status() == NetherBedrockSearch.ChunkStatus.CONTRADICTS && finding.proven())
-            .map(NetherBedrockSearch.ChunkReport::chunk)
-            .toList();
-    }
-
-    /** What a search found; all null when there were no structures to search with. */
-    private record Outcome(String structureKey, WorldSeedSearch.StructureStep step, WorldSeedSearch.Result result) {
+    private record Outcome(String structureKey, WorldSeedSearch.StructureStep plain, String netherKey, NetherBedrockSearch.Finding nether,
+                           WorldSeedSearch.Result result) {
     }
 }

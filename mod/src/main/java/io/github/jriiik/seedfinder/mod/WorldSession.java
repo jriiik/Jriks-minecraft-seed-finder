@@ -65,8 +65,15 @@ final class WorldSession {
     /** How far an area's notes reach from its first chunk's corner, both ways together: 2 x the radius, plus a chunk's cells. */
     private static final int BIOME_AREA_REACH = 2 * BIOME_AREA_RADIUS + 12;
 
-    /** At most this many chunks found unusable are left out per dimension; then no more of its bedrock is read. */
-    static final int MAX_LEFT_OUT_BEDROCK_CHUNKS = 32;
+    /**
+     * Once this many chunks of a dimension are left out (see {@link #leaveOutBedrock}), chunks within
+     * {@link #LEFT_OUT_SPACING_CHUNKS} of one of them are not read: old land (an upgraded world's nether around its
+     * portals) is one connected area, while new land farther away still is.
+     */
+    static final int LEFT_OUT_BEFORE_SPACING = 8;
+    static final int LEFT_OUT_SPACING_CHUNKS = 16;
+    /** At most this many left-out chunks are remembered (the oldest are forgotten). */
+    static final int MAX_LEFT_OUT_BEDROCK_CHUNKS = 256;
     /** Characters that stand for biomes in the saved file (each file has its own list of biomes). */
     private static final String BIOME_CHARS = "0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ+/";
 
@@ -408,16 +415,30 @@ final class WorldSession {
         return (int) bedrock.stream().filter(chunk -> chunk.dimension().equals(dimension)).count();
     }
 
-    /** Whether this dimension's bedrock is still wanted: fewer than {@link #MAX_BEDROCK_CHUNKS} kept, and not too many left out. */
+    /** Whether this dimension's bedrock is still wanted: fewer than {@link #MAX_BEDROCK_CHUNKS} kept. */
     boolean wantsBedrock(String dimension) {
-        return bedrockChunks(dimension) < MAX_BEDROCK_CHUNKS && leftOutBedrockChunks(dimension) < MAX_LEFT_OUT_BEDROCK_CHUNKS;
+        return bedrockChunks(dimension) < MAX_BEDROCK_CHUNKS;
     }
 
-    /** Keeps the chunk if this dimension still needs bedrock; returns whether it was kept. */
+    /**
+     * Whether this chunk's bedrock would be kept (cheap; the chunk isn't read): the dimension still needs bedrock, the
+     * chunk isn't noted or left out, and it isn't next to many left-out chunks.
+     */
+    boolean wantsBedrock(String dimension, int chunkX, int chunkZ) {
+        if (!wantsBedrock(dimension) || bedrock.stream().anyMatch(c -> c.dimension().equals(dimension) && c.chunkX() == chunkX && c.chunkZ() == chunkZ)) {
+            return false;
+        }
+        List<LeftOutChunk> left = leftOutBedrock.stream().filter(c -> c.dimension().equals(dimension)).toList();
+        if (left.contains(new LeftOutChunk(dimension, chunkX, chunkZ))) {
+            return false;
+        }
+        return left.size() < LEFT_OUT_BEFORE_SPACING || left.stream().noneMatch(c ->
+            Math.max(Math.abs(c.chunkX() - chunkX), Math.abs(c.chunkZ() - chunkZ)) <= LEFT_OUT_SPACING_CHUNKS);
+    }
+
+    /** Keeps the chunk if its bedrock is wanted (see {@link #wantsBedrock(String, int, int)}); returns whether it was kept. */
     boolean offerBedrock(ScannedChunk chunk) {
-        if (!wantsBedrock(chunk.dimension()) || bedrock.stream().anyMatch(c ->
-            c.dimension().equals(chunk.dimension()) && c.chunkX() == chunk.chunkX() && c.chunkZ() == chunk.chunkZ())
-            || leftOutBedrock.contains(new LeftOutChunk(chunk.dimension(), chunk.chunkX(), chunk.chunkZ()))) {
+        if (!wantsBedrock(chunk.dimension(), chunk.chunkX(), chunk.chunkZ())) {
             return false;
         }
         bedrock.add(chunk);
@@ -441,6 +462,9 @@ final class WorldSession {
                 leftOutBedrock.add(left);
                 version++;
             }
+        }
+        while (leftOutBedrock.size() > MAX_LEFT_OUT_BEDROCK_CHUNKS) {
+            leftOutBedrock.remove(0);
         }
     }
 
