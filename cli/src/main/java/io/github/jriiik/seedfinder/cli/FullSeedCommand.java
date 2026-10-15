@@ -4,6 +4,7 @@ import io.github.jriiik.seedfinder.Seeds;
 import io.github.jriiik.seedfinder.bedrock.BedrockEvidence;
 import io.github.jriiik.seedfinder.finder.FullSeedFinder;
 import io.github.jriiik.seedfinder.finder.ObservationReader;
+import io.github.jriiik.seedfinder.version.MinecraftVersion;
 import io.github.jriiik.seedfinder.version.VersionData;
 import java.io.PrintWriter;
 import java.nio.file.Path;
@@ -18,15 +19,21 @@ import picocli.CommandLine.Command;
     name = "full-seed",
     mixinStandardHelpOptions = true,
     description = {
-        "Work out the full world seed from its structure seed (what 'find' gives you), optionally with bedrock you have seen.",
-        "Without bedrock it names the likely seeds: the one Minecraft picks when nobody types a seed, and the one a text "
-            + "seed would give. With bedrock it checks all 65,536 world seeds that share the structure seed.",
+        "Work out the full world seed from its structure seed (what 'find' gives you), optionally with bedrock or biomes you "
+            + "have seen.",
+        "Without them it names the likely seeds: the one Minecraft picks when nobody types a seed, and the one a text "
+            + "seed would give. With bedrock or biomes it checks all 65,536 world seeds that share the structure seed.",
         "",
         "Bedrock: at the bottom of the overworld, clear an area down to the bedrock (one chunk, 16 x 16 columns, is nearly "
             + "always enough; press F3+G to see chunk borders). For each column, note the height of the top bedrock block "
             + "as its last digit: 0 for y=-60, 1 for -61, 2 for -62, 3 for -63, 4 for -64. Write one row per z, from north "
             + "to south, each row from west to east, below a line with the x and z of the north-west column. Use ? for "
             + "columns you did not check. Don't use bedrock inside mineshafts or strongholds.",
+        "",
+        "Biomes: stand somewhere, press F3 and note the biome it shows with your block position: 'biome forest 120 64 -35'. "
+            + "Note several places where different biomes meet. The biomes of one area (what you see around you) prove a seed "
+            + "Minecraft picked by itself or a text seed; any other seed needs a second area at least 4,096 blocks away "
+            + "(16,384 in a large-biomes world). The mod notes the biomes of whole areas for you.",
     },
     footer = {
         "",
@@ -39,6 +46,8 @@ import picocli.CommandLine.Command;
         "Other ways to write bedrock: 'bedrock-layer x y z' followed by rows of B (bedrock) and . (anything else), or",
         "single blocks: 'bedrock x y z' and 'not-bedrock x y z'. Add 'nether' after the keyword for nether bedrock, which",
         "only depends on the structure seed. 'seedfinder bedrock' prints the bedrock of a seed you know in this format.",
+        "Biomes the game stored for 4 x 4 block cells (the mod writes these): 'biome-grid x y z a=plains b=forest' followed by",
+        "rows of those letters (? = not read). 'preset large_biomes' (or amplified) says which world preset the world uses.",
         "",
         "Examples:",
         "  seedfinder full-seed 12345",
@@ -54,7 +63,7 @@ final class FullSeedCommand implements Callable<Integer> {
         description = "The structure seed from 'find' (several if it found several).")
     List<Long> structureSeeds = new ArrayList<>();
 
-    @CommandLine.Option(names = {"-f", "--file"}, paramLabel = "<file>", description = "Read bedrock notes from a text file.")
+    @CommandLine.Option(names = {"-f", "--file"}, paramLabel = "<file>", description = "Read bedrock and biome notes from a text file.")
     Path file;
 
     @CommandLine.Option(names = "--threads", paramLabel = "<count>", description = "How many CPU threads to use (default: all of them).")
@@ -67,7 +76,8 @@ final class FullSeedCommand implements Callable<Integer> {
     public Integer call() {
         CommandLine commandLine = spec.commandLine();
         PrintWriter out = commandLine.getOut();
-        VersionData data = version.resolve(commandLine).data();
+        MinecraftVersion minecraft = version.resolve(commandLine);
+        VersionData data = minecraft.data();
         for (long seed : structureSeeds) {
             if (seed < 0 || seed > Seeds.STRUCTURE_SEED_MASK) {
                 throw new CommandLine.ParameterException(commandLine, seed + " is not a structure seed: those go from 0 to "
@@ -88,6 +98,7 @@ final class FullSeedCommand implements Callable<Integer> {
             return 1;
         }
         int threadCount = Threads.resolve(commandLine, threads);
-        return FullSeedReport.run(out, data, structureSeeds, evidence, observations.hashedSeed(), threadCount) ? 0 : 1;
+        FullSeedReport.Biomes biomes = FullSeedReport.Biomes.of(out, observations, minecraft);
+        return FullSeedReport.run(out, data, structureSeeds, evidence, biomes, observations.hashedSeed(), threadCount) ? 0 : 1;
     }
 }

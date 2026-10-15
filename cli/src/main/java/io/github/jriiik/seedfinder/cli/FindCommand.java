@@ -6,6 +6,7 @@ import io.github.jriiik.seedfinder.finder.ObservationReader;
 import io.github.jriiik.seedfinder.finder.SearchPlan;
 import io.github.jriiik.seedfinder.finder.StructureObservation;
 import io.github.jriiik.seedfinder.finder.StructureSeedFinder;
+import io.github.jriiik.seedfinder.version.MinecraftVersion;
 import io.github.jriiik.seedfinder.version.VersionData;
 import java.io.PrintWriter;
 import java.nio.file.Path;
@@ -26,7 +27,8 @@ import picocli.CommandLine.Command;
             + "ocean ruin or village to start the search, plus a ruined portal, abandoned camp, trial chamber or ancient "
             + "city to rule out look-alike seeds.",
         "The structures give the structure seed (the last 48 bits of the world seed). For the full seed, add the bedrock "
-            + "floor of one chunk to the file (see 'seedfinder full-seed --help'); without it, the likely full seeds are named.",
+            + "floor of one chunk or the biomes of a place to the file (see 'seedfinder full-seed --help'); without them, the likely "
+            + "full seeds are named.",
     },
     footer = {
         "",
@@ -35,7 +37,7 @@ import picocli.CommandLine.Command;
         "  seedfinder find --file my-structures.txt",
         "",
         "In a file, write one structure per line (\"igloo 48 208\"). Lines copied from /locate work too.",
-        "Bedrock notes can go in the same file.",
+        "Bedrock and biome notes can go in the same file.",
     }
 )
 final class FindCommand implements Callable<Integer> {
@@ -65,7 +67,8 @@ final class FindCommand implements Callable<Integer> {
     public Integer call() {
         CommandLine commandLine = spec.commandLine();
         PrintWriter out = commandLine.getOut();
-        VersionData data = version.resolve(commandLine).data();
+        MinecraftVersion minecraft = version.resolve(commandLine);
+        VersionData data = minecraft.data();
         ObservationInput input = ObservationInput.of(commandLine, file, observationTexts);
         if (input.isEmpty()) {
             throw new CommandLine.ParameterException(commandLine, "Tell me which structures you saw, for example: seedfinder find igloo:48,208 village:336,80");
@@ -77,6 +80,11 @@ final class FindCommand implements Callable<Integer> {
         if (observations.isEmpty() && read.bedrock().isEmpty() && read.hashedSeed().isPresent()) {
             out.println("There is a hashed seed but no structures yet. If the world's seed was typed (as text or a short number),");
             out.println("the hashed seed alone gives it: " + typedSeedCommand(read.hashedSeed().getAsLong()));
+            return 1;
+        }
+        if (observations.isEmpty() && read.bedrock().isEmpty() && !read.biomes().isEmpty()) {
+            out.println("There are biome notes but no structures. Biomes can give the full seed once the structure seed is known: add");
+            out.println("about 6 structures, or if you know the structure seed, use 'seedfinder full-seed <structure seed> --file <notes>'.");
             return 1;
         }
         if (observations.isEmpty() && read.bedrock().isEmpty()) {
@@ -101,6 +109,12 @@ final class FindCommand implements Callable<Integer> {
         int bedrockBlocks = bedrock.fullSeedObservations().size() + bedrock.structureSeedObservations().size();
         if (!read.bedrock().isEmpty()) {
             out.printf(Locale.ROOT, "And %,d bedrock block%s that can help find the full seed.%n%n", bedrockBlocks, bedrockBlocks == 1 ? "" : "s");
+        }
+        FullSeedReport.Biomes biomes = FullSeedReport.Biomes.of(out, read, minecraft);
+        if (biomes != null) {
+            int notes = biomes.evidence().noted();
+            out.printf(Locale.ROOT, "And %,d biome note%s in %d place%s that can help find the full seed.%n%n", notes, notes == 1 ? "" : "s",
+                biomes.evidence().places(), biomes.evidence().places() == 1 ? "" : "s");
         }
         plan.warnings().forEach(warning -> out.println("Note: " + warning));
         bedrock.problems().forEach(problem -> out.println("Can't search yet: " + problem + "."));
@@ -128,14 +142,14 @@ final class FindCommand implements Callable<Integer> {
         out.println();
         boolean named = false;
         if (found.size() <= FullSeedFinder.MAX_STRUCTURE_SEEDS) {
-            named = FullSeedReport.run(out, data, found, bedrock, read.hashedSeed(), threadCount);
-        } else if (!read.bedrock().isEmpty()) {
-            out.println("Too many structure seeds to check the bedrock against; add more structures first.");
+            named = FullSeedReport.run(out, data, found, bedrock, biomes, read.hashedSeed(), threadCount);
+        } else if (!read.bedrock().isEmpty() || biomes != null) {
+            out.println("Too many structure seeds to check the bedrock or biomes against; add more structures first.");
         }
         out.println();
         out.println("To compare with a world whose seed you know: seedfinder structure-seed <that world's seed>");
-        // Without bedrock, finding the structure seed is the result; with bedrock, the full seed has to come out too.
-        return read.bedrock().isEmpty() || named ? 0 : 1;
+        // Without bedrock or biomes, finding the structure seed is the result; with them, the full seed has to come out too.
+        return read.bedrock().isEmpty() && biomes == null || named ? 0 : 1;
     }
 
     private static void report(PrintWriter out, List<Long> found, List<String> suggestions) {

@@ -527,4 +527,26 @@ class SeedFinderCliTest {
         assertEquals("2 minutes", TypedSeedCommand.duration(95));
         assertEquals("21 minutes", TypedSeedCommand.duration(1245));
     }
+
+    @Test
+    void biomesFromOneAreaGiveTheFullSeedOfTheExample(@org.junit.jupiter.api.io.TempDir java.nio.file.Path folder) throws java.io.IOException {
+        Result biomes = run("biomes", "--seed", "12345", "--at", "-96,-96", "--size", "48");
+        assertEquals(0, biomes.exitCode(), biomes.err());
+        assertTrue(biomes.out().contains("biome-grid -96 64 -96 "), biomes.out());
+        java.nio.file.Path file = folder.resolve("notes.txt");
+        java.nio.file.Files.writeString(file, String.join("\n", EXAMPLE).replace(':', ' ').replace(',', ' ') + "\n\n" + biomes.out());
+        Result result = run(find("--file", file.toString()));
+        assertEquals(0, result.exitCode(), result.out() + result.err());
+        assertTrue(result.out().contains("And 2,304 biome notes in 1 place that can help find the full seed."), result.out());
+        assertTrue(result.out().contains("Found the full seed: 12345\n"), result.out());
+    }
+
+    @Test
+    void biomesOfAnotherWorldDontFit(@org.junit.jupiter.api.io.TempDir java.nio.file.Path folder) throws java.io.IOException {
+        java.nio.file.Path file = folder.resolve("notes.txt");
+        java.nio.file.Files.writeString(file, run("biomes", "--seed", "999", "--size", "24").out());
+        Result result = run("full-seed", "12345", "--file", file.toString(), "--threads", "2");
+        assertEquals(1, result.exitCode(), result.out());
+        assertTrue(result.out().contains("fits your biome notes under any world preset"), result.out());
+    }
 }

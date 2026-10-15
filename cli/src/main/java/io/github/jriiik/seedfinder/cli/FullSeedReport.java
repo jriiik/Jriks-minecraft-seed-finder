@@ -5,10 +5,14 @@ import io.github.jriiik.seedfinder.bedrock.BedrockDimension;
 import io.github.jriiik.seedfinder.bedrock.BedrockEvidence;
 import io.github.jriiik.seedfinder.bedrock.BedrockObservation;
 import io.github.jriiik.seedfinder.bedrock.BedrockPattern;
+import io.github.jriiik.seedfinder.biome.OverworldBiomes;
+import io.github.jriiik.seedfinder.finder.BiomeEvidence;
 import io.github.jriiik.seedfinder.finder.FullSeedFinder;
 import io.github.jriiik.seedfinder.finder.FullSeedFinder.Candidate;
 import io.github.jriiik.seedfinder.finder.FullSeedFinder.Origin;
+import io.github.jriiik.seedfinder.finder.ObservationReader;
 import io.github.jriiik.seedfinder.finder.WorldSeedSearch;
+import io.github.jriiik.seedfinder.version.MinecraftVersion;
 import io.github.jriiik.seedfinder.version.VersionData;
 import java.io.PrintWriter;
 import java.util.ArrayList;
@@ -35,8 +39,38 @@ final class FullSeedReport {
     private FullSeedReport() {
     }
 
+    /**
+     * Biome notes to check, with the world presets to try (only the one given by a 'preset' line, if any).
+     *
+     * @return null when there are no biome notes
+     */
+    record Biomes(BiomeEvidence evidence, List<OverworldBiomes.Preset> presets) {
+
+        static Biomes of(PrintWriter out, ObservationReader.Observations read, MinecraftVersion version) {
+            if (read.biomes().isEmpty()) {
+                return null;
+            }
+            BiomeEvidence evidence = new BiomeEvidence(version, read.biomes(), read.hashedSeed());
+            evidence.problems().forEach(problem -> out.println("Note: " + problem + "."));
+            if (evidence.isEmpty()) {
+                return null;
+            }
+            return new Biomes(evidence, read.preset().map(List::of).orElse(BiomeEvidence.PRESET_ORDER));
+        }
+
+        boolean fitsUnderAnyPreset(long worldSeed) {
+            return presets.stream().anyMatch(preset -> evidence.fits(worldSeed, preset));
+        }
+    }
+
     /** Searches and prints; returns true when at least one world seed could be named. */
     static boolean run(PrintWriter out, VersionData data, List<Long> foundSeeds, BedrockEvidence evidence, OptionalLong hashedSeed,
+                       int threads) {
+        return run(out, data, foundSeeds, evidence, null, hashedSeed, threads);
+    }
+
+    /** Searches and prints, biomes included ({@code biomes} may be null); returns true when a world seed could be named. */
+    static boolean run(PrintWriter out, VersionData data, List<Long> foundSeeds, BedrockEvidence evidence, Biomes biomes, OptionalLong hashedSeed,
                        int threads) {
         List<Long> structureSeeds = new ArrayList<>(new LinkedHashSet<>(foundSeeds));
         if (hashedSeed.isPresent()) {
@@ -53,6 +87,9 @@ final class FullSeedReport {
                     out.printf("But it gets %d of your bedrock blocks wrong, for example:%n", wrong.size());
                     wrong.stream().limit(MAX_MISTAKES_SHOWN).forEach(observation -> out.println("  " + mistake(observation)));
                 }
+                if (biomes != null && !biomes.fitsUnderAnyPreset(matches[0])) {
+                    out.println("But your biome notes don't fit it (noted in the wrong place, or from chunks made by an older Minecraft version?).");
+                }
                 return true;
             }
             if (checkedAll) {
@@ -67,6 +104,20 @@ final class FullSeedReport {
             }
         }
         if (evidence.fullSeedObservations().isEmpty()) {
+            if (biomes != null) {
+                if (structureSeeds.size() > BiomeEvidence.MAX_STRUCTURE_SEEDS) {
+                    out.printf("Too many structure seeds (%d) to check the biomes against; add more structures first.%n", structureSeeds.size());
+                } else {
+                    BiomeEvidence.Decision decision = reportBiomes(out, structureSeeds, biomes, threads);
+                    if (decision.proven()) {
+                        return true;
+                    }
+                    if (decision.fitting().isEmpty()) {
+                        return false;
+                    }
+                }
+                out.println();
+            }
             return reportLikelySeeds(out, structureSeeds);
         }
         if (structureSeeds.size() > MANY_STRUCTURE_SEEDS) {
@@ -109,6 +160,69 @@ final class FullSeedReport {
             out.printf("Nether bedrock: %d of the %d structure seeds fit all %s.%n", fitting.size(), structureSeeds.size(), blocks(count));
         }
         return fitting;
+    }
+
+    /** Checks every world seed of the structure seeds against the biome notes and says what came out. */
+    private static BiomeEvidence.Decision reportBiomes(PrintWriter out, List<Long> structureSeeds, Biomes biomes, int threads) {
+        BiomeEvidence evidence = biomes.evidence();
+        int notes = evidence.noted();
+        out.printf(Locale.ROOT, "Checking the %,d world seeds of %s against %,d biome note%s in %d place%s...%n",
+            (long) structureSeeds.size() * BiomeEvidence.CANDIDATES, structureSeeds.size() == 1 ? "this structure seed" : "these structure seeds",
+            notes, notes == 1 ? "" : "s", evidence.places(), evidence.places() == 1 ? "" : "s");
+        out.flush();
+        List<Long> likely = new ArrayList<>();
+        structureSeeds.forEach(seed -> likely.addAll(WorldSeedSearch.likelySeeds(seed)));
+        BiomeEvidence.Decision decision = evidence.search(structureSeeds, likely, biomes.presets(), threads, () -> false, null);
+        String presets = biomes.presets().size() == 1 ? "the " + presetName(biomes.presets().get(0)) + " world preset"
+            : "any world preset (normal, large biomes, amplified)";
+        if (decision.fitting().isEmpty()) {
+            out.println("No world seed with " + (structureSeeds.size() == 1 ? "this structure seed" : "these structure seeds")
+                + " fits your biome notes under " + presets + ".");
+            out.println("Check the biome names and positions. Chunks made by an older Minecraft version, or changed by data packs, mods or");
+            out.println("/fillbiome, have other biomes; leave those out. If the biomes are right, the structure seed is wrong.");
+            return decision;
+        }
+        String preset = decision.preset().map(p -> p == OverworldBiomes.Preset.NORMAL ? "" : " (in a " + presetName(p) + " world)").orElse("");
+        if (decision.proven()) {
+            long seed = decision.seed().getAsLong();
+            out.println("Found the full seed: " + seed + preset);
+            out.printf(Locale.ROOT, "It is the only one that fits all your biome notes, and a wrong seed would fit them this well with a chance "
+                + "of at most %s.%n", chance(decision.falseFitChance()));
+            out.println(decision.likely()
+                ? "(It is one of the seeds Minecraft picks by itself or that typed text gives, so few seeds had to be ruled out.)"
+                : "(Minecraft never picks this seed by itself, so it was typed in as a number or chosen by a server host.)");
+            return decision;
+        }
+        if (decision.fitting().size() == 1) {
+            out.println("One world seed fits all your biome notes: " + decision.fitting().get(0) + preset + ". That is not proof yet:");
+        } else {
+            out.printf("%d world seeds fit all your biome notes:%n", decision.fitting().size());
+            decision.fitting().stream().limit(10).forEach(seed -> out.println("  " + seed));
+            if (decision.fitting().size() > 10) {
+                out.printf("  ... and %d more%n", decision.fitting().size() - 10);
+            }
+        }
+        int spacing = BiomeEvidence.groupSpacing(decision.preset().orElse(OverworldBiomes.Preset.NORMAL));
+        if (decision.groups() < 2) {
+            out.printf(Locale.ROOT, "note the biomes of a second place at least %,d blocks away. Biomes close together are alike in every world, so%n",
+                spacing);
+            out.println("one place only proves the seeds Minecraft picks by itself or that typed text gives.");
+        } else {
+            out.println("note biomes where several biomes meet. Places that are all one biome (often ocean) fit many seeds.");
+        }
+        return decision;
+    }
+
+    private static String presetName(OverworldBiomes.Preset preset) {
+        return switch (preset) {
+            case NORMAL -> "normal";
+            case LARGE_BIOMES -> "large biomes";
+            case AMPLIFIED -> "amplified";
+        };
+    }
+
+    private static String chance(double chance) {
+        return chance <= 0 ? "0" : String.format(Locale.ROOT, "1 in %,d", Math.round(1 / chance));
     }
 
     private static boolean reportLikelySeeds(PrintWriter out, List<Long> structureSeeds) {

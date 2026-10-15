@@ -33,7 +33,7 @@ class StatusTextTest {
     }
 
     private static SeedCheck check(int fitting, int misfits, SeedCheck.Bedrock overworld, SeedCheck.Bedrock nether) {
-        return new SeedCheck(12345L, SeedCheck.Verdict.CONFIRMED, villages(fitting), villages(misfits), overworld, nether, List.of(), 0, 1);
+        return new SeedCheck(12345L, SeedCheck.Verdict.CONFIRMED, villages(fitting), villages(misfits), overworld, nether, List.of(), 0, 1, SeedCheck.BiomeCheck.NONE);
     }
 
     private static SeedCheck.Bedrock bedrock(int blocks, int mismatches) {
@@ -61,7 +61,7 @@ class StatusTextTest {
         assertTrue(StatusText.contradictionReason(check(0, 0, bedrock(1024, 400), NONE)).startsWith("The server probably sends a made-up hashed seed"));
         assertTrue(StatusText.contradictionReason(check(0, 0, bedrock(1024, 3), NONE)).startsWith("Most of the overworld bedrock fits it, though"));
         SeedCheck structuresConfirm = new SeedCheck(12345L, SeedCheck.Verdict.CONTRADICTED, villages(6), villages(0), bedrock(1024, 400), NONE,
-            List.of(), 1, 1e-15);
+            List.of(), 1, 1e-15, SeedCheck.BiomeCheck.NONE);
         assertTrue(StatusText.contradictionReason(structuresConfirm).startsWith("The structures noted confirm it, though"),
             StatusText.contradictionReason(structuresConfirm));
         assertEquals("Either the server sends a made-up hashed seed, or those nether chunks were made by Minecraft 1.17 or older and that"

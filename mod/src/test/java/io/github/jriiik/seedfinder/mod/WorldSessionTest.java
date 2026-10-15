@@ -292,4 +292,62 @@ class WorldSessionTest {
         Files.writeString(file, saved.replace("\"typed_seed_layout\": " + TypedSeedSearch.LAYOUT, "\"typed_seed_layout\": 0"), StandardCharsets.UTF_8);
         assertEquals(0, WorldSession.load(folder, WORLD).typedSeedPieces());
     }
+
+    /** A chunk whose cells are all one biome at every height read, but plains in its north-west cell at y 64. */
+    private static BiomeChunk biomeChunk(int chunkX, int chunkZ, String biome) {
+        java.util.Map<Integer, List<String>> levels = new java.util.LinkedHashMap<>();
+        for (int y : BiomeScanner.HEIGHTS) {
+            List<String> cells = new java.util.ArrayList<>(java.util.Collections.nCopies(16, biome));
+            if (y == 64) {
+                cells.set(0, "minecraft:plains");
+            }
+            levels.put(y, cells);
+        }
+        return new BiomeChunk(chunkX, chunkZ, levels);
+    }
+
+    @Test
+    void biomesAreNotedInAFewAreasFarApart(@TempDir Path folder) throws IOException {
+        WorldSession session = new WorldSession(WORLD);
+        assertTrue(session.offerBiomes(biomeChunk(0, 0, "minecraft:forest")));
+        assertFalse(session.offerBiomes(biomeChunk(0, 0, "minecraft:forest")));
+        assertTrue(session.offerBiomes(biomeChunk(5, 5, "minecraft:forest")));
+        // too far for the first area, too near for a second one
+        assertFalse(session.wantsBiomes(100, 0));
+        int far = WorldSession.BIOME_AREA_SPACING / 16 + 1;
+        assertTrue(session.offerBiomes(biomeChunk(far, 0, "minecraft:desert")));
+        assertEquals(2, session.biomeAreas());
+        assertEquals(3, session.biomeChunks());
+        // an area takes at most so many chunks
+        for (int i = 0; i < 2 * WorldSession.MAX_BIOME_CHUNKS_PER_AREA; i++) {
+            session.offerBiomes(biomeChunk(i % 20 - 10, i / 20 - 5, "minecraft:forest"));
+        }
+        assertTrue(session.biomeChunks() <= 1 + WorldSession.MAX_BIOME_CHUNKS_PER_AREA + 1);
+
+        session.save(folder);
+        WorldSession loaded = WorldSession.load(folder, WORLD);
+        assertEquals(session.biomes(), loaded.biomes());
+        assertEquals(2, loaded.biomeAreas());
+        assertFalse(loaded.wantsBiomes(100, 0));
+
+        // the notes file gives the same biomes to the command-line app
+        VersionData data = MinecraftVersion.V26_3.data();
+        List<io.github.jriiik.seedfinder.finder.BiomeObservation> read = ObservationReader.read(data, loaded.notesLines()).biomes();
+        assertEquals(loaded.biomeChunks() * 16 * BiomeScanner.HEIGHTS.length, read.size());
+        assertTrue(read.contains(new io.github.jriiik.seedfinder.finder.BiomeObservation("minecraft:desert", far * 16 + 4, 64, 0, true)));
+        assertTrue(read.contains(new io.github.jriiik.seedfinder.finder.BiomeObservation("minecraft:plains", far * 16, 64, 0, true)));
+    }
+
+    @Test
+    void aBiomeFromADataPackStopsBiomeNotes(@TempDir Path folder) throws IOException {
+        WorldSession session = new WorldSession(WORLD);
+        session.offerBiomes(biomeChunk(0, 0, "minecraft:forest"));
+        session.foreignBiomeSeen("terralith:moonlight_grove");
+        assertEquals(0, session.biomeChunks());
+        assertFalse(session.wantsBiomes(1, 1));
+        session.save(folder);
+        assertFalse(WorldSession.load(folder, WORLD).wantsBiomes(1, 1));
+        session.clearAll();
+        assertTrue(session.wantsBiomes(1, 1));
+    }
 }

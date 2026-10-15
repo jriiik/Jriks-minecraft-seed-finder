@@ -7,6 +7,9 @@ import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
 import io.github.jriiik.seedfinder.Seeds;
+import io.github.jriiik.seedfinder.biome.OverworldBiomes;
+import io.github.jriiik.seedfinder.finder.BiomeEvidence;
+import io.github.jriiik.seedfinder.finder.BiomeText;
 import io.github.jriiik.seedfinder.finder.SeedCheck;
 import io.github.jriiik.seedfinder.finder.TypedSeedSearch;
 import io.github.jriiik.seedfinder.finder.WorldSeedSearch;
@@ -22,7 +25,7 @@ import java.util.Optional;
 import java.util.OptionalLong;
 
 /**
- * What the mod knows about one world: whether collecting is switched on, the structures and bedrock noted so far,
+ * What the mod knows about one world: whether collecting is switched on, the structures, bedrock and biomes noted so far,
  * the hashed seed, and the latest search result. Changed only on the game's main thread.
  *
  * <p>It is saved in the config folder as JSON (the mod's own memory) and as a notes file in the format the
@@ -39,6 +42,22 @@ final class WorldSession {
 
     /** At most this many chunks of bedrock per dimension: one chunk is nearly always enough. */
     static final int MAX_BEDROCK_CHUNKS = 4;
+
+    /**
+     * Biomes are noted in areas: the chunks within this many blocks of an area's first chunk, at most
+     * {@link #MAX_BIOME_CHUNKS_PER_AREA} of them (one loaded area with two or more biomes proves a seed Minecraft picked
+     * itself or a text seed).
+     */
+    static final int BIOME_AREA_RADIUS = 192;
+    static final int MAX_BIOME_CHUNKS_PER_AREA = 100;
+    /**
+     * A new area only this far from the others: biomes closer together are alike in every world, so only areas this far
+     * apart count separately (two such areas prove any seed; large-biome worlds need them 4 times farther apart).
+     */
+    static final int BIOME_AREA_SPACING = BiomeEvidence.groupSpacing(OverworldBiomes.Preset.NORMAL);
+    static final int MAX_BIOME_AREAS = 4;
+    /** Characters that stand for biomes in the saved file (each file has its own list of biomes). */
+    private static final String BIOME_CHARS = "0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ+/";
 
     private static final Gson GSON = new GsonBuilder().setPrettyPrinting().disableHtmlEscaping().create();
 
@@ -67,6 +86,14 @@ final class WorldSession {
     private final List<String> disagreements = new ArrayList<>();
     private int removals;
     private final List<ScannedChunk> bedrock = new ArrayList<>();
+    private final List<BiomeChunk> biomes = new ArrayList<>();
+    /** The first chunk of each biome area (block x, z of its north-west corner). */
+    private final List<int[]> biomeAreas = new ArrayList<>();
+    /**
+     * A biome the vanilla overworld doesn't have, once one was seen: then a data pack or a mod changes the world's
+     * biomes, and biomes are not noted in this world.
+     */
+    private String foreignBiome;
     /** The typed-seed search ({@link TypedSeedSearch}): where it resumes, and the seed once one matched. */
     private int typedSeedPieces;
     private OptionalLong typedSeed = OptionalLong.empty();
@@ -373,6 +400,80 @@ final class WorldSession {
         return true;
     }
 
+    List<BiomeChunk> biomes() {
+        return List.copyOf(biomes);
+    }
+
+    int biomeAreas() {
+        return biomeAreas.size();
+    }
+
+    int biomeChunks() {
+        return biomes.size();
+    }
+
+    /** The biome a data pack or mod added, if one was seen (then biomes are not noted). */
+    Optional<String> foreignBiome() {
+        return Optional.ofNullable(foreignBiome);
+    }
+
+    /** The area this chunk belongs to, or -1. */
+    private int biomeArea(int chunkX, int chunkZ) {
+        for (int i = 0; i < biomeAreas.size(); i++) {
+            long dx = chunkX * 16L - biomeAreas.get(i)[0];
+            long dz = chunkZ * 16L - biomeAreas.get(i)[1];
+            if (dx * dx + dz * dz <= (long) BIOME_AREA_RADIUS * BIOME_AREA_RADIUS) {
+                return i;
+            }
+        }
+        return -1;
+    }
+
+    /** Whether the biomes of this chunk would be noted (cheap; the chunk isn't read). */
+    boolean wantsBiomes(int chunkX, int chunkZ) {
+        if (foreignBiome != null || biomes.stream().anyMatch(c -> c.chunkX() == chunkX && c.chunkZ() == chunkZ)) {
+            return false;
+        }
+        int area = biomeArea(chunkX, chunkZ);
+        if (area >= 0) {
+            return biomes.stream().filter(c -> biomeArea(c.chunkX(), c.chunkZ()) == area).count() < MAX_BIOME_CHUNKS_PER_AREA;
+        }
+        if (biomeAreas.size() >= MAX_BIOME_AREAS) {
+            return false;
+        }
+        for (int[] center : biomeAreas) {
+            long dx = chunkX * 16L - center[0];
+            long dz = chunkZ * 16L - center[1];
+            if (dx * dx + dz * dz < (long) BIOME_AREA_SPACING * BIOME_AREA_SPACING) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    /** Keeps the chunk's biomes if they are wanted (see {@link #wantsBiomes}); returns whether they were kept. */
+    boolean offerBiomes(BiomeChunk chunk) {
+        if (!wantsBiomes(chunk.chunkX(), chunk.chunkZ())) {
+            return false;
+        }
+        if (biomeArea(chunk.chunkX(), chunk.chunkZ()) < 0) {
+            biomeAreas.add(new int[] {chunk.chunkX() * 16, chunk.chunkZ() * 16});
+        }
+        biomes.add(chunk);
+        version++;
+        return true;
+    }
+
+    /** A biome the vanilla overworld doesn't have was seen: the biomes noted so far are dropped and no more are noted. */
+    void foreignBiomeSeen(String biome) {
+        if (foreignBiome == null) {
+            foreignBiome = biome;
+            biomes.clear();
+            biomeAreas.clear();
+            version++;
+        }
+    }
+
     /**
      * Forgets the structures and bedrock noted in this world (collecting stays as it is); for a world that was reset
      * or replaced. The hashed seed and the typed-seed search are kept: the hashed seed is part of the key these notes
@@ -385,6 +486,9 @@ final class WorldSession {
         disagreements.clear();
         typedSeedCheck = null;
         bedrock.clear();
+        biomes.clear();
+        biomeAreas.clear();
+        foreignBiome = null;
         version++;
         clearedAt = version;
     }
@@ -439,6 +543,31 @@ final class WorldSession {
             lines.add("");
             lines.add("# bedrock of " + chunk.dimension() + " chunk " + chunk.chunkX() + ", " + chunk.chunkZ());
             lines.addAll(chunk.notesLines());
+        }
+        for (int area = 0; area < biomeAreas.size(); area++) {
+            int index = area;
+            List<BiomeChunk> chunks = biomes.stream().filter(c -> biomeArea(c.chunkX(), c.chunkZ()) == index).toList();
+            if (chunks.isEmpty()) {
+                continue;
+            }
+            int minX = chunks.stream().mapToInt(BiomeChunk::chunkX).min().orElseThrow();
+            int maxX = chunks.stream().mapToInt(BiomeChunk::chunkX).max().orElseThrow();
+            int minZ = chunks.stream().mapToInt(BiomeChunk::chunkZ).min().orElseThrow();
+            int maxZ = chunks.stream().mapToInt(BiomeChunk::chunkZ).max().orElseThrow();
+            for (int y : BiomeScanner.HEIGHTS) {
+                String[][] cells = new String[(maxZ - minZ + 1) * 4][(maxX - minX + 1) * 4];
+                for (BiomeChunk chunk : chunks) {
+                    for (int cz = 0; cz < 4; cz++) {
+                        for (int cx = 0; cx < 4; cx++) {
+                            cells[(chunk.chunkZ() - minZ) * 4 + cz][(chunk.chunkX() - minX) * 4 + cx] = chunk.cell(y, cx, cz);
+                        }
+                    }
+                }
+                lines.add("");
+                lines.add("# biomes the game stored in the area around " + biomeAreas.get(area)[0] + ", " + biomeAreas.get(area)[1]
+                    + " at y " + y + " (cells of 4 blocks)");
+                lines.addAll(BiomeText.grid(minX * 16, y, minZ * 16, cells));
+            }
         }
         return lines;
     }
@@ -497,6 +626,41 @@ final class WorldSession {
             bedrockArray.add(c);
         }
         json.add("bedrock", bedrockArray);
+        List<String> palette = new ArrayList<>();
+        JsonArray biomeArray = new JsonArray();
+        for (BiomeChunk chunk : biomes) {
+            JsonObject c = new JsonObject();
+            c.addProperty("chunk_x", chunk.chunkX());
+            c.addProperty("chunk_z", chunk.chunkZ());
+            JsonObject levels = new JsonObject();
+            chunk.levels().forEach((y, cells) -> {
+                StringBuilder text = new StringBuilder();
+                for (String biome : cells) {
+                    if (!palette.contains(biome)) {
+                        palette.add(biome);
+                    }
+                    text.append(BIOME_CHARS.charAt(palette.indexOf(biome)));
+                }
+                levels.addProperty(Integer.toString(y), text.toString());
+            });
+            c.add("levels", levels);
+            biomeArray.add(c);
+        }
+        JsonArray paletteArray = new JsonArray();
+        palette.forEach(paletteArray::add);
+        json.add("biome_palette", paletteArray);
+        json.add("biomes", biomeArray);
+        JsonArray areas = new JsonArray();
+        for (int[] center : biomeAreas) {
+            JsonArray pair = new JsonArray();
+            pair.add(center[0]);
+            pair.add(center[1]);
+            areas.add(pair);
+        }
+        json.add("biome_areas", areas);
+        if (foreignBiome != null) {
+            json.addProperty("foreign_biome", foreignBiome);
+        }
         String base = fileName(world);
         Files.writeString(folder.resolve(base + ".json"), GSON.toJson(json) + "\n", StandardCharsets.UTF_8);
         Files.write(folder.resolve(base + ".txt"), notesLines(), StandardCharsets.UTF_8);
@@ -574,6 +738,31 @@ final class WorldSession {
         }
     }
 
+    private static void readBiomes(JsonObject json, WorldSession session) {
+        if (json.has("foreign_biome")) {
+            session.foreignBiome = json.get("foreign_biome").getAsString();
+        }
+        if (!json.has("biomes")) {
+            return;
+        }
+        List<String> palette = new ArrayList<>();
+        json.getAsJsonArray("biome_palette").forEach(biome -> palette.add(biome.getAsString()));
+        for (JsonElement element : json.getAsJsonArray("biome_areas")) {
+            JsonArray pair = element.getAsJsonArray();
+            session.biomeAreas.add(new int[] {pair.get(0).getAsInt(), pair.get(1).getAsInt()});
+        }
+        for (JsonElement element : json.getAsJsonArray("biomes")) {
+            JsonObject c = element.getAsJsonObject();
+            Map<Integer, List<String>> levels = new LinkedHashMap<>();
+            for (Map.Entry<String, JsonElement> level : c.getAsJsonObject("levels").entrySet()) {
+                List<String> cells = new ArrayList<>();
+                level.getValue().getAsString().chars().forEach(ch -> cells.add(palette.get(BIOME_CHARS.indexOf(ch))));
+                levels.put(Integer.parseInt(level.getKey()), cells);
+            }
+            session.biomes.add(new BiomeChunk(c.get("chunk_x").getAsInt(), c.get("chunk_z").getAsInt(), levels));
+        }
+    }
+
     /** Reads the notes saved under {@code savedAs} into a session for {@code world}. */
     private static WorldSession load(Path folder, String savedAs, String world) {
         WorldSession session = new WorldSession(world);
@@ -602,6 +791,7 @@ final class WorldSession {
                 }
                 session.bedrock.add(new ScannedChunk(c.get("dimension").getAsString(), c.get("chunk_x").getAsInt(), c.get("chunk_z").getAsInt(), layers));
             }
+            readBiomes(json, session);
         } catch (IOException | RuntimeException e) {
             SeedFinderClient.LOG.warn("Could not read {}, starting over for this world", file, e);
             return new WorldSession(world);

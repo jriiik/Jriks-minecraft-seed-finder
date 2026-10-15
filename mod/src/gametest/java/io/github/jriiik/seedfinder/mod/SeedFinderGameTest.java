@@ -4,6 +4,9 @@ import com.mojang.blaze3d.platform.InputConstants;
 import com.mojang.datafixers.util.Pair;
 import io.github.jriiik.seedfinder.Seeds;
 import io.github.jriiik.seedfinder.bedrock.BedrockEvidence;
+import io.github.jriiik.seedfinder.biome.OverworldBiomes;
+import io.github.jriiik.seedfinder.finder.BiomeEvidence;
+import io.github.jriiik.seedfinder.finder.BiomeObservation;
 import io.github.jriiik.seedfinder.finder.ObservationReader;
 import io.github.jriiik.seedfinder.finder.SeedCheck;
 import io.github.jriiik.seedfinder.finder.WorldSeedSearch;
@@ -13,6 +16,7 @@ import io.github.jriiik.seedfinder.recognize.RigidRecognizer;
 import io.github.jriiik.seedfinder.recognize.StartPieceRecognizer;
 import io.github.jriiik.seedfinder.structure.RandomSpreadPlacement;
 import io.github.jriiik.seedfinder.structure.StructureSet;
+import io.github.jriiik.seedfinder.version.MinecraftVersion;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
@@ -293,6 +297,49 @@ public class SeedFinderGameTest implements FabricClientGameTest {
             .toList();
     }
 
+    /**
+     * The biomes the client received: every cell the mod noted is the engine's biome for the seed, the F3 biome of a
+     * block is the stored cell the engine's zoom picks with the hashed seed, and the one area noted proves the seed
+     * among its likely seeds (12345 can be typed as a number).
+     */
+    private static void checkBiomes(ClientGameTestContext context, WorldSession session, ObservationReader.Observations read,
+                                    WorldSeedSearch.Result result) {
+        check(session.biomeAreas() == 1 && session.biomeChunks() >= 50, "biomes of " + session.biomeChunks() + " chunks in one area were noted");
+        check(!result.biomesDisagree(), "the biomes the mod read fit the seed");
+        OverworldBiomes biomes = OverworldBiomes.of(MinecraftVersion.V26_3, OverworldBiomes.Preset.NORMAL);
+        OverworldBiomes.Sampler sampler = biomes.newSampler().seed(SEED);
+        List<BiomeObservation> wrong = new ArrayList<>();
+        for (BiomeObservation note : read.biomes()) {
+            if (!sampler.couldBe(biomes.parameters().biomeIndex(note.biome()), note.x() >> 2, note.y() >> 2, note.z() >> 2)) {
+                wrong.add(note);
+            }
+        }
+        check(wrong.isEmpty() && read.biomes().size() >= 50 * 16 * BiomeScanner.HEIGHTS.length,
+            "every one of the " + read.biomes().size() + " biome cells read from the game fits seed " + SEED + (wrong.isEmpty() ? "" : ": " + wrong));
+        long hashed = Seeds.hashedSeed(SEED);
+        String zoom = context.computeOnClient(client -> {
+            BlockPos player = client.player.blockPosition();
+            for (int i = 0; i < 400; i++) {
+                int x = player.getX() + (i * 37) % 97 - 48;
+                int y = 40 + (i * 13) % 60;
+                int z = player.getZ() + (i * 53) % 89 - 44;
+                int[] quart = io.github.jriiik.seedfinder.biome.BiomeZoom.quart(hashed, x, y, z);
+                Holder<net.minecraft.world.level.biome.Biome> shown = client.level.getBiome(new BlockPos(x, y, z));
+                Holder<net.minecraft.world.level.biome.Biome> cell = client.level.getNoiseBiome(quart[0], quart[1], quart[2]);
+                if (!shown.equals(cell)) {
+                    return "block " + x + " " + y + " " + z + " shows " + shown + ", the zoomed cell has " + cell;
+                }
+            }
+            return "";
+        });
+        check(zoom.isEmpty(), "the F3 biome of 400 blocks is the stored cell the engine's zoom picks " + zoom);
+        WorldSeedSearch.StructureStep step = WorldSeedSearch.structureSeeds(SeedFinderClient.data(), read.structures(), 2, (done, total) -> { });
+        WorldSeedSearch.Result fromBiomes = WorldSeedSearch.fullSeed(step, List.of(), new WorldSeedSearch.BiomeInput(
+            new BiomeEvidence(MinecraftVersion.V26_3, read.biomes(), java.util.OptionalLong.empty()), null, () -> false), java.util.OptionalLong.empty(), 2);
+        check(fromBiomes.proof().orElse(null) == WorldSeedSearch.Proof.BIOMES && fromBiomes.worldSeed().getAsLong() == SEED,
+            "the biomes of the area (with the structures) also prove the seed: " + fromBiomes.proof() + " " + fromBiomes.worldSeed());
+    }
+
     @Override
     public void runTest(ClientGameTestContext context) {
         context.runOnClient(client -> {
@@ -382,6 +429,7 @@ public class SeedFinderGameTest implements FabricClientGameTest {
                 java.util.OptionalLong.empty(), 2, (done, total) -> { });
             check(fromBedrock.proof().orElse(null) == WorldSeedSearch.Proof.BEDROCK && fromBedrock.worldSeed().getAsLong() == SEED,
                 "the bedrock alone also proves the seed");
+            checkBiomes(context, session, read, result);
 
             // Copy seed, and the saved notes the command-line app can read.
             context.getInput().pressKey(SeedFinderClient.openKey);

@@ -1,10 +1,12 @@
 package io.github.jriiik.seedfinder.cli;
 
 import io.github.jriiik.seedfinder.Seeds;
+import io.github.jriiik.seedfinder.finder.BiomeEvidence;
 import io.github.jriiik.seedfinder.finder.ObservationReader;
 import io.github.jriiik.seedfinder.finder.SeedCheck;
 import io.github.jriiik.seedfinder.finder.StructureObservation;
 import io.github.jriiik.seedfinder.finder.TypedSeedSearch;
+import io.github.jriiik.seedfinder.version.MinecraftVersion;
 import io.github.jriiik.seedfinder.version.VersionData;
 import java.io.PrintWriter;
 import java.nio.file.Path;
@@ -62,7 +64,8 @@ final class TypedSeedCommand implements Callable<Integer> {
     public Integer call() {
         CommandLine commandLine = spec.commandLine();
         PrintWriter out = commandLine.getOut();
-        VersionData data = version.resolve(commandLine).data();
+        MinecraftVersion minecraft = version.resolve(commandLine);
+        VersionData data = minecraft.data();
         Optional<ObservationReader.Observations> notes = notes(commandLine, data);
         long hashedSeed = notes.isPresent() ? notes.get().hashedSeed().getAsLong() : parsedHashedSeed(commandLine);
         int threadCount = Threads.resolve(commandLine, threads);
@@ -101,7 +104,15 @@ final class TypedSeedCommand implements Callable<Integer> {
             return 1;
         }
         long worldSeed = outcome.seed().getAsLong();
-        Optional<SeedCheck> check = notes.map(read -> SeedCheck.of(data, read.structures(), read.bedrock(), worldSeed));
+        Optional<SeedCheck> check = notes.map(read -> {
+            BiomeEvidence biomes = read.biomes().isEmpty() ? null : new BiomeEvidence(minecraft, read.biomes(), read.hashedSeed());
+            if (biomes != null) {
+                biomes.problems().forEach(problem -> out.println("Note: " + problem + "."));
+                out.println("Checking the biome notes (a few seconds)...");
+                out.flush();
+            }
+            return SeedCheck.of(data, read.structures(), read.bedrock(), biomes, worldSeed, threadCount, () -> false, null);
+        });
         check.ifPresent(found -> found.bedrockProblems().forEach(problem ->
             out.println("Left out of the check, because it is wrong whatever the seed: " + problem + ".")));
         if (check.isPresent() && check.get().verdict() == SeedCheck.Verdict.CONTRADICTED) {
@@ -129,6 +140,9 @@ final class TypedSeedCommand implements Callable<Integer> {
                     boolean one = contradicted.misfits().size() == 1;
                     otherwise.add((one ? "the structure was" : "the structures were") + " noted in the wrong place or " + (one ? "doesn't" : "don't")
                         + " follow the seed (older chunks, a command, a copy, or a server that places structures differently)");
+                }
+                if (contradicted.biomes().misfit()) {
+                    otherwise.add("the biomes were noted wrong or come from chunks made by an older Minecraft version or changed by the server");
                 }
                 out.println("Either the server sends a made-up hashed seed, or " + String.join(" and ", otherwise)
                     + ". Bedrock notes from the overworld would tell which.");
@@ -160,6 +174,10 @@ final class TypedSeedCommand implements Callable<Integer> {
                 out.println((one ? "This structure in the notes doesn't fit it: " : "These structures in the notes don't fit it: ")
                     + names(confirmed.misfits()) + ". The server may place structures differently, or " + (one ? "it comes" : "they come")
                     + " from an older Minecraft version, a command or a copy (or " + (one ? "was" : "were") + " noted in the wrong place).");
+            }
+            if (confirmed.biomes().misfit()) {
+                out.println("The biome notes don't fit it: they may come from chunks made by an older Minecraft version, or the server changes"
+                    + " biomes (or they were noted wrong).");
             }
             if (confirmed.nether().mismatches() > 0) {
                 boolean one = confirmed.nether().mismatches() == 1;
@@ -212,6 +230,9 @@ final class TypedSeedCommand implements Callable<Integer> {
         if (check.nether().fits()) {
             parts.add(check.nether().blocks() + " nether bedrock blocks");
         }
+        if (check.biomes().fitsUnder().isPresent()) {
+            parts.add(check.biomes().notes() + " biome notes");
+        }
         return String.join(" and ", parts);
     }
 
@@ -226,6 +247,9 @@ final class TypedSeedCommand implements Callable<Integer> {
         }
         if (check.nether().mismatches() > 0) {
             parts.add("nether bedrock blocks that don't fit: " + check.nether().mismatches() + " of " + check.nether().blocks());
+        }
+        if (check.biomes().misfit()) {
+            parts.add("the biome notes don't fit");
         }
         return String.join(", ", parts);
     }

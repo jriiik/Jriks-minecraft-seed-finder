@@ -99,4 +99,24 @@ class WorldSeedSearchTest {
         // Without a proof (no hashed seed, no bedrock) nothing is claimed.
         assertTrue(WorldSeedSearch.withoutMisfit(DATA, observations, List.of(), OptionalLong.empty(), 2).isEmpty());
     }
+
+    @Test
+    void biomesGiveTheWorldSeedWithoutHashedSeedOrBedrock() {
+        List<StructureObservation> structures = ObservationReader.read(DATA, STRUCTURES_12345).structures();
+        WorldSeedSearch.StructureStep step = WorldSeedSearch.structureSeeds(DATA, structures, 2, (done, total) -> { });
+        List<BiomeObservation> biomes = BiomeEvidenceTest.area(12345L, io.github.jriiik.seedfinder.biome.OverworldBiomes.Preset.NORMAL, 0, 0, 6, 64);
+        WorldSeedSearch.BiomeInput input = new WorldSeedSearch.BiomeInput(new BiomeEvidence(MinecraftVersion.V26_3, biomes, OptionalLong.empty()),
+            new BiomeEvidence.ScanCache(16), () -> false);
+        WorldSeedSearch.Result result = WorldSeedSearch.fullSeed(step, List.of(), input, OptionalLong.empty(), 4);
+        assertEquals(OptionalLong.of(12345L), result.worldSeed());
+        assertEquals(Optional.of(WorldSeedSearch.Proof.BIOMES), result.proof());
+
+        // found from the hashed seed, the biomes of another world are flagged
+        List<BiomeObservation> otherWorld = BiomeEvidenceTest.area(999L, io.github.jriiik.seedfinder.biome.OverworldBiomes.Preset.NORMAL, 0, 0, 3, 64);
+        WorldSeedSearch.Result flagged = WorldSeedSearch.fullSeed(step, List.of(),
+            new WorldSeedSearch.BiomeInput(new BiomeEvidence(MinecraftVersion.V26_3, otherWorld, OptionalLong.empty()), null, () -> false),
+            OptionalLong.of(Seeds.hashedSeed(12345L)), 4);
+        assertEquals(Optional.of(WorldSeedSearch.Proof.HASHED_SEED), flagged.proof());
+        assertTrue(flagged.biomesDisagree());
+    }
 }

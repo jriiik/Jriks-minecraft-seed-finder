@@ -1,8 +1,10 @@
 package io.github.jriiik.seedfinder.mod;
 
+import io.github.jriiik.seedfinder.finder.BiomeEvidence;
 import io.github.jriiik.seedfinder.finder.ObservationReader;
 import io.github.jriiik.seedfinder.finder.SeedCheck;
 import io.github.jriiik.seedfinder.finder.WorldSeedSearch;
+import io.github.jriiik.seedfinder.version.MinecraftVersion;
 import io.github.jriiik.seedfinder.version.VersionData;
 import java.util.List;
 import java.util.OptionalLong;
@@ -37,6 +39,8 @@ final class SearchRunner {
     /** The structure step is the slow part; it is kept while the structures stay the same. */
     private String cachedFor;
     private WorldSeedSearch.StructureStep cachedStep;
+    /** Which seeds fit each biome area, kept so a search after a change only checks what changed (8 KB each). */
+    private final BiomeEvidence.ScanCache biomeCache = new BiomeEvidence.ScanCache(96);
 
     SearchRunner(VersionData data) {
         this.data = data;
@@ -80,9 +84,14 @@ final class SearchRunner {
         CompletableFuture
             .supplyAsync(() -> {
                 ObservationReader.Observations notes = ObservationReader.read(data, lines);
+                BiomeEvidence biomeEvidence = notes.biomes().isEmpty() ? null
+                    : new BiomeEvidence(MinecraftVersion.byName(data.version()).orElseThrow(), notes.biomes(), notes.hashedSeed());
+                WorldSeedSearch.BiomeInput biomes = biomeEvidence == null ? WorldSeedSearch.BiomeInput.NONE
+                    : new WorldSeedSearch.BiomeInput(biomeEvidence, biomeCache, () -> false);
                 boolean typedSeedConfirmed = false;
                 if (typedSeed.isPresent()) {
-                    SeedCheck check = SeedCheck.of(data, notes.structures(), notes.bedrock(), typedSeed.getAsLong());
+                    SeedCheck check = SeedCheck.of(data, notes.structures(), notes.bedrock(), biomeEvidence, typedSeed.getAsLong(), threads,
+                        () -> false, biomeCache);
                     // Shown at once: a structure search can take a while.
                     Minecraft.getInstance().execute(() -> session.setTypedSeedCheck(version, check));
                     typedSeedConfirmed = check.verdict() == SeedCheck.Verdict.CONFIRMED;
@@ -92,11 +101,12 @@ final class SearchRunner {
                 }
                 WorldSeedSearch.StructureStep step = reuse != null ? reuse
                     : WorldSeedSearch.structureSeeds(data, notes.structures(), threads, (done, total) -> percent = (int) (100 * done / total));
-                WorldSeedSearch.Result result = WorldSeedSearch.fullSeed(step, notes.bedrock(), notes.hashedSeed(), threads);
+                WorldSeedSearch.Result result = WorldSeedSearch.fullSeed(step, notes.bedrock(), biomes, notes.hashedSeed(), threads);
                 if (result.stage() == WorldSeedSearch.Stage.NO_STRUCTURE_SEED && !typedSeedConfirmed) {
                     // One structure that doesn't follow the seed (older chunks, a command, a copy) spoils the search. Not
                     // worth the many searches when the notes already confirm the typed seed (they say which ones don't fit).
-                    result = WorldSeedSearch.withoutMisfit(data, notes.structures(), notes.bedrock(), notes.hashedSeed(), threads).orElse(result);
+                    result = WorldSeedSearch.withoutMisfit(data, notes.structures(), notes.bedrock(), biomes, notes.hashedSeed(), threads)
+                        .orElse(result);
                 }
                 return new Outcome(structureKey, step, result);
             }, WORKER)
