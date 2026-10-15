@@ -214,12 +214,26 @@ public final class SeedFinderClient implements ClientModInitializer {
      * be taken for real starts (the mod itself never sends commands).
      */
     private static void onGameMessage(Component message, boolean overlay) {
-        if (overlay || session == null || !session.collecting()) {
+        if (overlay || session == null) {
+            return;
+        }
+        // Structures placed by command are left out also while collecting is off (then only for this session): the
+        // player may switch collecting on with one in view.
+        PlacedStructureMessage.parse(message).ifPresent(placed -> data().findStructureSet(placed.structure()).ifPresent(set ->
+            placed(set.shortId(), Math.floorDiv(placed.x(), 16), Math.floorDiv(placed.z(), 16))));
+        PlacedTemplateMessage.parse(message).ifPresent(placed -> placed.lookalikes(data(), StructureRecognition.recognizer(data()).getNow(null))
+            .forEach(start -> placed(start.structureSet(), start.chunkX(), start.chunkZ())));
+        if (!session.collecting()) {
             return;
         }
         LocateMessage.parse(message).ifPresent(found -> data().findStructureSet(found.structure()).ifPresent(set ->
             session.addStructure(new WorldSession.NotedStructure(set.shortId(), found.x(), found.z(), "from /locate"))));
-        PlacedStructureMessage.parse(message).ifPresent(placed -> data().findStructureSet(placed.structure()).ifPresent(set ->
-            session.distrust(set.shortId(), placed.x(), placed.z())));
+    }
+
+    private static void placed(String set, int chunkX, int chunkZ) {
+        session.placed(set, chunkX * 16, chunkZ * 16);
+        if (recognition != null) {
+            recognition.placed(set, chunkX, chunkZ);
+        }
     }
 }

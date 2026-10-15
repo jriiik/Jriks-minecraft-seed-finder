@@ -87,6 +87,15 @@ public class SeedFinderGameTest implements FabricClientGameTest {
         check(netherPortal != null && context.computeOnClient(client -> SeedFinderClient.recognition().starts().stream()
                 .noneMatch(start -> start.structureSet().equals("ruined_portals") && start.chunkX() == netherPortal.x() && start.chunkZ() == netherPortal.z())),
             "the game has a ruined portal in the nether to visit, in a chunk not recognized yet");
+        // Ruined portals in the nether are only noted once the player says the nether is new enough.
+        check(!context.computeOnClient(client -> SeedFinderClient.session(client).netherPortals()), "nether portals are not noted by default");
+        world.getServer().runCommand("execute in minecraft:the_nether run tp @a " + (netherPortal.getMinBlockX() + 8) + " 100 "
+            + (netherPortal.getMinBlockZ() + 8));
+        context.waitTicks(20 * 30);
+        check(context.computeOnClient(client -> SeedFinderClient.recognition().starts().stream()
+                .noneMatch(start -> start.chunkX() == netherPortal.x() && start.chunkZ() == netherPortal.z())),
+            "with nether portals switched off, the portal in the nether is not taken for a start");
+        context.runOnClient(client -> SeedFinderClient.session(client).setNetherPortals(true));
         visit(context, world, "minecraft:the_nether", "ruined_portals", netherPortal);
         world.getServer().runCommand("execute in minecraft:overworld run tp @a " + (last.getMinBlockX() + 8) + " 160 " + (last.getMinBlockZ() + 8));
         context.waitTicks(100);
@@ -201,11 +210,11 @@ public class SeedFinderGameTest implements FabricClientGameTest {
         context.waitTicks(100);
         world.getServer().runCommand("tp @a " + (x + 8) + " 160 " + (z + 8));
         RecognizedStarts.Start placed = new RecognizedStarts.Start("abandoned_camp", 172, 172);
-        for (int wait = 0; wait < 20 * 60 && !context.computeOnClient(client -> SeedFinderClient.recognition().starts().contains(placed)); wait += 20) {
+        for (int wait = 0; wait < 20 * 60 && !context.computeOnClient(client -> SeedFinderClient.recognition().setAside().contains(placed)); wait += 20) {
             context.waitTicks(20);
         }
-        check(context.computeOnClient(client -> SeedFinderClient.recognition().starts().contains(placed)),
-            "the camp placed with /place looks like a start by its blocks");
+        check(context.computeOnClient(client -> SeedFinderClient.recognition().setAside().contains(placed)),
+            "the camp placed with /place looks like a start by its blocks, and is set aside");
         context.waitTicks(40);
         check(context.computeOnClient(client -> SeedFinderClient.session(client).structures().stream()
             .noneMatch(s -> s.set().equals("abandoned_camp") && Math.floorDiv(s.x(), 16) == 172 && Math.floorDiv(s.z(), 16) == 172)),
@@ -213,8 +222,9 @@ public class SeedFinderGameTest implements FabricClientGameTest {
     }
 
     /**
-     * The same for a rigid structure: a ruined portal placed with /place in a chunk where portals can start, at least
-     * 12 chunks from where the real portal of that placement region may be (so it is not in view).
+     * The same for a rigid structure: a ruined portal placed with /place structure in a chunk where portals can start,
+     * at least 12 chunks from where the real portal of that placement region may be (so it is not in view), and a
+     * portal template placed with /place template on the corner of a chunk 3 chunks from it.
      */
     static void ignoresPlacedRigidStructures(ClientGameTestContext context, TestSingleplayerContext world) {
         RandomSpreadPlacement grid = (RandomSpreadPlacement) SeedFinderClient.data().structureSet("ruined_portals").orElseThrow().placement();
@@ -226,25 +236,32 @@ public class SeedFinderGameTest implements FabricClientGameTest {
         int chunkZ = regionZ * grid.spacing() + (real.z() - regionZ * grid.spacing() < limit / 2 ? limit - 1 : 0);
         int x = chunkX * 16;
         int z = chunkZ * 16;
-        world.getServer().runCommand("forceload add " + (x - 64) + " " + (z - 64) + " " + (x + 64) + " " + (z + 64));
+        int templateChunkX = chunkX + (chunkX - regionX * grid.spacing() == 0 ? 3 : -3);
+        world.getServer().runCommand("forceload add " + (x - 96) + " " + (z - 64) + " " + (x + 96) + " " + (z + 64));
         world.getServer().runCommand("tp @a " + (x + 8) + " 160 " + (z + 8));
         context.waitTicks(100);
         context.runOnClient(client -> client.getConnection().sendCommand("place structure minecraft:ruined_portal " + x + " 100 " + z));
+        context.runOnClient(client -> client.getConnection().sendCommand("place template minecraft:ruined_portal/portal_3 " + templateChunkX * 16 + " 100 " + z));
         context.waitTicks(40);
         world.getServer().runCommand("forceload remove all");
         world.getServer().runCommand("tp @a " + (x + 8 + 1000) + " 160 " + (z + 8));
         context.waitTicks(100);
         world.getServer().runCommand("tp @a " + (x + 8) + " 160 " + (z + 8));
         RecognizedStarts.Start placed = new RecognizedStarts.Start("ruined_portals", chunkX, chunkZ);
-        for (int wait = 0; wait < 20 * 90 && !context.computeOnClient(client -> SeedFinderClient.recognition().starts().contains(placed)); wait += 20) {
+        RecognizedStarts.Start template = new RecognizedStarts.Start("ruined_portals", templateChunkX, chunkZ);
+        for (int wait = 0; wait < 20 * 90 && !context.computeOnClient(client -> SeedFinderClient.recognition().setAside().containsAll(List.of(placed, template)));
+             wait += 20) {
             context.waitTicks(20);
         }
-        check(context.computeOnClient(client -> SeedFinderClient.recognition().starts().contains(placed)),
-            "the ruined portal placed with /place in chunk " + chunkX + ", " + chunkZ + " looks like a start by its blocks");
+        check(context.computeOnClient(client -> SeedFinderClient.recognition().setAside().contains(placed)),
+            "the ruined portal placed with /place structure in chunk " + chunkX + ", " + chunkZ + " looks like a start by its blocks, and is set aside");
+        check(context.computeOnClient(client -> SeedFinderClient.recognition().setAside().contains(template)),
+            "the portal template placed with /place template in chunk " + templateChunkX + ", " + chunkZ + " looks like a start by its blocks, and is set aside");
         context.waitTicks(40);
         check(context.computeOnClient(client -> SeedFinderClient.session(client).structures().stream()
-            .noneMatch(s -> s.set().equals("ruined_portals") && Math.floorDiv(s.x(), 16) == chunkX && Math.floorDiv(s.z(), 16) == chunkZ)),
-            "but it is not noted, because the mod read the /place answer");
+            .noneMatch(s -> s.set().equals("ruined_portals") && Math.floorDiv(s.z(), 16) == chunkZ
+                && (Math.floorDiv(s.x(), 16) == chunkX || Math.floorDiv(s.x(), 16) == templateChunkX))),
+            "but neither is noted, because the mod read the /place answers");
     }
 
     /** The start chunk of the structure of a set nearest to a position, with the search /locate uses. */

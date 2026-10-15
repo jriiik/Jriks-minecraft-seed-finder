@@ -41,6 +41,22 @@ public final class RecognizedStarts {
         return regions.computeIfAbsent(region, key -> new LinkedHashSet<>()).add(new Start(structureSet, chunkX, chunkZ));
     }
 
+    /**
+     * Takes back a start that is known not to be one (placed by a command); returns whether {@link #starts()} or
+     * {@link #conflicting()} changed.
+     */
+    public boolean remove(String structureSet, int spacing, int chunkX, int chunkZ) {
+        Region region = new Region(structureSet, Math.floorDiv(chunkX, spacing), Math.floorDiv(chunkZ, spacing));
+        Set<Start> found = regions.get(region);
+        if (found == null || !found.remove(new Start(structureSet, chunkX, chunkZ))) {
+            return false;
+        }
+        if (found.isEmpty()) {
+            regions.remove(region);
+        }
+        return true;
+    }
+
     /** The starts that are certain: the only one found in their region. */
     public List<Start> starts() {
         List<Start> starts = new ArrayList<>();

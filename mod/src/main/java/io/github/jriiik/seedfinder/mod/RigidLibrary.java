@@ -197,7 +197,7 @@ final class RigidLibrary {
         return layouts;
     }
 
-    private static Rotation rotation(String name) {
+    static Rotation rotation(String name) {
         for (Rotation rotation : Rotation.values()) {
             if (rotation.getSerializedName().equals(name)) {
                 return rotation;
@@ -206,7 +206,7 @@ final class RigidLibrary {
         throw new IllegalArgumentException("unknown rotation " + name);
     }
 
-    private static Mirror mirror(String name) {
+    static Mirror mirror(String name) {
         for (Mirror mirror : Mirror.values()) {
             if (mirror.getSerializedName().equals(name)) {
                 return mirror;

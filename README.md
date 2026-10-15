@@ -167,8 +167,10 @@ itself. It needs Minecraft **26.3** with **Fabric Loader** (0.19.5 or newer) and
 4. Play. The mod then:
    - reads the bedrock floor of chunks around you (overworld and nether);
    - recognizes **villages, pillager outposts, trial chambers, ancient cities, trail ruins, camps, desert pyramids,
-     jungle temples, swamp huts, igloos, shipwrecks, ocean ruins and ruined portals** (also in the nether) you come
-     near, from their blocks, and notes the chunk where each one starts (see below);
+     jungle temples, swamp huts, igloos, shipwrecks, ocean ruins and ruined portals** you come near, from their
+     blocks, and notes the chunk where each one starts (see below). Ruined portals in the nether are only noted after
+     you switch **Ruined portals in the nether** on, which you should only do if the world's nether was made by
+     Minecraft 1.18.2 or newer: in nether chunks made by 1.16 to 1.18.1 they sit on another grid;
    - notes the answer when you use `/locate structure ...` (if you are allowed to use it);
    - notes structures you mark: stand in the chunk where a structure starts and press **Add a structure here**;
    - uses the "hashed seed" that Minecraft sends to every player, which settles the full seed as soon as the
@@ -211,12 +213,15 @@ It misses some: tiny warm ocean ruins (only 9 telling blocks), ruined portals mo
 nether) lava, ocean ruins buried in coastal rock, and anything players have repaired or taken apart (a ruined portal
 someone completed or lit no longer counts as a ruin).
 
-Some structures are real but don't follow the seed: villages and outposts in chunks made by Minecraft 1.17 or
-older (an upgraded world), structures placed with `/place` or copied from elsewhere, and exact copies players
-built on a chunk corner. The mod ignores structures you place with `/place` yourself. When the others make "no
-seed fits", the mod tries again leaving out one structure at a time; if that proves a seed (with the hashed seed or
-bedrock), it shows the seed and names the structure that doesn't fit. Structures you remove on the mod's screen
-are not noted again.
+Some structures are real but don't follow the seed: in an upgraded world, villages and outposts in chunks made by
+Minecraft 1.17 or older, jungle temples, swamp huts and igloos in chunks made by 1.12 or older, and ruined portals
+in nether chunks made by 1.16 to 1.18.1; structures placed with `/place` or copied from elsewhere; and exact copies
+players built on a chunk corner. The mod ignores structures placed with `/place structure` or `/place template`
+when it sees the game's answer in your chat (also while collecting is off, for as long as you play), but not when
+the answers are hidden (the `sendCommandFeedback` rule is off, or chat is hidden) or the command came from a
+command block. When the others make "no seed fits", the mod tries again leaving out one structure at a time; if
+that proves a seed (with the hashed seed or bedrock), it shows the seed and names the structure that doesn't fit.
+Structures you remove on the mod's screen are not noted again, also after **Remove all notes**.
 
 Each world has its own notes, told apart by the server address (or save name) and the hashed seed, so a server
 network's lobby and game world, or a world that was reset, never mix.

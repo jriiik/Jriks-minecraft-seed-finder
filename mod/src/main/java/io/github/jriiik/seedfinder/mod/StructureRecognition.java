@@ -91,6 +91,7 @@ final class StructureRecognition {
     private final Set<RecognizedStarts.Start> offered = new HashSet<>();
     private final Set<RecognizedStarts.Start> noted = new HashSet<>();
     private final Set<RecognizedStarts.Start> distrusted = new HashSet<>();
+    private final Set<RecognizedStarts.Start> setAside = new HashSet<>();
     private boolean scanAllLoaded = true;
     private int ticks;
     /** The chunk being scanned, and where in it. */
@@ -100,6 +101,8 @@ final class StructureRecognition {
     /** The rigid structures of the current level: null when none appear in its dimension (or until ready). */
     private RigidTracker tracker;
     private boolean trackerMade;
+    /** Whether the tracker was made with ruined portals in the nether noted (see {@link WorldSession#netherPortals}). */
+    private boolean trackerNetherPortals;
     /** For the current tracker: each block's trigger class, or -1. */
     private final Map<Block, Integer> triggerClasses = new IdentityHashMap<>();
     /** The trigger blocks found so far in the chunk being scanned. */
@@ -208,6 +211,30 @@ final class StructureRecognition {
         return sets;
     }
 
+    /** Whether the session knows a structure of the set was placed by command in the chunk; such a match is set aside. */
+    private boolean wasPlaced(WorldSession session, String set, int chunkX, int chunkZ) {
+        if (!session.wasPlaced(set, chunkX, chunkZ)) {
+            return false;
+        }
+        if (setAside.add(new RecognizedStarts.Start(set, chunkX, chunkZ))) {
+            SeedFinderClient.LOG.info("Structure recognition: {} in chunk {}, {} was placed by command; not a start", set, chunkX, chunkZ);
+        }
+        return true;
+    }
+
+    /** Matches set aside because a structure was placed there by command (for the in-game test). */
+    Set<RecognizedStarts.Start> setAside() {
+        return Set.copyOf(setAside);
+    }
+
+    /** A structure was placed by command there: if it was taken for a start, that is taken back. */
+    void placed(String set, int chunkX, int chunkZ) {
+        Integer setSpacing = spacing.get(set);
+        if (setSpacing != null) {
+            starts.remove(set, setSpacing, chunkX, chunkZ);
+        }
+    }
+
     /** The starts found so far in this world (for the in-game test). */
     List<RecognizedStarts.Start> starts() {
         return starts.starts();
@@ -253,10 +280,19 @@ final class StructureRecognition {
         if (pieces == null || rigid == null || !inStructureDimension()) {
             return;
         }
+        boolean nether = level.dimension() == Level.NETHER;
+        if (trackerMade && nether && trackerNetherPortals != session.netherPortals()) {
+            // The player switched nether portals on or off.
+            trackerMade = false;
+            triggerClasses.clear();
+        }
         if (!trackerMade) {
             trackerMade = true;
-            RigidRecognizer rigidRecognizer = rigidRecognizers.get(level.dimension().identifier().toString());
-            tracker = rigidRecognizer == null ? null : new RigidTracker(rigidRecognizer, level.dimension() == Level.NETHER);
+            trackerNetherPortals = session.netherPortals();
+            // Ruined portals in nether chunks made by Minecraft 1.16 to 1.18.1 sit on another grid: only noted when the
+            // player says the nether is newer.
+            RigidRecognizer rigidRecognizer = nether && !session.netherPortals() ? null : rigidRecognizers.get(level.dimension().identifier().toString());
+            tracker = rigidRecognizer == null ? null : new RigidTracker(rigidRecognizer, nether);
             // Chunks read before the tracker was there have no trigger blocks noted: read them again.
             scanAllLoaded = true;
             scanning = null;
@@ -326,6 +362,10 @@ final class StructureRecognition {
     private void noteRigid(List<RigidRecognizer.Detection> detections, WorldSession session) {
         for (RigidRecognizer.Detection d : detections) {
             SeedFinderClient.LOG.info("Recognized {}", d);
+            // A structure placed by command is no start: it may not count against the real one of its region.
+            if (wasPlaced(session, d.kind().structureSet(), d.chunkX(), d.chunkZ())) {
+                continue;
+            }
             if (starts.add(d.kind().structureSet(), spacing.get(d.kind().structureSet()), d.chunkX(), d.chunkZ())) {
                 updateNotes(session);
             }
@@ -416,7 +456,7 @@ final class StructureRecognition {
                     candidate.piece().structureSet(), candidate.chunkX(), candidate.chunkZ(), candidate.piece().name(), candidate.rotation(),
                     check.matched(), candidate.piece().blockCount(), check.builtMatched(), candidate.piece().builtCount(),
                     check.distinctMatched(), candidate.piece().distinctCount());
-                if (starts.add(candidate)) {
+                if (!wasPlaced(session, candidate.piece().structureSet(), candidate.chunkX(), candidate.chunkZ()) && starts.add(candidate)) {
                     updateNotes(session);
                 }
             }

@@ -34,6 +34,9 @@ final class WorldSession {
     record NotedStructure(String set, int x, int z, String source) {
     }
 
+    /** The source of a left-out spot where a structure was placed with /place. */
+    static final String PLACED = "placed with /place";
+
     /** At most this many chunks of bedrock per dimension: one chunk is nearly always enough. */
     static final int MAX_BEDROCK_CHUNKS = 4;
 
@@ -42,6 +45,12 @@ final class WorldSession {
     private final String world;
     private boolean collecting;
     private boolean showStatus = true;
+    /**
+     * Whether ruined portals recognized in the nether are noted. Off unless the player says the world's nether was
+     * made by Minecraft 1.18.2 or newer: from 1.16 to 1.18.1 nether portals used another grid, and such chunks keep
+     * them there.
+     */
+    private boolean netherPortals;
     private OptionalLong hashedSeed = OptionalLong.empty();
     private final List<NotedStructure> structures = new ArrayList<>();
     /**
@@ -49,6 +58,11 @@ final class WorldSession {
      * contradicted another note in the same placement region.
      */
     private final List<NotedStructure> removed = new ArrayList<>();
+    /**
+     * Spots where structures were placed with /place while collecting was off: kept only for this session (nothing
+     * is saved before the player switches collecting on), and left out for good once collecting is switched on.
+     */
+    private final List<NotedStructure> placedWhileOff = new ArrayList<>();
     /** Recognized starts left out this session because the notes already have that set elsewhere in the region. */
     private final List<String> disagreements = new ArrayList<>();
     private int removals;
@@ -164,6 +178,20 @@ final class WorldSession {
     void setCollecting(boolean collecting) {
         this.collecting = collecting;
         version++;
+        if (collecting) {
+            List<NotedStructure> placed = List.copyOf(placedWhileOff);
+            placedWhileOff.clear();
+            placed.forEach(spot -> placed(spot.set(), spot.x(), spot.z()));
+        }
+    }
+
+    boolean netherPortals() {
+        return netherPortals;
+    }
+
+    void setNetherPortals(boolean netherPortals) {
+        this.netherPortals = netherPortals;
+        version++;
     }
 
     boolean showStatus() {
@@ -243,7 +271,8 @@ final class WorldSession {
     Offer addRecognized(NotedStructure structure, int spacing) {
         int chunkX = Math.floorDiv(structure.x(), 16);
         int chunkZ = Math.floorDiv(structure.z(), 16);
-        if (removed.stream().anyMatch(s -> s.set().equals(structure.set()) && Math.floorDiv(s.x(), 16) == chunkX && Math.floorDiv(s.z(), 16) == chunkZ)) {
+        if (removed.stream().anyMatch(s -> s.set().equals(structure.set()) && Math.floorDiv(s.x(), 16) == chunkX && Math.floorDiv(s.z(), 16) == chunkZ)
+            || wasPlaced(structure.set(), chunkX, chunkZ)) {
             return Offer.LEFT_OUT;
         }
         List<NotedStructure> sameRegion = structures.stream().filter(s -> s.set().equals(structure.set())
@@ -288,12 +317,36 @@ final class WorldSession {
      * takes back an automatic note of it, if any, also one from an earlier session, and never notes it again.
      */
     void distrust(String set, int x, int z) {
+        distrust(set, x, z, "not trusted");
+    }
+
+    /**
+     * A structure placed with /place (in the chunk holding x, z): it sits where a start of its set could be but
+     * doesn't follow the seed, so it is never noted. While collecting is off it is only remembered for this session.
+     */
+    void placed(String set, int x, int z) {
+        if (collecting) {
+            distrust(set, x, z, PLACED);
+        } else if (!wasPlaced(set, Math.floorDiv(x, 16), Math.floorDiv(z, 16))) {
+            placedWhileOff.add(new NotedStructure(set, Math.floorDiv(x, 16) * 16, Math.floorDiv(z, 16) * 16, PLACED));
+        }
+    }
+
+    /** Whether a structure of the set was placed with /place in this chunk (as far as the mod saw). */
+    boolean wasPlaced(String set, int chunkX, int chunkZ) {
+        return removed.stream().anyMatch(s -> s.source().equals(PLACED) && s.set().equals(set) && Math.floorDiv(s.x(), 16) == chunkX
+            && Math.floorDiv(s.z(), 16) == chunkZ) || placedWhileOff.stream().anyMatch(s -> s.set().equals(set)
+            && Math.floorDiv(s.x(), 16) == chunkX && Math.floorDiv(s.z(), 16) == chunkZ);
+    }
+
+    private void distrust(String set, int x, int z, String source) {
         int chunkX = Math.floorDiv(x, 16);
         int chunkZ = Math.floorDiv(z, 16);
         boolean changed = structures.removeIf(s -> s.set().equals(set) && s.source().equals(StructureRecognition.SOURCE)
             && Math.floorDiv(s.x(), 16) == chunkX && Math.floorDiv(s.z(), 16) == chunkZ);
-        if (removed.stream().noneMatch(s -> s.set().equals(set) && Math.floorDiv(s.x(), 16) == chunkX && Math.floorDiv(s.z(), 16) == chunkZ)) {
-            removed.add(new NotedStructure(set, chunkX * 16, chunkZ * 16, "not trusted"));
+        if (removed.stream().noneMatch(s -> s.set().equals(set) && Math.floorDiv(s.x(), 16) == chunkX && Math.floorDiv(s.z(), 16) == chunkZ
+            && (s.source().equals(source) || !source.equals(PLACED)))) {
+            removed.add(new NotedStructure(set, chunkX * 16, chunkZ * 16, source));
             changed = true;
         }
         if (changed) {
@@ -323,11 +376,12 @@ final class WorldSession {
     /**
      * Forgets the structures and bedrock noted in this world (collecting stays as it is); for a world that was reset
      * or replaced. The hashed seed and the typed-seed search are kept: the hashed seed is part of the key these notes
-     * are kept under, and the typed seed depends only on it.
+     * are kept under, and the typed seed depends only on it. What recognition must not note (structures the player
+     * removed, placed with /place, or not trusted) stays left out: noting one of them again could be wrong, while
+     * leaving one out after a real reset only misses it.
      */
     void clearAll() {
         structures.clear();
-        removed.clear();
         disagreements.clear();
         typedSeedCheck = null;
         bedrock.clear();
@@ -420,6 +474,7 @@ final class WorldSession {
         json.addProperty("world", world);
         json.addProperty("collecting", collecting);
         json.addProperty("show_status", showStatus);
+        json.addProperty("nether_portals", netherPortals);
         hashedSeed.ifPresent(value -> json.addProperty("hashed_seed", Long.toString(value)));
         json.addProperty("typed_seed_layout", TypedSeedSearch.LAYOUT);
         json.addProperty("typed_seed_pieces", typedSeedPieces);
@@ -530,6 +585,7 @@ final class WorldSession {
             JsonObject json = JsonParser.parseString(Files.readString(file, StandardCharsets.UTF_8)).getAsJsonObject();
             session.collecting = json.has("collecting") && json.get("collecting").getAsBoolean();
             session.showStatus = !json.has("show_status") || json.get("show_status").getAsBoolean();
+            session.netherPortals = json.has("nether_portals") && json.get("nether_portals").getAsBoolean();
             if (json.has("hashed_seed")) {
                 session.hashedSeed = OptionalLong.of(Long.parseLong(json.get("hashed_seed").getAsString()));
             }

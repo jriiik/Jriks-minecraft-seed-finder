@@ -41,8 +41,53 @@ class WorldSessionTest {
         WorldSession loaded = WorldSession.load(folder, WORLD);
         assertEquals(WorldSession.Offer.LEFT_OUT, loaded.addRecognized(recognized(3, 4), VILLAGES));
         assertEquals(List.of(), loaded.structures());
+        // "Remove all notes" keeps it left out: noting it again could be wrong, leaving it out only misses it.
         loaded.clearAll();
-        assertEquals(WorldSession.Offer.ADDED, loaded.addRecognized(recognized(3, 4), VILLAGES));
+        assertEquals(WorldSession.Offer.LEFT_OUT, loaded.addRecognized(recognized(3, 4), VILLAGES));
+    }
+
+    @Test
+    void ruinedPortalsInTheNetherAreOnlyNotedWhenThePlayerSwitchesThemOn(@TempDir Path folder) throws IOException {
+        WorldSession session = new WorldSession(WORLD);
+        assertFalse(session.netherPortals());
+        session.save(folder);
+        assertFalse(WorldSession.load(folder, WORLD).netherPortals());
+        session.setNetherPortals(true);
+        session.save(folder);
+        assertTrue(WorldSession.load(folder, WORLD).netherPortals());
+    }
+
+    @Test
+    void aStructurePlacedByCommandIsLeftOutAlsoWhenCollectingWasOff(@TempDir Path folder) throws IOException {
+        WorldSession session = new WorldSession(WORLD);
+        // Collecting is off: the spot is remembered for this session only, and nothing changes in the notes.
+        int version = session.version();
+        session.placed("villages", 3 * 16 + 5, 4 * 16 + 9);
+        assertEquals(version, session.version());
+        assertTrue(session.wasPlaced("villages", 3, 4));
+        assertFalse(session.wasPlaced("villages", 4, 4));
+        assertFalse(session.wasPlaced("pillager_outposts", 3, 4));
+        session.save(folder);
+        assertFalse(WorldSession.load(folder, WORLD).wasPlaced("villages", 3, 4), "not saved while collecting is off");
+
+        // Switched on: left out for good, saved, and kept by "Remove all notes".
+        session.setCollecting(true);
+        assertEquals(WorldSession.Offer.LEFT_OUT, session.addRecognized(recognized(3, 4), VILLAGES));
+        session.save(folder);
+        WorldSession loaded = WorldSession.load(folder, WORLD);
+        assertTrue(loaded.wasPlaced("villages", 3, 4));
+        loaded.clearAll();
+        assertEquals(WorldSession.Offer.LEFT_OUT, loaded.addRecognized(recognized(3, 4), VILLAGES));
+        assertTrue(loaded.wasPlaced("villages", 3, 4));
+
+        // Placed while collecting: an automatic note there is taken back.
+        assertEquals(WorldSession.Offer.ADDED, loaded.addRecognized(recognized(40, 4), VILLAGES));
+        loaded.placed("villages", 40 * 16, 4 * 16);
+        assertEquals(List.of(), loaded.structures());
+        assertTrue(loaded.wasPlaced("villages", 40, 4));
+        // A start that wasn't trusted is not one that was placed.
+        loaded.distrust("villages", 80 * 16, 4 * 16);
+        assertFalse(loaded.wasPlaced("villages", 80, 4));
     }
 
     @Test
