@@ -183,6 +183,11 @@ the client already received.
   (version data, in the game's codec format and the game's list order) and `fixtures/26.3/biomes.json` (noise and
   climate values, a lookup series with ties and whole chunks filled on fresh threads, so the RTree's last-result
   shortcut starts empty, and the zoom).
+- `.github/workflows/`: `build.yml` (every push and pull request: build, all tests, the in-game test; the jars as
+  artifacts) and `release.yml` (a published GitHub release: the same from the release's tag with
+  `-Pversion=<tag without a leading v>`, then a separate job, the only one allowed to write, attaches
+  `jriks-seed-finder-mod-<version>.jar` and `seedfinder.jar` to the release; it uploads after publishing, so it
+  would fail if the repository's "immutable releases" setting were switched on).
 
 ## Commands
 

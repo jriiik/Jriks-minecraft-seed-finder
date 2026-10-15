@@ -34,9 +34,11 @@ Minecraft version (**26.3**).
 ## Trying the command-line app
 
 1. Install **Java 21 or newer** (for example [Temurin](https://adoptium.net/)).
-2. Get `seedfinder.jar`: download it from the latest successful
-   [build](https://github.com/jriiik/Jriks-minecraft-seed-finder/actions) (the "seedfinder" artifact, you need
-   to be signed in to GitHub), or build it yourself (see below).
+2. Get `seedfinder.jar`: download it from the
+   [latest release](https://github.com/jriiik/Jriks-minecraft-seed-finder/releases/latest) (under "Assets"), or
+   build it yourself (see below). Changes made since that release are in the latest successful
+   [build](https://github.com/jriiik/Jriks-minecraft-seed-finder/actions) (the "seedfinder" artifact, you need to
+   be signed in to GitHub).
 3. Open a terminal in the folder with the jar and run, for example:
 
 ```
@@ -211,8 +213,9 @@ The mod does the same as the command-line app, inside the game: it notes what yo
 itself. It needs Minecraft **26.3** with **Fabric Loader** (0.19.5 or newer) and **Fabric API**.
 
 1. Install Fabric for Minecraft 26.3 (see [fabricmc.net](https://fabricmc.net/use/)), and put Fabric API and
-   `jriks-seed-finder-mod-….jar` (the "jriks-seed-finder-mod" download from the latest successful
-   [build](https://github.com/jriiik/Jriks-minecraft-seed-finder/actions)) into your `mods` folder.
+   `jriks-seed-finder-mod-….jar` (from the
+   [latest release](https://github.com/jriiik/Jriks-minecraft-seed-finder/releases/latest), under "Assets") into
+   your `mods` folder.
 2. In Options → Controls → Key Binds, give **Open Seed Finder** a key (it has none at first, so it can't clash with
    anything).
 3. In a world where you may look for the seed, press that key and switch **Collecting here** on. In every other world
@@ -335,6 +338,11 @@ Needs Java 25 (the mod's tools require it; the command-line app it builds still 
                                  # the mod: mod/build/libs/jriks-seed-finder-mod-<version>.jar
 xvfb-run -a ./gradlew :mod:runProductionClientGameTest    # starts real Minecraft and tests the mod in it (Linux)
 ```
+
+When a release is published on GitHub, the "Release files" workflow builds both files from the release's tag,
+labelled with its version (a tag `v1.01` gives 1.01), runs all tests and the in-game test, and only then attaches
+`jriks-seed-finder-mod-<version>.jar` and `seedfinder.jar` to the release, about 10 minutes later. If a test fails,
+nothing is attached; the failed run is listed under Actions.
 
 To add or refresh a Minecraft version (needs the Java version that Minecraft version needs, Java 25 for 26.x):
 
