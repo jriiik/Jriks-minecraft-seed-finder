@@ -50,8 +50,11 @@ import net.minecraft.world.level.levelgen.structure.placement.RandomSpreadStruct
  *   <li>version data: the vanilla structure sets in datapack JSON format, plus the biomes each structure may use;</li>
  *   <li>version data: the bedrock rules of each dimension (see {@link BedrockOracle});</li>
  *   <li>version data: how the main piece of each rigid structure is placed (see {@link RigidOracle});</li>
+ *   <li>version data: how the overworld picks its biomes: climate functions, noises and biome parameters (see
+ *       {@link BiomeOracle});</li>
  *   <li>test fixtures: RNG outputs, structure placement results and stronghold positions for a list of seeds;</li>
- *   <li>test fixtures: the Xoroshiro128++ generator, random world seeds, and bedrock from real generated chunks.</li>
+ *   <li>test fixtures: the Xoroshiro128++ generator, random world seeds, and bedrock from real generated chunks;</li>
+ *   <li>test fixtures: noise and climate values, biome lookups, the biomes of generated chunks and the block zoom.</li>
  * </ul>
  * Only plain facts (numbers and names) are written; no Minecraft code ends up in the repository.
  *
@@ -110,6 +113,9 @@ public final class Oracle {
         write(fixturesDir.resolve("random_seeds.json"), BedrockOracle.randomSeedsJson(version));
         write(fixturesDir.resolve("bedrock.json"), BedrockOracle.bedrockChunksJson(version, registries, loaded.world()));
         write(versionDataDir.resolve("rigid_structures.json"), RigidOracle.rigidStructuresJson(version, loaded));
+        BiomeOracle.write(versionDataDir.resolve("climate.json"), BiomeOracle.climateJson(version, registries));
+        BiomeOracle.write(versionDataDir.resolve("biome_parameters.json"), BiomeOracle.biomeParametersJson(version));
+        BiomeOracle.write(fixturesDir.resolve("biomes.json"), BiomeOracle.biomeFixturesJson(version, registries, loaded.world()));
         System.out.println("Oracle finished for Minecraft " + version);
         System.exit(0); // the game's background executors would otherwise keep the JVM alive
     }

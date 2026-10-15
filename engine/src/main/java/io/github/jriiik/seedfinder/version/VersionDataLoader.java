@@ -197,6 +197,11 @@ public final class VersionDataLoader {
         return tag ? "#" + namespaced : namespaced;
     }
 
+    /** Reads one of a version's bundled data files, like {@code climate.json}, for data loaded only when needed. */
+    public static JsonObject readBundled(String version, String file) {
+        return readResource("/io/github/jriiik/seedfinder/versions/" + version + "/" + file);
+    }
+
     private static JsonObject readResource(String path) {
         try (InputStream in = VersionDataLoader.class.getResourceAsStream(path)) {
             if (in == null) {

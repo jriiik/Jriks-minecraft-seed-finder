@@ -13,7 +13,11 @@ public record XoroshiroPositionalFactory(long seedLo, long seedHi) implements Po
 
     @Override
     public XoroshiroRandom fromHashOf(String name) {
-        RandomSupport.Seed128 hash = RandomSupport.seedFromHashOf(name);
+        return fromHash(RandomSupport.seedFromHashOf(name));
+    }
+
+    /** Like {@link #fromHashOf} with the name's hash ({@link RandomSupport#seedFromHashOf}) worked out beforehand. */
+    public XoroshiroRandom fromHash(RandomSupport.Seed128 hash) {
         return new XoroshiroRandom(hash.lo() ^ seedLo, hash.hi() ^ seedHi);
     }
 }
