@@ -205,6 +205,14 @@ Typical searches take well under a second. Villages-only searches need more stru
   also from the mod's chunk-by-chunk tracker reading chunks in random order: 160 structures of the seven kinds in
   the overworld and 28 nether portals, all found; no wrong start chunk; no false alarm in 30 random areas or on
   2,400 player-built portal frames (many on stone-brick, slab or blackstone floors).
+- *Rigid recognition never holds up the game for long.* It works in small steps (at most 512 blocks read per step,
+  1 ms per tick plus whatever the chunk scan leaves of its 2 ms). A chunk where nothing fits is done as soon as its
+  neighbours are read; one with a fit waits until everything its rivals and the ocean-ruin cluster test read is
+  loaded (4 chunks around it in the overworld), so the answer never depends on what happens to be loaded. Checked
+  against the first version on worlds made by the game's code: the same answer for every one of over 650,000
+  placements compared (votes, fit, cluster test) and in every area, also with anti-xray-style fake blocks. In busy
+  areas (villages, temples, ocean ruins) judging takes about 1 ms of work per chunk; with heavy anti-xray noise up
+  to about 50 ms, which only means it catches up more slowly.
 - *What rigid recognition misses:* tiny warm ocean ruins (only 9 telling blocks), portals mostly covered by
   netherrack or, in the nether, by lava, ocean ruins buried in coastal rock, and anything players have repaired or
   taken apart (a ruined portal someone completed or lit no longer counts as a ruin).
