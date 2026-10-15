@@ -454,18 +454,27 @@ class RigidRecognizerTest {
         }
         RigidLayout layout = new Template(blocks, List.of()).layout(RigidKind.DESERT_PYRAMID, "line");
         RigidRecognizer recognizer = new RigidRecognizer(List.of(layout), rules(Set.of()));
-        RigidRecognizer.Candidate candidate = new RigidRecognizer.Candidate(layout, 0, 70, 0, 3);
-        // A rival must score at least 0.5 - 0.15 = 0.35: 7 of 20 still counts, 6 of 20 never can.
+        // A rival must score at least 0.5 - 0.15 = 0.35: 7 of 20 still counts, 6 of 20 never can. (The votes are
+        // the cut sandstone blocks there.)
         World world = new World().load(-2, 2);
         for (int x = 0; x < 7; x++) {
             world.set(x * 3 % 20, 70, 0, "minecraft:cut_sandstone");
         }
-        RigidRecognizer.Detection d = recognizer.verify(candidate, world, false);
+        RigidRecognizer.Detection d = recognizer.verify(new RigidRecognizer.Candidate(layout, 0, 70, 0, 7), world, false);
         assertNotNull(d);
         assertEquals(7, d.matched());
         assertEquals(20, d.checked());
         world.set(18, 70, 0, "minecraft:stone");
-        assertNull(recognizer.verify(candidate, world, false));
+        assertNull(recognizer.verify(new RigidRecognizer.Candidate(layout, 0, 70, 0, 6), world, false));
+
+        // With only 3 votes, at most 3 blocks can match: the comparison stops after 6 misses, not after 14.
+        world = new World().load(-2, 2);
+        for (int x = 17; x < 20; x++) {
+            world.set(x, 70, 0, "minecraft:cut_sandstone");
+        }
+        Counting counting = new Counting(world);
+        assertNull(recognizer.verify(new RigidRecognizer.Candidate(layout, 0, 70, 0, 3), counting, false));
+        assertEquals(6, counting.reads);
     }
 
     @Test
@@ -762,7 +771,10 @@ class RigidRecognizerTest {
             world.stoneTop = 39;
             world.waterTop = 62;
             world.place(ruin, shift, 40, 0, null);
-            RigidRecognizer.Detection grid = recognizer.verify(new RigidRecognizer.Candidate(recognizer.layouts().get(0), 0, 40, 0, 3), world, false);
+            World w = world;
+            RigidRecognizer.Candidate candidate = recognizer.candidates(0, 0, (x, z) -> recognizer.triggersOf(w, x, z, MIN_Y, MAX_Y)).stream()
+                .filter(c -> c.layout() == recognizer.layouts().get(0) && c.y() == 40).findFirst().orElseThrow();
+            RigidRecognizer.Detection grid = recognizer.verify(candidate, world, false);
             assertNotNull(grid);
             RigidRecognizer.ClusterTest test = recognizer.clusterTest(grid);
             Counting counting = new Counting(world);

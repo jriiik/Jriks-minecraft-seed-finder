@@ -563,7 +563,9 @@ public final class RigidRecognizer {
 
     /**
      * Compares a placement with the world. Returns null when it cannot matter: its score is sure to stay below
-     * what acceptance or a rival needs ({@code minScore - AMBIGUITY_MARGIN}).
+     * what acceptance or a rival needs ({@code minScore - AMBIGUITY_MARGIN}). The candidate's votes must have been
+     * counted on the blocks the view shows ({@link #candidates}): a block that matches by a voting class has voted, so
+     * at most the votes plus the layout's telling blocks of other classes can match.
      */
     public Detection verify(Candidate candidate, BlockView view, boolean nether) {
         Verification verification = verification(candidate, nether);
@@ -678,8 +680,10 @@ public final class RigidRecognizer {
                 weightMatched += layout.weight[e];
             } else {
                 misses++;
-                // Even if every block still to come matched, the score would stay too low to matter.
-                if ((double) (matched + remaining) / (matched + misses + remaining) < floor) {
+                // Even if every block still to come matched, the score would stay too low to matter. Blocks that
+                // match by a voting class have voted, so at most votes + unvoted blocks can match in all.
+                int possible = Math.min(matched + remaining, Math.max(matched, candidate.votes() + layout.unvoted));
+                if ((double) possible / (possible + misses) < floor) {
                     stage = DONE;
                 }
             }
@@ -873,10 +877,21 @@ public final class RigidRecognizer {
 
     /** {@link #isClusterPiece} in small steps (for a small ocean ruin, {@link #needsClusterCheck}). */
     public ClusterTest clusterTest(Detection d) {
+        return clusterTest(d, new ClusterBuffers());
+    }
+
+    /** {@link #clusterTest(Detection)} with room for its counts that is used again from one test to the next. */
+    public ClusterTest clusterTest(Detection d, ClusterBuffers buffers) {
         if (!needsClusterCheck(d)) {
             throw new IllegalArgumentException("no cluster test for " + d);
         }
-        return new ClusterTest(d);
+        return new ClusterTest(d, buffers);
+    }
+
+    /** Room for the counts of cluster tests (about a megabyte), for one test at a time. */
+    public static final class ClusterBuffers {
+        private short[] votes = new short[0];
+        private boolean[] visible = new boolean[0];
     }
 
     /** The cluster test of one fit: the area around it read a few blocks at a time, then the off-grid fits counted. */
@@ -884,6 +899,10 @@ public final class RigidRecognizer {
         private static final int COUNT_X = 2 * CLUSTER_REACH + 1;
         private static final int COUNT_Y = 2 * CLUSTER_HEIGHT + 1;
         private static final int COUNT_Z = 2 * CLUSTER_REACH + 1;
+        /** Counts cleared per step when the buffers are used again. */
+        private static final int CLEAR_SLICE = 1 << 16;
+        /** A block read costs 1, plus 1 for every this many small-ruin entries its class votes for. */
+        private static final int ENTRIES_PER_READ = 64;
 
         private final Detection d;
         private final int need;
@@ -896,15 +915,20 @@ public final class RigidRecognizer {
         private final int sizeX;
         private final int sizeY;
         private final int sizeZ;
+        private final ClusterBuffers buffers;
+        private final int visibleLength;
+        private final int votesLength;
         private boolean[] visible;
-        private int[] votes;
+        private short[] votes;
+        private int cleared;
         private int nextRead;
         private int nextLayout;
         private int nextOriginX;
         private double best;
 
-        private ClusterTest(Detection d) {
+        private ClusterTest(Detection d, ClusterBuffers buffers) {
             this.d = d;
+            this.buffers = buffers;
             ClusterIndex index = clusterIndex;
             need = minMatched(d.layout());
             fromX = d.x() - CLUSTER_REACH;
@@ -916,22 +940,40 @@ public final class RigidRecognizer {
             sizeX = COUNT_X - 1 + index.maxDx - index.minDx + 1;
             sizeY = COUNT_Y - 1 + index.maxDy - index.minDy + 1;
             sizeZ = COUNT_Z - 1 + index.maxDz - index.minDz + 1;
+            visibleLength = sizeX * sizeY * sizeZ;
+            votesLength = index.layouts.length * COUNT_X * COUNT_Y * COUNT_Z;
         }
 
         /**
-         * Reads at most {@code reads} blocks of the area (at least one), or counts the fits of one layout at one
+         * Clears a slice of the counts, reads blocks of the area worth {@code reads} block reads (at least one; a
+         * block whose class votes for many small-ruin entries costs more), or counts the fits of one layout at one
          * sideways offset; true once done.
          */
         public boolean step(BlockView view, int reads) {
             if (votes == null) {
-                visible = new boolean[sizeX * sizeY * sizeZ];
-                votes = new int[clusterIndex.layouts.length * COUNT_X * COUNT_Y * COUNT_Z];
+                if (buffers.votes.length < votesLength || buffers.visible.length < visibleLength) {
+                    buffers.votes = new short[votesLength];
+                    buffers.visible = new boolean[visibleLength];
+                    cleared = votesLength;
+                }
+                votes = buffers.votes;
+                visible = buffers.visible;
                 return false;
             }
-            if (nextRead < visible.length) {
-                int to = (int) Math.min(visible.length, (long) nextRead + Math.max(1, reads));
-                for (; nextRead < to; nextRead++) {
-                    read(view, nextRead / (sizeY * sizeZ), nextRead / sizeZ % sizeY, nextRead % sizeZ);
+            if (cleared < votesLength) {
+                int to = Math.min(votesLength, cleared + CLEAR_SLICE);
+                Arrays.fill(votes, cleared, to, (short) 0);
+                if (cleared == 0) {
+                    Arrays.fill(visible, 0, visibleLength, false);
+                }
+                cleared = to;
+                return false;
+            }
+            if (nextRead < visibleLength) {
+                int budget = Math.max(1, reads);
+                while (budget > 0 && nextRead < visibleLength) {
+                    budget -= read(view, nextRead / (sizeY * sizeZ), nextRead / sizeZ % sizeY, nextRead % sizeZ);
+                    nextRead++;
                 }
                 return false;
             }
@@ -945,15 +987,16 @@ public final class RigidRecognizer {
             return nextLayout == clusterIndex.layouts.length;
         }
 
-        private void read(BlockView view, int x, int y, int z) {
+        /** Reads one block; returns what it cost. */
+        private int read(BlockView view, int x, int y, int z) {
             String id = view.blockAt(minX + x, minY + y, minZ + z);
             if (id == null) {
-                return;
+                return 1;
             }
             visible[(x * sizeY + y) * sizeZ + z] = true;
             int[] entries = clusterIndex.byClass.get(RigidBlocks.canonical(id));
             if (entries == null) {
-                return;
+                return 1;
             }
             for (int entry : entries) {
                 RigidLayout layout = clusterIndex.layouts[entry >>> 16];
@@ -965,6 +1008,7 @@ public final class RigidRecognizer {
                     votes[(((entry >>> 16) * COUNT_X + ox) * COUNT_Y + oy) * COUNT_Z + oz]++;
                 }
             }
+            return 1 + entries.length / ENTRIES_PER_READ;
         }
 
         private void count(int li, int ox) {
@@ -1002,7 +1046,7 @@ public final class RigidRecognizer {
 
         /** The answer once {@link #step} has returned true. */
         public boolean isClusterPiece() {
-            if (nextLayout < clusterIndex.layouts.length || votes == null) {
+            if (nextLayout < clusterIndex.layouts.length || votes == null || nextRead < visibleLength) {
                 throw new IllegalStateException("not done yet");
             }
             return best > d.score() + CLUSTER_MARGIN;
@@ -1015,8 +1059,24 @@ public final class RigidRecognizer {
     }
 
     private static ClusterIndex clusterIndex(List<RigidLayout> layouts) {
-        List<RigidLayout> small = layouts.stream()
-            .filter(layout -> layout.kind() == RigidKind.OCEAN_RUIN && layout.informativeCount() < SMALL_RUIN).toList();
+        // Layouts with the same telling blocks give the same counts (the cold ruins' brick, cracked and mossy
+        // templates are the same classes): one of each is enough for the best fit.
+        Map<List<String>, RigidLayout> distinct = new LinkedHashMap<>();
+        for (RigidLayout layout : layouts) {
+            if (layout.kind() == RigidKind.OCEAN_RUIN && layout.informativeCount() < SMALL_RUIN) {
+                List<String> telling = new ArrayList<>();
+                for (int e = 0; e < layout.size(); e++) {
+                    if (layout.informative[e]) {
+                        String[] accepted = layout.accept[e].clone();
+                        Arrays.sort(accepted);
+                        telling.add(layout.dx[e] + "," + layout.dy[e] + "," + layout.dz[e] + "=" + String.join("|", accepted));
+                    }
+                }
+                Collections.sort(telling);
+                distinct.putIfAbsent(telling, layout);
+            }
+        }
+        List<RigidLayout> small = List.copyOf(distinct.values());
         Map<String, List<Integer>> byClass = new HashMap<>();
         int[] bounds = {0, 0, 0, 0, 0, 0};
         boolean first = true;

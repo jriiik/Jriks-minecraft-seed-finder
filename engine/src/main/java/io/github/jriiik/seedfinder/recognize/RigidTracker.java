@@ -2,6 +2,7 @@ package io.github.jriiik.seedfinder.recognize;
 
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Collection;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.IdentityHashMap;
@@ -46,6 +47,8 @@ public final class RigidTracker {
      * without being read again).
      */
     private static final int IDLE_CHECKS = 4;
+    /** Chunks looked at per step when forgetting what is far away. */
+    private static final int FORGET_SLICE = 256;
 
     private static final int OWN = 0;
     private static final int GATHER = 1;
@@ -77,6 +80,17 @@ public final class RigidTracker {
     private Origin verifyingOrigin;
     private int verifyingIndex;
     private RigidRecognizer.ClusterTest clusterTest;
+    private final RigidRecognizer.ClusterBuffers clusterBuffers = new RigidRecognizer.ClusterBuffers();
+    /**
+     * Forgetting what is far away ({@link #forgetFarFrom}), a slice at a time: which collection (-1 when there is
+     * nothing to forget), its chunks still to look at, the centre and the radius.
+     */
+    private int forgetting = -1;
+    private long[] forgetKeys;
+    private int forgetNext;
+    private int forgetX;
+    private int forgetZ;
+    private int forgetRadius;
 
     /** The fits with their origin on one chunk's corner. */
     private static final class Origin {
@@ -210,19 +224,58 @@ public final class RigidTracker {
         }
     }
 
-    /** Forgets what was found more than {@code radius} chunks from the given chunk (in either direction). */
+    /**
+     * Forgets what was found more than {@code radius} chunks from the given chunk (in either direction). The work is
+     * done by the next calls of {@link #work}, a slice at a time.
+     */
     public void forgetFarFrom(int chunkX, int chunkZ, int radius) {
-        triggers.keySet().removeIf(key -> !near(key, chunkX, chunkZ, radius));
-        pending.removeIf(key -> !near(key, chunkX, chunkZ, radius));
-        toCheck.removeIf(key -> !near(key, chunkX, chunkZ, radius));
-        judged.removeIf(key -> !near(key, chunkX, chunkZ, radius));
-        origins.keySet().removeIf(key -> !near(key, chunkX, chunkZ, radius));
+        forgetting = 0;
+        forgetKeys = null;
+        forgetX = chunkX;
+        forgetZ = chunkZ;
+        forgetRadius = radius;
         if (job != null && !near(job.key, chunkX, chunkZ, radius)) {
             job = null;
             voting = null;
             verification = null;
             verifyingOrigin = null;
             clusterTest = null;
+        }
+    }
+
+    /** One slice of forgetting: the chunks of one collection are noted, or up to {@link #FORGET_SLICE} looked at. */
+    private void forgetStep() {
+        Collection<Long> keys = switch (forgetting) {
+            case 0 -> triggers.keySet();
+            case 1 -> pending;
+            case 2 -> toCheck;
+            case 3 -> judged;
+            default -> origins.keySet();
+        };
+        if (forgetKeys == null) {
+            forgetKeys = new long[keys.size()];
+            int i = 0;
+            for (long key : keys) {
+                forgetKeys[i++] = key;
+            }
+            forgetNext = 0;
+            return;
+        }
+        boolean forgot = false;
+        int to = Math.min(forgetKeys.length, forgetNext + FORGET_SLICE);
+        for (; forgetNext < to; forgetNext++) {
+            long key = forgetKeys[forgetNext];
+            if (!near(key, forgetX, forgetZ, forgetRadius)) {
+                forgot |= keys.remove(key);
+            }
+        }
+        if (forgot && job != null && !near(job.key, forgetX, forgetZ, forgetRadius - reach)) {
+            // What it needs may be forgotten: it waits until that is read again.
+            stopJob();
+        }
+        if (forgetNext == forgetKeys.length) {
+            forgetKeys = null;
+            forgetting = forgetting == 4 ? -1 : forgetting + 1;
         }
     }
 
@@ -248,7 +301,9 @@ public final class RigidTracker {
         }
         idleChecks = 0;
         while (!timeUp.getAsBoolean()) {
-            if (job == null) {
+            if (forgetting >= 0) {
+                forgetStep();
+            } else if (job == null) {
                 if (!startJob(view, timeUp)) {
                     break;
                 }
@@ -510,7 +565,7 @@ public final class RigidTracker {
     /** One step of the cluster test of a fit in the batch. */
     private void clusterStep(RigidRecognizer.Detection d, BlockView view) {
         if (clusterTest == null || clusterTest.detection() != d) {
-            clusterTest = recognizer.clusterTest(d);
+            clusterTest = recognizer.clusterTest(d, clusterBuffers);
         }
         if (clusterTest.step(view, STEP_READS)) {
             origins.get(RigidRecognizer.chunkKey(d.chunkX(), d.chunkZ())).clusterPiece.put(d, clusterTest.isClusterPiece());

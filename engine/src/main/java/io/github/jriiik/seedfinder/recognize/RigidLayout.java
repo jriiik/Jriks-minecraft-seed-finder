@@ -47,6 +47,11 @@ public final class RigidLayout {
     final int[] group;
     final int[] groupTotal;
     final int informativeCount;
+    /**
+     * Telling entries that accept a class that does not vote: a fit can match at most this many blocks more than it
+     * got votes.
+     */
+    final int unvoted;
     /** Spots the structure leaves empty. */
     final int[] ex;
     final int[] ey;
@@ -74,6 +79,7 @@ public final class RigidLayout {
         Set<String> materials = new HashSet<>();
         int lowest = Integer.MAX_VALUE;
         int informatives = 0;
+        int withoutVote = 0;
         for (int i = 0; i < n; i++) {
             dx[i] = positions.get(i)[0];
             dy[i] = positions.get(i)[1];
@@ -84,12 +90,16 @@ public final class RigidLayout {
             lowest = Math.min(lowest, dy[i]);
             if (informative[i]) {
                 informatives++;
+                if (trigger[i].length < classes.get(i).size()) {
+                    withoutVote++;
+                }
                 groupKey[i] = String.join("|", classes.get(i));
                 perGroup.merge(groupKey[i], 1, Integer::sum);
                 materials.addAll(classes.get(i));
             }
         }
         informativeCount = informatives;
+        unvoted = withoutVote;
         minDy = lowest;
         material = Set.copyOf(materials);
         weight = new double[n];
