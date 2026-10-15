@@ -5,7 +5,8 @@ such as where villages, temples and other structures are. Built from scratch, st
 Minecraft version (**26.3**).
 
 > **Work in progress.** From about six structure positions the finder works out the world's *structure seed* (the
-> part of the seed that decides where structures go), usually in under a second, and names the likely full seed.
+> part of the seed that decides where structures go), usually in under a second, and names the likely full seed
+> (the nether's bedrock floor and roof of one chunk work instead of structures).
 > With the bedrock floor of one chunk, or the biomes around you, added, it finds the full seed for certain. A Fabric mod does all of this while
 > you play, and recognizes villages, outposts, trial chambers, ancient cities, trail ruins, camps, desert pyramids,
 > jungle temples, swamp huts, igloos, shipwrecks, ocean ruins and ruined portals by itself. See the
@@ -20,6 +21,7 @@ Minecraft version (**26.3**).
 | Structure placement for Minecraft 26.3, checked against the real game | ✅ done |
 | `seedfinder locate`: list structure spots for a seed | ✅ done |
 | `seedfinder find`: work out the structure seed (48 bits) from structure positions | ✅ done |
+| Work out the structure seed from the nether's bedrock alone (one chunk's floor and roof; in `find`, or by the mod) | ✅ done |
 | Name the likely full seed (64 bits) of worlds whose seed was picked by Minecraft or typed as text | ✅ done |
 | Find the full seed for certain from the bedrock floor (`seedfinder full-seed`, or bedrock notes in `find`) | ✅ done |
 | Find the full seed from biomes (biome notes in `find` or `full-seed`; the mod reads them by itself) | ✅ done |
@@ -143,7 +145,18 @@ What the answers mean:
 A whole chunk is nearly always enough; an 8 x 8 area usually is too, but then a wrong structure seed could also
 match by chance, and the finder says so. Bedrock can also be noted block by block (`bedrock x y z`,
 `not-bedrock x y z`) or one layer at a time (`bedrock-layer x y z` followed by rows of `B` and `.`); see
-`seedfinder full-seed --help`. Nether bedrock only depends on the structure seed, so it can't give the full seed.
+`seedfinder full-seed --help`. Nether bedrock only depends on the structure seed, so it can't give the full seed,
+but it can replace the structures (next section).
+
+**Nether bedrock instead of structures.** The nether's bedrock floor (y 1 to 4) and roof (y 123 to 126) depend only on
+the structure seed, and one chunk of each gives it, in about a second, without any structures: note them as
+`bedrock-layer nether x y z` lines (rows of `B` for bedrock and `.` for netherrack, see `seedfinder full-seed --help`;
+`seedfinder bedrock --seed <seed> --dimension nether --layers` shows what they look like) and run `find` on the file.
+Both the floor and the roof are needed (each alone leaves several possible seeds); bedrock at y 4 or y 123, and
+gaps at y 1 or y 126, tell the most. About one structure seed in four has a "twin" with exactly the same nether
+bedrock, so the answer may be two structure seeds; the hashed seed, structures, overworld bedrock or biomes then tell
+them apart. Nether chunks made by Minecraft 1.17 or older have other bedrock: the finder leaves such a chunk out and
+says which one.
 
 **Biomes.** The overworld's biomes also depend on the whole seed, and Minecraft 26.3 picks them in a way the finder
 now repeats exactly (checked against the game on millions of spots and on whole generated chunks). Biomes are the
@@ -193,7 +206,8 @@ itself. It needs Minecraft **26.3** with **Fabric Loader** (0.19.5 or newer) and
 3. In a world where you may look for the seed, press that key and switch **Collecting here** on. In every other world
    the mod notes nothing.
 4. Play. The mod then:
-   - reads the bedrock floor of chunks around you (overworld and nether);
+   - reads the bedrock floor of chunks around you (overworld and nether). In the nether, one chunk's floor and roof
+     give the structure seed by themselves, without any structures;
    - reads the biomes the game stored around you (about 100 chunks, at the surface and three cave depths), and again
      when you are more than 4,096 blocks from the last area (up to four areas). One area proves a seed Minecraft
      picked itself or a text seed; a second area proves any seed. In a world whose biomes come from a data pack or

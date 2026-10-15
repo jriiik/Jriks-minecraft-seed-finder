@@ -62,6 +62,8 @@ public final class WorldSeedSearch {
      * @param biomes         the biome check, when biomes were noted and checked
      * @param biomesDisagree true when the world seed found another way doesn't fit the biomes noted (under any preset)
      * @param nether         the nether bedrock search, when there was nether bedrock to search
+     * @param netherDisagrees true when the nether bedrock proved structure seeds the structures don't allow (see
+     *                       {@link StructureStep#netherDisagrees()})
      */
     public record Result(
         Stage stage,
@@ -77,12 +79,13 @@ public final class WorldSeedSearch {
         Optional<StructureObservation> leftOut,
         Optional<BiomeEvidence.Decision> biomes,
         boolean biomesDisagree,
-        Optional<NetherBedrockSearch.Finding> nether
+        Optional<NetherBedrockSearch.Finding> nether,
+        boolean netherDisagrees
     ) {
 
         Result withLeftOut(StructureObservation structure) {
             return new Result(stage, plan, structureSeeds, worldSeed, proof, hashedSeedFitsNone, bedrock, bedrockProblems, bedrockDisagrees,
-                likelySeeds, Optional.of(structure), biomes, biomesDisagree, nether);
+                likelySeeds, Optional.of(structure), biomes, biomesDisagree, nether, netherDisagrees);
         }
     }
 
@@ -230,13 +233,14 @@ public final class WorldSeedSearch {
         BedrockEvidence evidence = new BedrockEvidence(bedrockNotes);
         List<String> bedrockProblems = evidence.problems();
         Optional<NetherBedrockSearch.Finding> nether = step.nether();
+        boolean netherDisagrees = step.netherDisagrees();
         if (!step.searched()) {
             return new Result(Stage.NEED_MORE_STRUCTURES, plan, List.of(), OptionalLong.empty(), Optional.empty(), false,
-                Optional.empty(), bedrockProblems, false, List.of(), Optional.empty(), Optional.empty(), false, nether);
+                Optional.empty(), bedrockProblems, false, List.of(), Optional.empty(), Optional.empty(), false, nether, netherDisagrees);
         }
         if (structureSeeds.isEmpty()) {
             return new Result(Stage.NO_STRUCTURE_SEED, plan, structureSeeds, OptionalLong.empty(), Optional.empty(), false,
-                Optional.empty(), bedrockProblems, false, List.of(), Optional.empty(), Optional.empty(), false, nether);
+                Optional.empty(), bedrockProblems, false, List.of(), Optional.empty(), Optional.empty(), false, nether, netherDisagrees);
         }
 
         boolean hashedSeedFitsNone = false;
@@ -251,7 +255,7 @@ public final class WorldSeedSearch {
                 boolean disagrees = bedrockProblems.isEmpty() && !evidence.mismatchesOf(worldSeed).isEmpty();
                 boolean biomesDisagree = biomes.present() && !biomes.evidence().fitsUnderAnyPreset(worldSeed);
                 return new Result(Stage.WORLD_SEED, plan, structureSeeds, OptionalLong.of(worldSeed), Optional.of(Proof.HASHED_SEED),
-                    false, Optional.empty(), bedrockProblems, disagrees, List.of(), Optional.empty(), Optional.empty(), biomesDisagree, nether);
+                    false, Optional.empty(), bedrockProblems, disagrees, List.of(), Optional.empty(), Optional.empty(), biomesDisagree, nether, netherDisagrees);
             }
             hashedSeedFitsNone = checkedAll && matches.length == 0;
         }
@@ -269,7 +273,7 @@ public final class WorldSeedSearch {
                 long worldSeed = best.get(0).worldSeed();
                 boolean biomesDisagree = biomes.present() && !biomes.evidence().fitsUnderAnyPreset(worldSeed);
                 return new Result(Stage.WORLD_SEED, plan, structureSeeds, OptionalLong.of(worldSeed), Optional.of(Proof.BEDROCK),
-                    hashedSeedFitsNone, bedrock, bedrockProblems, false, List.of(), Optional.empty(), Optional.empty(), biomesDisagree, nether);
+                    hashedSeedFitsNone, bedrock, bedrockProblems, false, List.of(), Optional.empty(), Optional.empty(), biomesDisagree, nether, netherDisagrees);
             }
         }
 
@@ -283,7 +287,7 @@ public final class WorldSeedSearch {
             biomeDecision = Optional.of(decision);
             if (decision.proven()) {
                 return new Result(Stage.WORLD_SEED, plan, structureSeeds, decision.seed(), Optional.of(Proof.BIOMES), hashedSeedFitsNone, bedrock,
-                    bedrockProblems, false, List.of(), Optional.empty(), biomeDecision, false, nether);
+                    bedrockProblems, false, List.of(), Optional.empty(), biomeDecision, false, nether, netherDisagrees);
             }
         }
 
@@ -292,7 +296,7 @@ public final class WorldSeedSearch {
             likely.addAll(likelySeeds(structureSeeds.get(0)));
         }
         return new Result(Stage.STRUCTURE_SEED, plan, structureSeeds, OptionalLong.empty(), Optional.empty(), hashedSeedFitsNone,
-            bedrock, bedrockProblems, false, likely, Optional.empty(), biomeDecision, false, nether);
+            bedrock, bedrockProblems, false, likely, Optional.empty(), biomeDecision, false, nether, netherDisagrees);
     }
 
     /** The world seeds of a structure seed that Minecraft could have picked itself, or that a text seed would give. */

@@ -1,6 +1,7 @@
 package io.github.jriiik.seedfinder.mod;
 
 import io.github.jriiik.seedfinder.finder.BiomeEvidence;
+import io.github.jriiik.seedfinder.finder.NetherBedrockSearch;
 import io.github.jriiik.seedfinder.finder.ObservationReader;
 import io.github.jriiik.seedfinder.finder.SeedCheck;
 import io.github.jriiik.seedfinder.finder.WorldSeedSearch;
@@ -66,7 +67,7 @@ final class SearchRunner {
         if (running || !session.collecting() || session.resultIsCurrent() || quietTicks < QUIET_TICKS) {
             return;
         }
-        if (session.structures().isEmpty() && session.typedSeed().isEmpty()) {
+        if (session.structures().isEmpty() && session.typedSeed().isEmpty() && session.bedrockChunks(NetherBedrockSearch.NETHER) == 0) {
             session.setResult(session.version(), null, null);
             return;
         }
@@ -77,7 +78,11 @@ final class SearchRunner {
         int version = session.version();
         List<String> lines = session.notesLines();
         OptionalLong typedSeed = session.typedSeed();
-        String structureKey = session.world() + "\n" + String.join("\n", session.structureLines());
+        // The structure step also searches the nether bedrock, so it is kept while both stay the same.
+        String structureKey = session.world() + "\n" + String.join("\n", session.structureLines()) + "\n" + session.bedrock().stream()
+            .filter(chunk -> chunk.dimension().equals(NetherBedrockSearch.NETHER))
+            .map(chunk -> String.join("\n", chunk.notesLines()))
+            .collect(java.util.stream.Collectors.joining("\n"));
         WorldSeedSearch.StructureStep reuse = structureKey.equals(cachedFor) ? cachedStep : null;
         running = true;
         percent = reuse != null ? 100 : 0;
@@ -96,13 +101,16 @@ final class SearchRunner {
                     Minecraft.getInstance().execute(() -> session.setTypedSeedCheck(version, check));
                     typedSeedConfirmed = check.verdict() == SeedCheck.Verdict.CONFIRMED;
                 }
-                if (notes.structures().isEmpty()) {
+                boolean nether = notes.bedrock().stream().anyMatch(note -> note.dimension().id().equals(NetherBedrockSearch.NETHER));
+                if (notes.structures().isEmpty() && !nether) {
                     return new Outcome(null, null, null);
                 }
                 WorldSeedSearch.StructureStep step = reuse != null ? reuse
-                    : WorldSeedSearch.structureSeeds(data, notes.structures(), threads, (done, total) -> percent = (int) (100 * done / total));
+                    : WorldSeedSearch.structureSeeds(data, notes.structures(), notes.bedrock(), threads, () -> false,
+                        (done, total) -> percent = (int) (100 * done / total),
+                        (search, pieces) -> percent = pieces * 100 / NetherBedrockSearch.PIECES);
                 WorldSeedSearch.Result result = WorldSeedSearch.fullSeed(step, notes.bedrock(), biomes, notes.hashedSeed(), threads);
-                if (result.stage() == WorldSeedSearch.Stage.NO_STRUCTURE_SEED && !typedSeedConfirmed) {
+                if (result.stage() == WorldSeedSearch.Stage.NO_STRUCTURE_SEED && !typedSeedConfirmed && !notes.structures().isEmpty()) {
                     // One structure that doesn't follow the seed (older chunks, a command, a copy) spoils the search. Not
                     // worth the many searches when the notes already confirm the typed seed (they say which ones don't fit).
                     result = WorldSeedSearch.withoutMisfit(data, notes.structures(), notes.bedrock(), biomes, notes.hashedSeed(), threads)

@@ -17,11 +17,13 @@
 ## How seed finding works
 
 1. **Structure positions** (villages, temples, outposts...) depend only on the lowest 48 bits of the seed. A
-   handful of known structure positions narrows 2^48 possibilities down to one "structure seed".
+   handful of known structure positions narrows 2^48 possibilities down to one "structure seed". The nether's
+   bedrock floor and roof also depend only on those bits: one chunk of them gives the structure seed too, without
+   any structures.
 2. **The remaining 16 bits** (65,536 candidates): worlds created without typing a seed get it from Java's random
    generator (`nextLong()`), and only one or two 64-bit seeds with a given structure seed can come out of it. Text
-   seeds leave one. To be certain, the overworld's bedrock floor, which depends on all 64 bits, is checked for every
-   one of the 65,536 candidates. Biomes would work too and are planned for later.
+   seeds leave one. To be certain, the overworld's bedrock floor or its biomes, which depend on all 64 bits, are
+   checked for every one of the 65,536 candidates; the "hashed seed" every server sends settles it at once.
 3. **Verify**: regenerate the structures and bedrock from the candidate seed and compare with what was observed.
 
 ## Phases
@@ -34,7 +36,8 @@
 | 3 | Find the full 64-bit seed: the `nextLong()` shortcut, text seeds, and the overworld bedrock floor | ✅ |
 | 4 | CLI polish: a `verify` command, saving results | 🔜 |
 | 5 | Fabric client mod: notes structures and bedrock while you explore, recognizes 13 structure types by itself, shows progress, turned on per server | ✅ |
-| 6 | Extras: structure seed from nether bedrock alone, biomes, more data sources (End pillars), older versions | 🔜 |
+| 6 | The structure seed from nether bedrock alone; the full seed from biomes (engine, CLI and mod) | ✅ |
+| 7 | Extras: more data sources (End pillars), older versions | 🔜 |
 
 ### Phase 2: how the structure seed search works
 
@@ -227,6 +230,56 @@ Typical searches take well under a second. Villages-only searches need more stru
   netherrack or, in the nether, by lava, ocean ruins buried in coastal rock, and anything players have repaired or
   taken apart (a ruined portal someone completed or lit no longer counts as a ruin).
 
+### Phase 6: nether bedrock and biomes
+
+**The structure seed from nether bedrock alone.** The nether's random bedrock (floor y 1 to 4, roof y 123 to 126)
+uses the old 48-bit generator. Each block gets its own generator, started at a number made from its position and a
+hidden number of the floor or the roof; it is bedrock when its first 24-bit number is below the height's threshold.
+Both hidden numbers come from one value P that the world seed's generator gives first, and only P's lowest 48 bits
+(the *bedrock key*) matter. The search (`NetherBedrockSearch`):
+
+1. Searches all 2^48 hidden numbers of one surface, top bit first. Fixing the top bits bounds each block's 24-bit
+   number to a stretch, and a branch is dropped when some block's stretch lies entirely where it can't be what was
+   seen. Pairs of blocks whose positions share bits rule branches out much earlier, and near the bottom a table tests
+   64 branches against a block in one step. It never drops a fitting number (checked against trying every number in
+   2,464 parts of the search tree).
+2. Steps the generator back from each fitting number to the key (inverting `nextLong()`, including the borrow from
+   its signed low half), checks the key against the other surface, and steps back again to the structure seeds.
+3. Re-checks every seed with the engine's bedrock model.
+
+One loaded nether chunk (floor and roof) takes about half a second. What we learned:
+
+- *One surface is never enough.* Numbers that differ from the right one in a few bits move every block's number only
+  a little, so a chunk's floor alone leaves 3 to 16 numbers, a single layer more. The other surface removes them.
+- *Twins.* About 23% of structure seeds share their key with one other structure seed; such twins have the same
+  nether bedrock everywhere, so the answer is one or two structure seeds. The hashed seed, structures, overworld
+  bedrock or biomes tell twins apart.
+- *When it counts.* A result is proven when floor and roof together carry at least 58 bits of information (a pattern
+  that doesn't follow the formula fits by chance less than once in 1,000) and a misread block could let a near-miss
+  through only by a rare chance. Chunks made by 1.17 or older have other bedrock and fit nothing; the search tries
+  one chunk at a time, leaves such a chunk out and names it.
+
+**The full seed from biomes.** Minecraft 26.x computes six climate values per 4 x 4 x 4 block cell from noises
+(temperature, vegetation, continentalness, erosion, a depth value and ridges), then takes the biome of the closest
+entry in a list of 7,594. The oracle exports the climate functions, noises and the list; the engine (`biome/`)
+repeats it all with the game's float arithmetic and builds the list's search tree exactly as the game does (it
+decides ties). Checked against the game: noise and climate values bit for bit, a long series of lookups including
+ties, every cell of whole generated chunks, and the F3 zoom, for the normal, large-biome and amplified presets; and
+in a real game, the 6,400 cells the client received in an area. Checking one candidate seed takes about 54 µs (the
+noises are made only when needed), so all 65,536 take about 3.5 s on one thread.
+
+When do biomes prove a seed? A wrong seed matches one cell's biome about 5% of the time, but nearby cells are alike
+in every world (the chance that a second cell 256 blocks away also matches is 2.5 times higher than by chance; at
+4,096 blocks the two are independent). So the notes are grouped by place, and how often a wrong seed fits each
+place is counted on the 65,535 other candidates (plus 3, as a rate below 3 in 65,536 can't be shown from them). A
+seed is proven when it is the only candidate that fits and a wrong seed would fit every counted group, times 2 per
+extra group, with a chance of at most 1 in 1,000 over all the seeds it could be mistaken for. Measured in 60 worlds:
+one loaded area with two or more biomes was fitted by none of the 65,535 others; it proves a seed Minecraft picked
+itself or a text seed (only 1 to 3 such seeds per structure seed), while any other seed needs a second area at least
+4,096 blocks away (16,384 in large-biome worlds, whose noises are 4 times coarser). A test guards that the estimate is
+never below the real count of wrong seeds that fit. Areas that are all one biome (often ocean) fit hundreds of seeds
+and prove little.
+
 ## Things that can't work
 
 - **No data, no seed**: the finder needs observations.
@@ -236,7 +289,10 @@ Typical searches take well under a second. Villages-only searches need more stru
   and superflat worlds (their bedrock is one flat layer).
 - **Text seeds**: the finder gets the number, not the original text.
 - **Old chunks**: chunks generated by an older Minecraft version keep that version's generation, so the finder must
-  know which version made the chunks you looked at. This includes structures the mod recognizes by itself: a
+  know which version made the chunks you looked at. Nether bedrock in chunks made by 1.17 or older fits no seed (the
+  search leaves such chunks out and names them); biomes in chunks made by older versions, next to them (the game
+  blends their borders) or changed by `/fillbiome` or data packs make the biome check miss the seed rather than
+  find a wrong one. This includes structures the mod recognizes by itself: a
   village from an older version can look the same but follow older placement rules, and then no seed fits. Remove
   structures in old parts of an upgraded world on the mod's screen. The client can't tell old chunks from new ones,
   so the mod can't do this by itself.

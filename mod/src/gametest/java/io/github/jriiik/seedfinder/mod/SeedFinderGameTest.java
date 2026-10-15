@@ -7,6 +7,7 @@ import io.github.jriiik.seedfinder.bedrock.BedrockEvidence;
 import io.github.jriiik.seedfinder.biome.OverworldBiomes;
 import io.github.jriiik.seedfinder.finder.BiomeEvidence;
 import io.github.jriiik.seedfinder.finder.BiomeObservation;
+import io.github.jriiik.seedfinder.finder.NetherBedrockSearch;
 import io.github.jriiik.seedfinder.finder.ObservationReader;
 import io.github.jriiik.seedfinder.finder.SeedCheck;
 import io.github.jriiik.seedfinder.finder.WorldSeedSearch;
@@ -103,6 +104,16 @@ public class SeedFinderGameTest implements FabricClientGameTest {
         visit(context, world, "minecraft:the_nether", "ruined_portals", netherPortal);
         world.getServer().runCommand("execute in minecraft:overworld run tp @a " + (last.getMinBlockX() + 8) + " 160 " + (last.getMinBlockZ() + 8));
         context.waitTicks(100);
+
+        // The nether's bedrock was read from real chunks there: on its own it gives the structure seed (or it and its twin).
+        check(context.computeOnClient(client -> SeedFinderClient.session(client).bedrockChunks(NetherBedrockSearch.NETHER)) > 0,
+            "nether bedrock was read in the nether");
+        ObservationReader.Observations netherNotes = ObservationReader.read(SeedFinderClient.data(),
+            context.computeOnClient(client -> SeedFinderClient.session(client).notesLines()));
+        NetherBedrockSearch.Finding nether = new NetherBedrockSearch(SeedFinderClient.data()).find(netherNotes.bedrock(), 2, () -> false,
+            (search, pieces) -> { });
+        check(nether.proven() && nether.structureSeeds().contains(Seeds.structureSeed(SEED)) && nether.unusableChunks().isEmpty(),
+            "the nether bedrock read from the game alone proves the structure seed: " + nether.structureSeeds());
 
         List<RecognizedStarts.Start> recognized = context.computeOnClient(client -> SeedFinderClient.recognition().starts());
         log("recognized: " + recognized);

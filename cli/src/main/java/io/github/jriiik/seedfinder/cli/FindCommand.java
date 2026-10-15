@@ -2,10 +2,12 @@ package io.github.jriiik.seedfinder.cli;
 
 import io.github.jriiik.seedfinder.bedrock.BedrockEvidence;
 import io.github.jriiik.seedfinder.finder.FullSeedFinder;
+import io.github.jriiik.seedfinder.finder.NetherBedrockSearch;
 import io.github.jriiik.seedfinder.finder.ObservationReader;
 import io.github.jriiik.seedfinder.finder.SearchPlan;
 import io.github.jriiik.seedfinder.finder.StructureObservation;
 import io.github.jriiik.seedfinder.finder.StructureSeedFinder;
+import io.github.jriiik.seedfinder.finder.WorldSeedSearch;
 import io.github.jriiik.seedfinder.version.MinecraftVersion;
 import io.github.jriiik.seedfinder.version.VersionData;
 import java.io.PrintWriter;
@@ -91,8 +93,12 @@ final class FindCommand implements Callable<Integer> {
             throw new CommandLine.ParameterException(commandLine, "Tell me which structures you saw, for example: seedfinder find igloo:48,208 village:336,80");
         }
         if (observations.isEmpty()) {
-            out.println("There are bedrock notes but no structures. Bedrock alone can't find the structure seed yet:");
-            out.println("add about 6 structures, or if you know the structure seed, use 'seedfinder full-seed <structure seed>'.");
+            if (read.bedrock().stream().anyMatch(note -> note.dimension().id().equals(NetherBedrockSearch.NETHER))) {
+                return findFromNether(out, commandLine.getErr(), data, read, bedrock, FullSeedReport.Biomes.of(out, read, minecraft), threadCount);
+            }
+            out.println("There are bedrock notes but no structures. Overworld bedrock alone can't find the structure seed: add about 6");
+            out.println("structures, or the nether's bedrock floor and roof of one chunk, or if you know the structure seed, use");
+            out.println("'seedfinder full-seed <structure seed>'.");
             read.hashedSeed().ifPresent(hashed -> out.println("If the world's seed was typed (as text or a short number), the hashed seed gives it"
                 + " and the bedrock checks it: " + typedSeedCommand(hashed)));
             return 1;
@@ -150,6 +156,63 @@ final class FindCommand implements Callable<Integer> {
         out.println("To compare with a world whose seed you know: seedfinder structure-seed <that world's seed>");
         // Without bedrock or biomes, finding the structure seed is the result; with them, the full seed has to come out too.
         return read.bedrock().isEmpty() && biomes == null || named ? 0 : 1;
+    }
+
+    /** The structure seed from nether bedrock alone, then the full seed as usual. */
+    private static int findFromNether(PrintWriter out, PrintWriter err, VersionData data, ObservationReader.Observations read, BedrockEvidence bedrock,
+                                      FullSeedReport.Biomes biomes, int threads) {
+        NetherBedrockSearch search = new NetherBedrockSearch(data);
+        NetherBedrockSearch.Plan plan = search.plan(read.bedrock());
+        out.printf(Locale.ROOT, "Minecraft %s, no structures; nether bedrock: %,d floor and %,d roof blocks that tell something.%n", data.version(),
+            plan.floorBlocks(), plan.roofBlocks());
+        plan.problems().forEach(problem -> out.println("Left out: " + problem + "."));
+        if (!plan.canSearch()) {
+            out.println("That is not enough to search yet. Note the nether's bedrock floor (y 1 to 4) and roof (y 123 to 126) of one chunk:");
+            out.println("'bedrock-layer nether x y z' followed by rows of B (bedrock) and . (netherrack), see 'seedfinder full-seed --help'.");
+            out.println("Bedrock at y 4 or y 123, and gaps at y 1 or y 126, tell the most.");
+            return 1;
+        }
+        out.printf("Searching the nether bedrock on %d thread%s...%n", threads, threads == 1 ? "" : "s");
+        out.flush();
+        long start = System.nanoTime();
+        long[] lastPrint = {System.nanoTime()};
+        NetherBedrockSearch.Finding finding = search.find(read.bedrock(), threads, () -> false, (index, pieces) -> {
+            long now = System.nanoTime();
+            if (now - lastPrint[0] > 500_000_000L) {
+                lastPrint[0] = now;
+                err.print("\rSearching" + (index > 0 ? " (try " + (index + 1) + ")" : "") + "... " + pieces * 100 / NetherBedrockSearch.PIECES + "%   ");
+                err.flush();
+            }
+        });
+        err.println();
+        out.printf("Done in %s.%n%n", duration((System.nanoTime() - start) / 1e9));
+        for (io.github.jriiik.seedfinder.world.ChunkPos chunk : finding.unusableChunks()) {
+            out.printf("The nether bedrock of the chunk at block (%d, %d) fits no seed that fits the rest: that chunk was made by Minecraft%n",
+                chunk.minBlockX(), chunk.minBlockZ());
+            out.println("1.17 or older (its bedrock doesn't follow the seed), or something was noted wrong there. It is left out.");
+        }
+        List<Long> seeds = finding.structureSeeds();
+        if (seeds.isEmpty()) {
+            out.println("No structure seed fits the nether bedrock. Check the notes (rows go from north to south, each row from west");
+            out.println("to east, below a line with the north-west block), and that the chunks were made by Minecraft 1.18 or newer.");
+            return 1;
+        }
+        if (finding.proven()) {
+            out.println(seeds.size() == 1 ? "Found the structure seed: " + seeds.get(0)
+                : "The structure seed is " + seeds.get(0) + " or " + seeds.get(1) + ": these two have the same nether bedrock everywhere.");
+        } else {
+            out.printf(Locale.ROOT, "%,d structure seeds fit the nether bedrock%s, so it is not certain yet:%n", seeds.size(),
+                finding.capped() ? " (or more)" : "");
+            seeds.stream().limit(MAX_SEEDS_SHOWN).forEach(seed -> out.println("  " + seed));
+            if (seeds.size() > MAX_SEEDS_SHOWN) {
+                out.printf("  ... and %d more%n", seeds.size() - MAX_SEEDS_SHOWN);
+            }
+            out.println("Note both the floor (y 1 to 4) and the roof (y 123 to 126) of a chunk to be sure, or add structures.");
+        }
+        out.println();
+        boolean named = seeds.size() <= WorldSeedSearch.MAX_HASHED_SEED_CHECKS
+            && FullSeedReport.run(out, data, seeds, bedrock, biomes, read.hashedSeed(), threads);
+        return finding.proven() || named ? 0 : 1;
     }
 
     private static void report(PrintWriter out, List<Long> found, List<String> suggestions) {

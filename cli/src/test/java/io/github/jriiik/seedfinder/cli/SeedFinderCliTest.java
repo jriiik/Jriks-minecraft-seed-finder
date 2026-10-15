@@ -549,4 +549,18 @@ class SeedFinderCliTest {
         assertEquals(1, result.exitCode(), result.out());
         assertTrue(result.out().contains("fits your biome notes under any world preset"), result.out());
     }
+
+    @Test
+    void netherBedrockAloneGivesTheStructureSeedAndTheHashedSeedTheRest(@org.junit.jupiter.api.io.TempDir java.nio.file.Path folder)
+        throws java.io.IOException {
+        Result nether = run("bedrock", "--seed", "12345", "--dimension", "nether", "--layers", "--at", "64,-32");
+        assertEquals(0, nether.exitCode(), nether.err());
+        java.nio.file.Path file = folder.resolve("notes.txt");
+        java.nio.file.Files.writeString(file, nether.out() + "\nhashed-seed " + io.github.jriiik.seedfinder.Seeds.hashedSeed(12345L) + "\n");
+        Result result = run(find("--file", file.toString()));
+        assertEquals(0, result.exitCode(), result.out() + result.err());
+        assertTrue(result.out().contains("no structures; nether bedrock: 1,024 floor and 1,024 roof blocks"), result.out());
+        assertTrue(result.out().contains("structure seed") && result.out().contains("12345"), result.out());
+        assertTrue(result.out().contains("Found the full seed: 12345\n"), result.out());
+    }
 }

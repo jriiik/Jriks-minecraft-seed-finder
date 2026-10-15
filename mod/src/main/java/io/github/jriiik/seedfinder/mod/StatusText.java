@@ -87,11 +87,20 @@ final class StatusText {
             case NEED_MORE_STRUCTURES -> {
                 lines.add("Not enough to search yet:");
                 result.plan().problems().forEach(problem -> lines.add("- " + problem));
+                lines.add("- Or: the nether's bedrock floor and roof of one chunk give the structure seed without any structures (they are"
+                    + " read when you are in the nether near its bottom or top).");
+                netherLines(result, lines);
             }
             case NO_STRUCTURE_SEED -> {
-                lines.add("No seed fits these structures together. Possible reasons: a structure noted in the wrong chunk, structures");
-                lines.add("in chunks made by an older Minecraft version, structures placed by a command or copied, or a server that");
-                lines.add("places structures differently (then the seed can't be found from structures). Remove the ones you doubt.");
+                if (result.plan().canSearch()) {
+                    lines.add("No seed fits these structures together. Possible reasons: a structure noted in the wrong chunk, structures");
+                    lines.add("in chunks made by an older Minecraft version, structures placed by a command or copied, or a server that");
+                    lines.add("places structures differently (then the seed can't be found from structures). Remove the ones you doubt.");
+                } else {
+                    lines.add("No structure seed fits the nether bedrock seen: its chunks may have been made by Minecraft 1.17 or older (their"
+                        + " bedrock doesn't follow the seed), or the server changes bedrock.");
+                }
+                netherLines(result, lines);
             }
             case STRUCTURE_SEED -> structureSeedLines(result, lines);
             case WORLD_SEED -> {
@@ -254,14 +263,36 @@ final class StatusText {
         return check.misfits().size() == 1 ? check.misfits().get(0) + " doesn't" : check.misfits().size() + " of the structures noted don't";
     }
 
+    /** What the nether bedrock said, when it was searched. */
+    static void netherLines(WorldSeedSearch.Result result, List<String> lines) {
+        result.nether().ifPresent(finding -> {
+            for (io.github.jriiik.seedfinder.world.ChunkPos chunk : finding.unusableChunks()) {
+                lines.add("The nether bedrock of the chunk at " + chunk.minBlockX() + ", " + chunk.minBlockZ() + " fits no seed that fits the rest:"
+                    + " made by Minecraft 1.17 or older, or changed. It is left out.");
+            }
+            if (result.netherDisagrees()) {
+                lines.add("Note: the nether bedrock fits other structure seeds than the structures do (older chunks on one side, or"
+                    + " structures placed by command?).");
+            }
+        });
+    }
+
     private static void structureSeedLines(WorldSeedSearch.Result result, List<String> lines) {
         List<Long> seeds = result.structureSeeds();
+        boolean fromNether = result.nether().map(finding -> !finding.structureSeeds().isEmpty()).orElse(false) && !result.plan().canSearch();
         if (seeds.size() == 1) {
-            lines.add("Structure seed: " + seeds.get(0) + " (the last 48 bits of the world seed)");
+            lines.add("Structure seed: " + seeds.get(0) + " (the last 48 bits of the world seed" + (fromNether ? ", from the nether bedrock)" : ")"));
+        } else if (fromNether && result.nether().get().proven() && seeds.size() == 2) {
+            lines.add("Structure seed: " + seeds.get(0) + " or " + seeds.get(1) + ". These two have the same nether bedrock everywhere; the"
+                + " hashed seed, structures, overworld bedrock or biomes tell them apart.");
+        } else if (fromNether) {
+            lines.add(seeds.size() + " structure seeds fit the nether bedrock seen; more of it (the floor and the roof of a chunk) or"
+                + " structures narrow them down.");
         } else {
             lines.add(seeds.size() + " structure seeds fit. More structures tell them apart"
                 + (result.plan().suggestedStructures().isEmpty() ? "." : ", best: " + String.join(", ", result.plan().suggestedStructures()) + "."));
         }
+        netherLines(result, lines);
         if (result.hashedSeedFitsNone()) {
             lines.add("The hashed seed from the server fits none of them: this server may send a different value.");
         }
@@ -327,7 +358,7 @@ final class StatusText {
             return "Seed Finder: " + notes;
         }
         return switch (result.stage()) {
-            case NEED_MORE_STRUCTURES -> "Seed Finder: " + notes + ", need more structures";
+            case NEED_MORE_STRUCTURES -> "Seed Finder: " + notes + ", need more structures or nether bedrock";
             case NO_STRUCTURE_SEED -> "Seed Finder: no seed fits the structures";
             case STRUCTURE_SEED -> "Seed Finder: " + (result.structureSeeds().size() == 1
                 ? "structure seed " + result.structureSeeds().get(0) : result.structureSeeds().size() + " structure seeds") + ", " + notes;
