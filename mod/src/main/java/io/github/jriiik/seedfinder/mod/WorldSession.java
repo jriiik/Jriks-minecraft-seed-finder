@@ -71,7 +71,7 @@ final class WorldSession {
      * portals) is one connected area, while new land farther away still is.
      */
     static final int LEFT_OUT_BEFORE_SPACING = 8;
-    static final int LEFT_OUT_SPACING_CHUNKS = 16;
+    static final int LEFT_OUT_SPACING_CHUNKS = 8;
     /** At most this many left-out chunks are remembered (the oldest are forgotten). */
     static final int MAX_LEFT_OUT_BEDROCK_CHUNKS = 256;
     /** Characters that stand for biomes in the saved file (each file has its own list of biomes). */
@@ -428,12 +428,19 @@ final class WorldSession {
         if (!wantsBedrock(dimension) || bedrock.stream().anyMatch(c -> c.dimension().equals(dimension) && c.chunkX() == chunkX && c.chunkZ() == chunkZ)) {
             return false;
         }
-        List<LeftOutChunk> left = leftOutBedrock.stream().filter(c -> c.dimension().equals(dimension)).toList();
-        if (left.contains(new LeftOutChunk(dimension, chunkX, chunkZ))) {
-            return false;
+        int left = 0;
+        boolean near = false;
+        for (LeftOutChunk c : leftOutBedrock) {
+            if (!c.dimension().equals(dimension)) {
+                continue;
+            }
+            if (c.chunkX() == chunkX && c.chunkZ() == chunkZ) {
+                return false;
+            }
+            left++;
+            near |= Math.max(Math.abs(c.chunkX() - chunkX), Math.abs(c.chunkZ() - chunkZ)) <= LEFT_OUT_SPACING_CHUNKS;
         }
-        return left.size() < LEFT_OUT_BEFORE_SPACING || left.stream().noneMatch(c ->
-            Math.max(Math.abs(c.chunkX() - chunkX), Math.abs(c.chunkZ() - chunkZ)) <= LEFT_OUT_SPACING_CHUNKS);
+        return left < LEFT_OUT_BEFORE_SPACING || !near;
     }
 
     /** Keeps the chunk if its bedrock is wanted (see {@link #wantsBedrock(String, int, int)}); returns whether it was kept. */
@@ -588,6 +595,9 @@ final class WorldSession {
     }
 
     void setResult(int forVersion, WorldSeedSearch.Result result, String error) {
+        if (forVersion < clearedAt) {
+            return; // a search of the notes from before "Remove all notes"
+        }
         this.result = result;
         this.resultError = error;
         this.resultVersion = forVersion;

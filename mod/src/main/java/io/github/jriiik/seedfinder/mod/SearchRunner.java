@@ -122,7 +122,9 @@ final class SearchRunner {
                 WorldSeedSearch.StructureStep step = finding == null ? plain : plain.withNether(finding);
                 WorldSeedSearch.HashedSeed hashedSeed = new WorldSeedSearch.HashedSeed(notes.hashedSeed(), genuine);
                 WorldSeedSearch.Result result = WorldSeedSearch.fullSeed(step, notes.bedrock(), biomes, hashedSeed, threads);
-                if (result.stage() == WorldSeedSearch.Stage.NO_STRUCTURE_SEED && !typedSeedConfirmed && !notes.structures().isEmpty()) {
+                boolean structuresFitNone = plain.plan().canSearch() && plain.structureSeeds().isEmpty();
+                if ((result.stage() == WorldSeedSearch.Stage.NO_STRUCTURE_SEED || structuresFitNone && result.stage() != WorldSeedSearch.Stage.WORLD_SEED)
+                    && !typedSeedConfirmed && !notes.structures().isEmpty()) {
                     // One structure that doesn't follow the seed (older chunks, a command, a copy) spoils the search. Not
                     // worth the many searches when the notes already confirm the typed seed (they say which ones don't fit).
                     result = WorldSeedSearch.withoutMisfit(data, notes.structures(), notes.bedrock(), step.nether(), biomes, hashedSeed, threads)
@@ -145,8 +147,13 @@ final class SearchRunner {
                 session.setResult(version, outcome == null ? null : outcome.result(),
                     error == null ? null : String.valueOf(error.getCause() != null ? error.getCause().getMessage() : error.getMessage()));
                 if (outcome != null && outcome.nether() != null) {
-                    // Nether chunks no seed makes (or that contradict a proven result) free their place for others.
-                    session.leaveOutBedrock(NetherBedrockSearch.NETHER, WorldSeedSearch.unusableNetherChunks(outcome.nether()));
+                    // Nether chunks no seed makes free their place for others; so do those that contradict a proven
+                    // result, unless the structures disagree with it (then it may be the nether of another world).
+                    boolean disagree = outcome.plain().withNether(outcome.nether()).netherDisagrees();
+                    session.leaveOutBedrock(NetherBedrockSearch.NETHER, WorldSeedSearch.unusableNetherChunks(outcome.nether()).stream()
+                        .filter(chunk -> !disagree || outcome.nether().chunks().stream().anyMatch(report -> report.chunk().equals(chunk)
+                            && report.status() == NetherBedrockSearch.ChunkStatus.FITS_NO_SEED))
+                        .toList());
                 }
             }, Minecraft.getInstance());
     }

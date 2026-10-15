@@ -65,6 +65,10 @@ public final class BiomeEvidence {
     private final List<BiomeObservation> notes;
     private final List<String> problems;
     private final List<Cluster> clusters;
+    /** Every known note, thinned or not, for the final check of a seed ({@link #fits}); made when first needed. */
+    private final List<BiomeObservation> valid;
+    private final OptionalLong hashedSeed;
+    private List<Cluster> allClusters;
 
     /** Notes close together; their quarts to check are worked out once. */
     private record Cluster(int minX, int maxX, int minZ, int maxZ, int[] biome, int[][] quarts, String key) {
@@ -109,6 +113,8 @@ public final class BiomeEvidence {
         this.notes = informative(valid);
         this.problems = List.copyOf(found);
         this.clusters = cluster(this.notes, biomes, hashedSeed);
+        this.valid = List.copyOf(valid);
+        this.hashedSeed = hashedSeed;
     }
 
     /**
@@ -492,7 +498,10 @@ public final class BiomeEvidence {
         return new Scan(structureSeed, preset, fits, complete);
     }
 
-    /** True if one world seed fits every note under this preset (quick: no other candidates are checked). */
+    /**
+     * True if one world seed fits every note under this preset, the cells thinned out included (quick: no other
+     * candidates are checked).
+     */
     public boolean fits(long worldSeed, OverworldBiomes.Preset preset) {
         OverworldBiomes.Sampler sampler = OverworldBiomes.of(version, preset).newSampler().seed(worldSeed);
         for (Cluster cluster : clusters) {
@@ -500,7 +509,19 @@ public final class BiomeEvidence {
                 return false;
             }
         }
+        for (Cluster cluster : allClusters()) {
+            if (!fits(sampler, cluster)) {
+                return false;
+            }
+        }
         return true;
+    }
+
+    private synchronized List<Cluster> allClusters() {
+        if (allClusters == null) {
+            allClusters = valid.size() == notes.size() ? clusters : cluster(valid, OverworldBiomes.of(version, OverworldBiomes.Preset.NORMAL), hashedSeed);
+        }
+        return allClusters;
     }
 
     /** True if one world seed fits every note under some preset of {@link #PRESET_ORDER}. */
@@ -603,6 +624,10 @@ public final class BiomeEvidence {
         }
         long seed = seeds.get(0);
         OverworldBiomes.Preset preset = fitting.get(seed);
+        if (!fits(seed, preset)) {
+            // It fits the cells checked for every candidate but not one thinned out: no seed fits all the notes.
+            return new Decision(List.of(), OptionalLong.empty(), Optional.empty(), 1, groups(OverworldBiomes.Preset.NORMAL).size(), false, true);
+        }
         Set<OverworldBiomes.Preset> presets = new LinkedHashSet<>();
         scans.forEach(scan -> presets.add(scan.preset()));
         long candidates = (long) scans.size() * CANDIDATES;

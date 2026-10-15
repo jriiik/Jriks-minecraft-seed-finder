@@ -433,7 +433,7 @@ class WorldSessionTest {
             session.leaveOutBedrock("minecraft:the_nether", old);
         }
         assertTrue(session.leftOutBedrockChunks("minecraft:the_nether") >= WorldSession.LEFT_OUT_BEFORE_SPACING);
-        assertFalse(session.wantsBedrock("minecraft:the_nether", 20, 5), "next to the old land");
+        assertFalse(session.wantsBedrock("minecraft:the_nether", 12, 5), "next to the old land");
         assertTrue(session.wantsBedrock("minecraft:the_nether", 60, 60), "new land farther away");
         assertTrue(session.offerBedrock(netherChunk(60, 60)));
     }

@@ -16,6 +16,7 @@ import io.github.jriiik.seedfinder.version.VersionData;
 import io.github.jriiik.seedfinder.world.ChunkPos;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Collection;
 import java.util.Comparator;
 import java.util.HashMap;
 import java.util.HashSet;
@@ -382,6 +383,30 @@ public final class NetherBedrockSearch {
         return (nextLong(((long) hash ^ key ^ A) & MASK) ^ A) & MASK;
     }
 
+    /**
+     * How much these notes tell structure seeds apart, in bits: both surfaces' information, except a surface whose
+     * hidden number two of the seeds (with different bedrock keys) share, as those two have that surface alike
+     * everywhere. A wrong seed among them fits all the notes with a chance of about 2^-bits. Seeds with one key have
+     * the same nether bedrock and can't be told apart at all.
+     */
+    public double separatingBits(Collection<Long> structureSeeds, List<BedrockObservation> observations) {
+        Set<Long> keys = new LinkedHashSet<>();
+        structureSeeds.forEach(seed -> keys.add(bedrockKey(seed)));
+        return separatingBits(keys, plan(observations));
+    }
+
+    private double separatingBits(Collection<Long> keys, Plan plan) {
+        Set<Long> floors = new HashSet<>();
+        Set<Long> roofs = new HashSet<>();
+        boolean floorTwins = false;
+        boolean roofTwins = false;
+        for (long key : keys) {
+            floorTwins |= !floors.add(hiddenNumber(key, floor.randomName().hashCode()));
+            roofTwins |= !roofs.add(hiddenNumber(key, roof.randomName().hashCode()));
+        }
+        return (floorTwins ? 0 : plan.floorBits()) + (roofTwins ? 0 : plan.roofBits());
+    }
+
     /** The structure seeds with this bedrock key: usually one, sometimes two or none. */
     public static long[] structureSeedsOfKey(long key) {
         long[] states = statesBeforeNextLong(key & MASK);
@@ -457,14 +482,26 @@ public final class NetherBedrockSearch {
 
     /** Whether a structure seed gives every block, checked from scratch with the engine's bedrock model. */
     private boolean fitsAll(long structureSeed, List<BedrockObservation> blocks) {
+        return mismatches(structureSeed, blocks, 1) == 0;
+    }
+
+    /** How many of the blocks the seed gets wrong, counting up to {@code limit}. */
+    private int mismatches(long structureSeed, List<BedrockObservation> blocks, int limit) {
         BedrockPattern pattern = new BedrockPattern(dimension, structureSeed);
+        int wrong = 0;
         for (BedrockObservation block : blocks) {
-            if (pattern.isBedrock(block.x(), block.y(), block.z()) != block.bedrock()) {
-                return false;
+            if (pattern.isBedrock(block.x(), block.y(), block.z()) != block.bedrock() && ++wrong >= limit) {
+                return wrong;
             }
         }
-        return true;
+        return wrong;
     }
+
+    /**
+     * A seed is only ruled out by blocks it gets at least this many wrong: one or two misread blocks then can't rule out
+     * the right seed (seeds close to it, like those a single surface leaves, get only a few blocks wrong).
+     */
+    public static final int MIN_MISMATCHES_TO_RULE_OUT = 3;
 
     // ------------------------------------------------------------------------------------------------ preparing
 
@@ -705,9 +742,10 @@ public final class NetherBedrockSearch {
     /**
      * Finds the structure seed from nether notes that may include chunks not made by 1.18 or later (or misread ones):
      * <ol>
-     *   <li>Chunks with {@link Plan#enough() enough} on their own (both surfaces, {@link #PROOF_BITS}) are searched one
-     *       by one, the most informative first. A chunk no seed fits is reported ({@link ChunkStatus#FITS_NO_SEED}) and
-     *       the next one is tried; the first {@link Outcome#proven() proven} result ends this step.</li>
+     *   <li>Chunks that can be searched on their own are searched one by one, the most informative first. A chunk no
+     *       seed fits is reported ({@link ChunkStatus#FITS_NO_SEED}: the search tries every number, so no world made
+     *       those blocks) and the next one is tried; the first {@link Outcome#proven() proven} result (possible with
+     *       {@link Plan#enough() enough}: both surfaces, {@link #PROOF_BITS}) ends this step.</li>
      *   <li>Without one, the chunks not found to fit no seed are searched together (this is how scattered notes, chunks
      *       with only one surface known, or a chunk whose result was only a list of candidates get combined).</li>
      *   <li>When nothing fits them together, one of them may be from an older version or misread: with at most
@@ -746,7 +784,7 @@ public final class NetherBedrockSearch {
         ChunkPos candidatesChunk = null;
         for (ChunkPos chunk : order) {
             Plan plan = plans.get(chunk);
-            if (!plan.enough() || !plan.canSearch()) {
+            if (!plan.canSearch()) {
                 continue;
             }
             Outcome outcome = searches.run(byChunk.get(chunk), plan);
@@ -861,8 +899,9 @@ public final class NetherBedrockSearch {
     /**
      * Checks the result against every chunk not searched yet: a chunk fits when its blocks fit at least one of the keys
      * kept. With several keys, a chunk rules out those whose seeds don't fit its blocks only when a wrong key would get
-     * through its blocks by a rare chance (keys x 2^-bits at most {@link #MAX_FALSE_FIT_CHANCE}), so a weak chunk with
-     * a misread block can't drop the right key.
+     * through its blocks by a rare chance (keys x 2^-bits at most {@link #MAX_FALSE_FIT_CHANCE}, counting only the
+     * surfaces that tell the keys apart, see {@link #separatingBits}) and every key it rules out gets at least
+     * {@link #MIN_MISMATCHES_TO_RULE_OUT} of its blocks wrong, so a chunk with a misread block can't drop the right key.
      */
     private Finding checkOthers(Outcome outcome, Set<ChunkPos> searched, Map<ChunkPos, List<BedrockObservation>> byChunk, List<ChunkPos> order,
                                 Map<ChunkPos, Plan> plans, Map<ChunkPos, ChunkStatus> status, Plan all, double falseKeys) {
@@ -876,13 +915,17 @@ public final class NetherBedrockSearch {
         for (ChunkPos chunk : others) {
             List<BedrockObservation> blocks = byChunk.get(chunk);
             Set<Long> fitting = new LinkedHashSet<>();
+            boolean clearlyOut = true;
             for (long key : keys) {
-                if (fitsAll(seedOfKey.get(key), blocks)) {
+                int wrong = mismatches(seedOfKey.get(key), blocks, MIN_MISMATCHES_TO_RULE_OUT);
+                if (wrong == 0) {
                     fitting.add(key);
+                } else {
+                    clearlyOut &= wrong >= MIN_MISMATCHES_TO_RULE_OUT;
                 }
             }
-            if (!fitting.isEmpty() && fitting.size() < keys.size()
-                && keys.size() * plans.get(chunk).expectedFalseKeys() / Math.pow(2, 48) <= MAX_FALSE_FIT_CHANCE) {
+            if (!fitting.isEmpty() && fitting.size() < keys.size() && clearlyOut
+                && keys.size() * Math.pow(2, -separatingBits(keys, plans.get(chunk))) <= MAX_FALSE_FIT_CHANCE) {
                 keys = fitting;
             }
         }

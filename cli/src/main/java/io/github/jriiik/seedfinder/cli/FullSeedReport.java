@@ -7,28 +7,24 @@ import io.github.jriiik.seedfinder.bedrock.BedrockObservation;
 import io.github.jriiik.seedfinder.bedrock.BedrockPattern;
 import io.github.jriiik.seedfinder.biome.OverworldBiomes;
 import io.github.jriiik.seedfinder.finder.BiomeEvidence;
+import io.github.jriiik.seedfinder.finder.FullSeedFinder;
 import io.github.jriiik.seedfinder.finder.FullSeedFinder.Candidate;
 import io.github.jriiik.seedfinder.finder.FullSeedFinder.Origin;
-import io.github.jriiik.seedfinder.finder.FullSeedFinder;
 import io.github.jriiik.seedfinder.finder.NetherBedrockSearch;
 import io.github.jriiik.seedfinder.finder.ObservationReader;
 import io.github.jriiik.seedfinder.finder.WorldSeedSearch;
 import io.github.jriiik.seedfinder.version.MinecraftVersion;
 import io.github.jriiik.seedfinder.version.VersionData;
-import io.github.jriiik.seedfinder.world.ChunkPos;
 import java.io.PrintWriter;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Comparator;
-import java.util.HashSet;
-import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
 import java.util.OptionalLong;
-import java.util.Set;
 import java.util.TreeMap;
 import java.util.stream.Collectors;
 
@@ -70,11 +66,18 @@ final class FullSeedReport {
     }
 
     /**
-     * What came out: whether a world seed could be named (found, or likely ones), and the one found, if any.
+     * What came out: whether a world seed could be named (found, or likely ones), the one found, if any, and whether
+     * the nether bedrock noted ruled out every structure seed.
      */
-    record Outcome(boolean named, OptionalLong worldSeed) {
+    record Outcome(boolean named, OptionalLong worldSeed, boolean rejected) {
 
-        static final Outcome NOTHING = new Outcome(false, OptionalLong.empty());
+        static final Outcome NOTHING = new Outcome(false, OptionalLong.empty(), false);
+        /** The nether bedrock noted fits none of the structure seeds. */
+        static final Outcome REJECTED = new Outcome(false, OptionalLong.empty(), true);
+
+        Outcome(boolean named, OptionalLong worldSeed) {
+            this(named, worldSeed, false);
+        }
 
         static Outcome found(long worldSeed) {
             return new Outcome(true, OptionalLong.of(worldSeed));
@@ -118,12 +121,10 @@ final class FullSeedReport {
             }
         }
         if (!evidence.structureSeedObservations().isEmpty()) {
-            NetherCheck check = narrowByNether(out, data, structureSeeds, evidence);
-            if (check.seeds().isEmpty()) {
-                return Outcome.NOTHING;
+            structureSeeds = new ArrayList<>(narrowByNether(out, data, structureSeeds, evidence));
+            if (structureSeeds.isEmpty()) {
+                return Outcome.REJECTED;
             }
-            structureSeeds = new ArrayList<>(check.seeds());
-            evidence = check.evidence();
         }
         FullSeedFinder.Result bedrock = null;
         BedrockReport bedrockReport = null;
@@ -178,42 +179,15 @@ final class FullSeedReport {
         }
     }
 
-    /** The structure seeds the nether bedrock leaves, and the bedrock notes still to use (chunks left out removed). */
-    private record NetherCheck(List<Long> seeds, BedrockEvidence evidence) {
-    }
-
     /**
-     * Nether bedrock only depends on the structure seed: keeps the structure seeds that fit it. A chunk none of them
-     * fits, while another chunk fits, is left out (made by Minecraft 1.17 or older, or noted wrong). Seeds are only
-     * ruled out when so many blocks are noted that a wrong seed would fit them all only by a rare chance.
+     * Nether bedrock only depends on the structure seed: keeps the structure seeds that fit it, or none when no seed
+     * fits it (then the notes or the structure seeds are wrong). Seeds are only ruled out while others fit when so much
+     * is noted that a wrong seed would fit it all only by a rare chance, counting only what tells the seeds apart
+     * ({@link NetherBedrockSearch#separatingBits}). Chunks no seed made are left out before this, by the nether search.
      */
-    private static NetherCheck narrowByNether(PrintWriter out, VersionData data, List<Long> structureSeeds, BedrockEvidence evidence) {
-        Map<ChunkPos, List<BedrockObservation>> byChunk = new LinkedHashMap<>();
-        for (BedrockObservation note : evidence.structureSeedObservations()) {
-            byChunk.computeIfAbsent(ChunkPos.ofBlock(note.x(), note.z()), chunk -> new ArrayList<>()).add(note);
-        }
-        List<ChunkPos> fitByNone = new ArrayList<>();
-        for (Map.Entry<ChunkPos, List<BedrockObservation>> chunk : byChunk.entrySet()) {
-            BedrockEvidence own = new BedrockEvidence(chunk.getValue());
-            if (structureSeeds.stream().noneMatch(seed -> own.structureSeedMismatches(seed) == 0)) {
-                fitByNone.add(chunk.getKey());
-            }
-        }
-        if (!fitByNone.isEmpty() && fitByNone.size() < byChunk.size()) {
-            for (ChunkPos chunk : fitByNone) {
-                out.printf("The nether bedrock of the chunk at block (%d, %d) fits none of the structure seeds while other chunks do: that%n",
-                    chunk.minBlockX(), chunk.minBlockZ());
-                out.println("chunk was made by Minecraft 1.17 or older (its bedrock doesn't follow the seed), or something was noted wrong there."
-                    + " It is left out.");
-            }
-            Set<ChunkPos> left = new HashSet<>(fitByNone);
-            evidence = new BedrockEvidence(evidence.observations().stream()
-                .filter(note -> note.dimension().dependsOnFullSeed() || !left.contains(ChunkPos.ofBlock(note.x(), note.z())))
-                .toList());
-        }
-        BedrockEvidence used = evidence;
-        int count = used.structureSeedObservations().size();
-        int[] wrong = structureSeeds.stream().mapToInt(used::structureSeedMismatches).toArray();
+    private static List<Long> narrowByNether(PrintWriter out, VersionData data, List<Long> structureSeeds, BedrockEvidence evidence) {
+        int count = evidence.structureSeedObservations().size();
+        int[] wrong = structureSeeds.stream().mapToInt(evidence::structureSeedMismatches).toArray();
         int best = 0;
         List<Long> fitting = new ArrayList<>();
         for (int i = 0; i < structureSeeds.size(); i++) {
@@ -227,36 +201,44 @@ final class FullSeedReport {
             long structureSeed = structureSeeds.get(best);
             out.printf("Your nether bedrock doesn't fit: %s gets %d of %s wrong:%n",
                 structureSeeds.size() == 1 ? "the structure seed" : "the closest structure seed, " + structureSeed + ",", fewest, blocks(count));
-            used.mismatchesOf(structureSeed).stream()
+            evidence.mismatchesOf(structureSeed).stream()
                 .filter(observation -> !observation.dimension().dependsOnFullSeed())
                 .limit(MAX_MISTAKES_SHOWN)
                 .forEach(observation -> out.println("  " + mistake(observation)));
             out.println("Please check these blocks in the game. If they are right, the structure seed is wrong.");
-            return new NetherCheck(List.of(), used);
+            return List.of();
         }
         if (structureSeeds.size() == 1) {
             out.printf("Nether bedrock: the structure seed fits all %s.%n", blocks(count));
-            return new NetherCheck(fitting, used);
+            return fitting;
         }
         if (fitting.size() == structureSeeds.size()) {
             out.printf("Nether bedrock: all %d structure seeds fit all %s.%n", structureSeeds.size(), blocks(count));
-            return new NetherCheck(fitting, used);
+            return fitting;
         }
-        // A wrong seed fits a block by chance about as often as the block's information says: with few blocks, one of
-        // several wrong seeds may fit them all while the right one was noted wrong.
-        double bits = new NetherBedrockSearch(data).plan(used.structureSeedObservations()).bits();
-        if ((structureSeeds.size() - 1) * Math.pow(2, -bits) > NARROWING_RISK) {
-            out.printf("Nether bedrock: %d of the %d structure seeds fit all %s, but with so few blocks a wrong one could fit by%n",
+        // A seed that gets only a block or two wrong may be the right one with a block misread; and a wrong seed fits
+        // the blocks by chance about as often as their information says: with few blocks, one of several wrong seeds
+        // may fit them all while the right one was noted wrong.
+        boolean clearlyOut = Arrays.stream(wrong).allMatch(w -> w == 0 || w >= NetherBedrockSearch.MIN_MISMATCHES_TO_RULE_OUT);
+        if (!clearlyOut) {
+            out.printf("Nether bedrock: %d of the %d structure seeds fit all %s, but others get only one or two wrong (a misread%n",
                 fitting.size(), structureSeeds.size(), blocks(count));
-            out.println("chance, so all of them are kept. Note more of it (the floor and roof of a whole chunk) to tell them apart.");
-            return new NetherCheck(structureSeeds, used);
+            out.println("block?), so all of them are kept. Check the blocks, or note more of the nether's bedrock.");
+            return structureSeeds;
+        }
+        double bits = new NetherBedrockSearch(data).separatingBits(structureSeeds, evidence.structureSeedObservations());
+        if ((structureSeeds.size() - 1) * Math.pow(2, -bits) > NARROWING_RISK) {
+            out.printf("Nether bedrock: %d of the %d structure seeds fit all %s, but so little tells them apart that a wrong one%n",
+                fitting.size(), structureSeeds.size(), blocks(count));
+            out.println("could fit by chance, so all of them are kept. Note more of it (the floor and roof of a whole chunk).");
+            return structureSeeds;
         }
         if (fitting.size() == 1) {
             out.printf("Nether bedrock: of the %d structure seeds, only %d fits all %s.%n", structureSeeds.size(), fitting.get(0), blocks(count));
         } else {
             out.printf("Nether bedrock: %d of the %d structure seeds fit all %s.%n", fitting.size(), structureSeeds.size(), blocks(count));
         }
-        return new NetherCheck(fitting, used);
+        return fitting;
     }
 
     /** Structure seeds are only ruled out by nether notes when a wrong one would fit them with at most this chance. */

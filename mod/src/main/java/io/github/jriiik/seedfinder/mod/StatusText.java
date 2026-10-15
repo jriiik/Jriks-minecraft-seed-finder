@@ -310,9 +310,10 @@ final class StatusText {
                     + ", the nether bedrock " + seeds(finding.structureSeeds()) + ". One side is wrong (a structure noted in the wrong"
                     + " place or from older chunks, or nether chunks of another world); the hashed seed, overworld bedrock or biomes"
                     + " tell which.");
-            } else if (result.netherDisagrees() && finding.proven()) {
+            } else if (result.netherDisagrees() && result.structuresOnlySeeds().isEmpty()) {
                 lines.add("No seed fits all the structures, so one of them doesn't follow the seed (noted in the wrong place, from older"
-                    + " chunks, or placed by a command); the structure seed comes from the nether bedrock.");
+                    + " chunks, or placed by a command; remove the ones you doubt); the structure seed"
+                    + (finding.proven() ? " comes from the nether bedrock." : "s the nether bedrock allows are used instead."));
             } else if (result.netherDisagrees()) {
                 lines.add("Note: none of the structures' seeds fits the nether bedrock seen (nether chunks made by an older Minecraft"
                     + " version, or changed?).");
@@ -400,9 +401,9 @@ final class StatusText {
         List<Long> likely = result.likelySeeds();
         if (!likely.isEmpty()) {
             lines.add("If nobody typed a seed, it is probably " + likely.stream().map(String::valueOf).collect(Collectors.joining(" or ")) + ".");
-        } else if (seeds.size() == 1 && !result.bedrockDisagrees() && result.biomes().map(BiomeEvidence.Decision::ruleOut).orElse(false)
-            && !WorldSeedSearch.likelySeeds(seeds.get(0)).isEmpty()) {
-            lines.add("The biomes seen rule out the seeds Minecraft picks itself and those typed text gives: the seed was typed as a number.");
+        } else if (result.likelyRuledOut()) {
+            lines.add("The biomes or the bedrock seen rule out the seeds Minecraft picks itself and those typed text gives: the seed was"
+                + " typed as a number.");
         }
     }
 

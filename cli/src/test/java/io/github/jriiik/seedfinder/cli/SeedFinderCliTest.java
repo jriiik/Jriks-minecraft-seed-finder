@@ -650,4 +650,82 @@ class SeedFinderCliTest {
         assertTrue(result.out().contains("Found the full seed: 12345\n"), result.out());
         assertTrue(result.out().contains("villages at block (352, 80) doesn't fit it"), result.out());
     }
+
+    /**
+     * World 8071994503331311257 (structure seed 136596199829145) with its ruined portal noted a chunk off: these six
+     * structures fit only the wrong structure seed 7421670452889, one of whose world seeds also fits this overworld chunk.
+     */
+    private static final long MISNOTED_WORLD = 8071994503331311257L;
+    private static final List<String> MISNOTED_STRUCTURES = List.of("desert_pyramid -176 112", "swamp_hut 80 -208", "village 288 80",
+        "shipwreck 48 80", "ruined_portal 256 256", "ocean_ruin 112 128");
+
+    private static String netherNote(long seed, int x, int y, int z) {
+        io.github.jriiik.seedfinder.version.VersionData data = io.github.jriiik.seedfinder.version.MinecraftVersion.V26_3.data();
+        boolean bedrock = new io.github.jriiik.seedfinder.bedrock.BedrockPattern(data.bedrockDimension("nether").orElseThrow(), seed).isBedrock(x, y, z);
+        return (bedrock ? "bedrock" : "not-bedrock") + " nether " + x + " " + y + " " + z;
+    }
+
+    private static List<String> layers(String dimension, long seed, int minX, int minZ, int... ys) {
+        io.github.jriiik.seedfinder.version.VersionData data = io.github.jriiik.seedfinder.version.MinecraftVersion.V26_3.data();
+        io.github.jriiik.seedfinder.bedrock.BedrockPattern pattern = new io.github.jriiik.seedfinder.bedrock.BedrockPattern(
+            data.bedrockDimension(dimension).orElseThrow(), seed);
+        List<String> lines = new java.util.ArrayList<>();
+        for (int y : ys) {
+            lines.addAll(io.github.jriiik.seedfinder.bedrock.BedrockText.layer(pattern, minX, y, minZ, 16, 16));
+        }
+        return lines;
+    }
+
+    @Test
+    void netherNotesAcrossAChunkBorderStillRuleOutAWrongStructureSeed(@org.junit.jupiter.api.io.TempDir java.nio.file.Path folder)
+        throws java.io.IOException {
+        List<String> nether = new java.util.ArrayList<>();
+        int[][] spots = {{48, 4, -28}, {48, 1, -26}, {48, 4, -25}, {48, 1, -21}, {48, 1, -19}, {48, 1, -18}, {49, 4, -28}, {49, 1, -25},
+            {49, 1, -21}, {49, 1, -19}, {50, 1, -32}, {50, 1, -30}, {47, 4, -28}};
+        for (int[] spot : spots) {
+            nether.add(netherNote(MISNOTED_WORLD, spot[0], spot[1], spot[2]));
+        }
+        List<String> overworld = layers("overworld", MISNOTED_WORLD, -3792, 320, -63, -62, -61, -60);
+        java.nio.file.Path file = folder.resolve("notes.txt");
+        for (List<String> notes : List.of(nether, new java.util.ArrayList<>(layers("nether", MISNOTED_WORLD, 48, -32, 1, 2, 3, 4)))) {
+            if (notes != nether) {
+                notes.add(netherNote(MISNOTED_WORLD, 47, 4, -28)); // a whole floor chunk, plus one block in the next chunk
+            }
+            List<String> lines = new java.util.ArrayList<>(MISNOTED_STRUCTURES);
+            lines.addAll(notes);
+            lines.addAll(overworld);
+            java.nio.file.Files.write(file, lines);
+            Result result = run(find("--file", file.toString()));
+            assertFalse(result.out().contains("Found the full seed"), result.out());
+            assertTrue(result.out().contains("Your nether bedrock doesn't fit"), result.out());
+            assertEquals(1, result.exitCode());
+            Result fullSeed = run("full-seed", "7421670452889", "--threads", "2", "--file", file.toString());
+            assertFalse(fullSeed.out().contains("Found the full seed"), fullSeed.out());
+            assertEquals(1, fullSeed.exitCode());
+        }
+    }
+
+    @Test
+    void oneMisreadRoofBlockDoesntPickTheWrongFloorTwin(@org.junit.jupiter.api.io.TempDir java.nio.file.Path folder) throws java.io.IOException {
+        // 136596199829145 (the world's) and 109940606698184 have the same nether floor everywhere: only the roof tells
+        // them apart. One roof block noted wrong fits the other one.
+        long right = 136596199829145L;
+        long twin = 109940606698184L;
+        List<String> lines = new java.util.ArrayList<>(layers("nether", right, 48, -32, 1, 2, 3, 4));
+        lines.add(netherNote(right, 48, 125, -32));
+        String misread = null;
+        for (int x = 80; x < 96 && misread == null; x++) {
+            if (netherNote(right, x, 123, -32).startsWith("not") && !netherNote(twin, x, 123, -32).startsWith("not")) {
+                misread = "bedrock nether " + x + " 123 -32";
+            }
+        }
+        assertTrue(misread != null);
+        lines.add(misread);
+        java.nio.file.Path file = folder.resolve("notes.txt");
+        java.nio.file.Files.write(file, lines);
+        Result result = run("full-seed", Long.toString(twin), Long.toString(right), "--threads", "2", "--file", file.toString());
+        assertFalse(result.out().contains("only " + twin + " fits"), result.out());
+        assertTrue(result.out().contains("so all of them are kept"), result.out());
+        assertFalse(result.out().contains("it is "), "no likely seed of either may be named: " + result.out());
+    }
 }

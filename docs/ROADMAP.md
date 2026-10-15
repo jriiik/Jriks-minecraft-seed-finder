@@ -307,6 +307,12 @@ rule out could be called found. Now only chunks found unusable for sure are left
 proven nether result disagrees with the structures, as both sides are then candidates). Likely seeds are only
 filtered by biomes when some seed fits them, and by overworld bedrock when some seed fits it.
 
+A third review found that the command-line app's own guess at which nether chunk to leave out (any chunk no seed
+fits, as soon as another one fits, even a single block) could again drop the notes that rule a wrong seed out. Now
+only the nether search decides that (a chunk is left out only when a search of it alone, which tries every number,
+finds nothing), also in `full-seed`; and nether notes rule a seed out only when it gets at least 3 blocks wrong, so
+one or two misread blocks never throw out the right seed (seeds a single surface leaves are close to each other).
+
 ## Things that can't work
 
 - **No data, no seed**: the finder needs observations.

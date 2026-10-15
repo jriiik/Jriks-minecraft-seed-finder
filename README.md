@@ -220,8 +220,8 @@ itself. It needs Minecraft **26.3** with **Fabric Loader** (0.19.5 or newer) and
 4. Play. The mod then:
    - reads the bedrock floor of chunks around you (overworld and nether). In the nether, one chunk's floor and roof
      give the structure seed by themselves, without any structures. Nether chunks made by Minecraft 1.17 or older
-     (their bedrock doesn't follow the seed) are left out and make room for others; once several are, chunks near
-     them are skipped, so in an upgraded world it reads the newer land farther away;
+     (their bedrock doesn't follow the seed) are left out and make room for others; once several are, chunks within
+     8 chunks of them are skipped, so in an upgraded world it reads the newer land farther away;
    - reads the biomes the game stored around you (about 100 chunks, at the surface and three cave depths), and again
      when you are about 4,500 blocks from every area noted (up to four areas, plus one far enough away for
      large-biome worlds). One area proves a seed Minecraft picked itself or a text seed; a second area proves any

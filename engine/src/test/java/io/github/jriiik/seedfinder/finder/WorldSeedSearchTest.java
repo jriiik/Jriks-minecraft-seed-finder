@@ -312,6 +312,21 @@ class WorldSeedSearchTest {
         WorldSeedSearch.Result result = WorldSeedSearch.fullSeed(step, notes, OptionalLong.empty(), 2);
         assertEquals(WorldSeedSearch.Stage.STRUCTURE_SEED, result.stage());
         assertTrue(result.worldSeed().isEmpty());
+        assertTrue(result.likelySeeds().isEmpty(), "the nether notes contradict the structure seed, so its likely seeds too");
+    }
+
+    @Test
+    void anOldNetherChunkWithOnlyItsFloorReadIsLeftOut() {
+        // A hole in the roof: only the floor of a chunk made by 1.17 or older. Searched alone, no seed fits it.
+        List<BedrockObservation> notes = new java.util.ArrayList<>(oldNetherChunk(0, 0).stream().filter(note -> note.y() <= 4).toList());
+        notes.addAll(bedrockOf(12345L));
+        List<StructureObservation> structures = ObservationReader.read(DATA, STRUCTURES_12345).structures();
+        WorldSeedSearch.StructureStep step = WorldSeedSearch.structureSeeds(DATA, structures, notes, 2, () -> false, (done, total) -> { },
+            (search, pieces) -> { });
+        assertEquals(List.of(new io.github.jriiik.seedfinder.world.ChunkPos(0, 0)), WorldSeedSearch.unusableNetherChunks(step.nether().orElseThrow()));
+        WorldSeedSearch.Result result = WorldSeedSearch.fullSeed(step, notes, OptionalLong.empty(), 2);
+        assertEquals(OptionalLong.of(12345L), result.worldSeed());
+        assertEquals(Optional.of(WorldSeedSearch.Proof.BEDROCK), result.proof());
     }
 
     @Test

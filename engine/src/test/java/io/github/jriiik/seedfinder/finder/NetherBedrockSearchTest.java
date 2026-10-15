@@ -673,6 +673,33 @@ class NetherBedrockSearchTest {
         assertTrue(finding.falseKeys() <= NetherBedrockSearch.MAX_FALSE_FIT_CHANCE);
     }
 
+    /** A floor alone that no seed made: searched on its own (every number tried), it is found to fit no seed. */
+    @Test
+    void aFloorAloneThatNoSeedMadeFitsNoSeed() {
+        List<BedrockObservation> blocks = randomChunk(new Random(17), 2, -3).stream().filter(block -> block.y() <= 4).toList();
+        NetherBedrockSearch.Finding finding = SEARCH.find(blocks, THREADS, NEVER, (search, pieces) -> { });
+        assertTrue(finding.structureSeeds().isEmpty());
+        assertEquals(List.of(new ChunkPos(2, -3)), finding.unusableChunks());
+        assertEquals(NetherBedrockSearch.ChunkStatus.FITS_NO_SEED, finding.chunks().get(0).status());
+    }
+
+    /**
+     * Seeds whose floors are alike everywhere (their keys give the same floor number) are only told apart by the roof:
+     * the floor's information doesn't count. 136596199829145 and 109940606698184 are such a pair.
+     */
+    @Test
+    void floorTwinsAreToldApartOnlyByTheRoof() {
+        long right = 136596199829145L;
+        long twin = 109940606698184L;
+        List<BedrockObservation> floor = chunk(right, 3, -2, FLOOR_YS);
+        assertTrue(fitsEveryBlock(twin, floor), "the twin has the same floor");
+        assertTrue(SEARCH.separatingBits(List.of(right), floor) > 100, "one seed: all the floor's information counts");
+        assertEquals(0, SEARCH.separatingBits(List.of(right, twin), floor), 1e-9);
+        List<BedrockObservation> both = new ArrayList<>(floor);
+        both.addAll(chunk(right, 3, -2, ROOF_YS));
+        assertEquals(SEARCH.plan(chunk(right, 3, -2, ROOF_YS)).roofBits(), SEARCH.separatingBits(List.of(right, twin), both), 1e-6);
+    }
+
     /**
      * Two floors only (a hole in each roof), one of them no seed made: the other's candidates are kept, though they
      * can't be proven, and the chunk that spoils them is named.

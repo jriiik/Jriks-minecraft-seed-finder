@@ -2,15 +2,20 @@ package io.github.jriiik.seedfinder.cli;
 
 import io.github.jriiik.seedfinder.Seeds;
 import io.github.jriiik.seedfinder.bedrock.BedrockEvidence;
+import io.github.jriiik.seedfinder.bedrock.BedrockObservation;
 import io.github.jriiik.seedfinder.finder.FullSeedFinder;
+import io.github.jriiik.seedfinder.finder.NetherBedrockSearch;
 import io.github.jriiik.seedfinder.finder.ObservationReader;
+import io.github.jriiik.seedfinder.finder.WorldSeedSearch;
 import io.github.jriiik.seedfinder.version.MinecraftVersion;
 import io.github.jriiik.seedfinder.version.VersionData;
+import io.github.jriiik.seedfinder.world.ChunkPos;
 import java.io.PrintWriter;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Set;
 import java.util.concurrent.Callable;
 import picocli.CommandLine;
 import picocli.CommandLine.Command;
@@ -98,7 +103,33 @@ final class FullSeedCommand implements Callable<Integer> {
             return 1;
         }
         int threadCount = Threads.resolve(commandLine, threads);
+        List<BedrockObservation> bedrock = withoutOldNetherChunks(out, data, observations.bedrock(), threadCount);
         FullSeedReport.Biomes biomes = FullSeedReport.Biomes.of(out, observations, minecraft);
-        return FullSeedReport.run(out, data, structureSeeds, evidence, biomes, observations.hashedSeed(), threadCount).named() ? 0 : 1;
+        return FullSeedReport.run(out, data, structureSeeds, new BedrockEvidence(bedrock), biomes, observations.hashedSeed(), threadCount).named()
+            ? 0 : 1;
+    }
+
+    /**
+     * Nether chunks no seed made (Minecraft 1.17 or older) would count against every structure seed: the nether search
+     * finds them for sure (no number fits a chunk on its own, or it contradicts a proven result) and they are left out.
+     */
+    private static List<BedrockObservation> withoutOldNetherChunks(PrintWriter out, VersionData data, List<BedrockObservation> bedrock,
+                                                                   int threads) {
+        NetherBedrockSearch search = new NetherBedrockSearch(data);
+        if (!search.plan(bedrock).canSearch()) {
+            return bedrock;
+        }
+        out.println("Checking the nether bedrock for chunks made by older Minecraft versions...");
+        out.flush();
+        NetherBedrockSearch.Finding finding = search.find(bedrock, threads, () -> false, (index, pieces) -> { });
+        Set<ChunkPos> unusable = new LinkedHashSet<>(WorldSeedSearch.unusableNetherChunks(finding));
+        for (ChunkPos chunk : unusable) {
+            out.printf("The nether bedrock of the chunk at block (%d, %d) fits no seed: that chunk was made by Minecraft 1.17 or older%n",
+                chunk.minBlockX(), chunk.minBlockZ());
+            out.println("(its bedrock doesn't follow the seed), or something was noted wrong there. It is left out.");
+        }
+        return bedrock.stream()
+            .filter(note -> !note.dimension().id().equals(NetherBedrockSearch.NETHER) || !unusable.contains(ChunkPos.ofBlock(note.x(), note.z())))
+            .toList();
     }
 }

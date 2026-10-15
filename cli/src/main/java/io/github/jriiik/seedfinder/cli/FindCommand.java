@@ -200,7 +200,7 @@ final class FindCommand implements Callable<Integer> {
         boolean netherProven = step.nether().map(NetherBedrockSearch.Finding::proven).orElse(false);
         boolean bothSides = step.netherDisagrees() && !found.isEmpty();
         boolean structureSeedFound = !bothSides && (!found.isEmpty() && !step.netherDisagrees() || netherProven);
-        return outcome.named() || !fullSeedNotes && structureSeedFound ? 0 : 1;
+        return outcome.named() || !fullSeedNotes && structureSeedFound && !outcome.rejected() ? 0 : 1;
     }
 
     /**
@@ -233,6 +233,12 @@ final class FindCommand implements Callable<Integer> {
         out.printf("%s at block (%d, %d) doesn't fit it: noted in the wrong place, from chunks made by an older Minecraft version, or%n",
             left.set().shortId(), left.chunk().minBlockX(), left.chunk().minBlockZ());
         out.println("placed by a command or copied. Leave it out of your notes.");
+        if (result.bedrockDisagrees()) {
+            out.println("But some of your bedrock notes don't fit it (noted wrong, or changed?).");
+        }
+        if (result.biomesDisagree()) {
+            out.println("But your biome notes don't fit it (noted in the wrong place, or from chunks made by an older Minecraft version?).");
+        }
         return true;
     }
 
@@ -267,13 +273,21 @@ final class FindCommand implements Callable<Integer> {
         }
         err.println();
         out.printf("Done in %s.%n%n", duration((System.nanoTime() - start) / 1e9));
+        List<io.github.jriiik.seedfinder.world.ChunkPos> leftOut = WorldSeedSearch.unusableNetherChunks(finding);
         for (io.github.jriiik.seedfinder.world.ChunkPos chunk : finding.unusableChunks()) {
-            out.printf("The nether bedrock of the chunk at block (%d, %d) fits no seed that fits the rest: that chunk was made by Minecraft%n",
-                chunk.minBlockX(), chunk.minBlockZ());
-            out.println("1.17 or older (its bedrock doesn't follow the seed), or something was noted wrong there. It is left out.");
+            if (leftOut.contains(chunk)) {
+                out.printf("The nether bedrock of the chunk at block (%d, %d) fits no seed that fits the rest: that chunk was made by Minecraft%n",
+                    chunk.minBlockX(), chunk.minBlockZ());
+                out.println("1.17 or older (its bedrock doesn't follow the seed), or something was noted wrong there. It is left out.");
+            } else {
+                out.printf("The nether bedrock of the chunk at block (%d, %d) doesn't fit the seeds the other nether notes allow: one of%n",
+                    chunk.minBlockX(), chunk.minBlockZ());
+                out.println("them was made by Minecraft 1.17 or older, or noted wrong.");
+            }
         }
         List<Long> seeds = finding.structureSeeds();
-        if (seeds.isEmpty() && !finding.unusableChunks().isEmpty() && finding.unusableChunks().size() < finding.chunks().size()) {
+        boolean restSearched = finding.outcome().map(outcome -> outcome.plan().canSearch()).orElse(false);
+        if (seeds.isEmpty() && !leftOut.isEmpty() && leftOut.size() < finding.chunks().size() && !restSearched) {
             out.println("The rest of the nether bedrock is not enough to search on its own.");
         } else if (seeds.isEmpty()) {
             out.println("No structure seed fits the nether bedrock. Check the notes (rows go from north to south, each row from west");
