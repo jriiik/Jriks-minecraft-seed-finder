@@ -138,15 +138,15 @@ class NetherBedrockSearchTest {
         for (int i = 0; i < 4; i++) {
             for (boolean bedrock : new boolean[] {true, false}) {
                 double bits = expected[i][bedrock ? 0 : 1];
-                int rare = bits > 1 ? 1 : 0;
+                int rare = bits > 2 ? 4 : bits > 1 ? 1 : 0; // strong rare blocks weigh 4, weak ones 1
                 NetherBedrockSearch.Plan floor = SEARCH.plan(List.of(new BedrockObservation(NETHER, 5, FLOOR_YS[i], 7, bedrock)));
                 assertEquals(1, floor.floorBlocks());
                 assertEquals(0, floor.roofBlocks());
-                assertEquals(rare, floor.floorRareBlocks());
+                assertEquals(rare, floor.floorRareWeight());
                 assertEquals(bits, floor.floorBits(), 0.005, "floor y" + FLOOR_YS[i] + " bedrock " + bedrock);
                 NetherBedrockSearch.Plan roof = SEARCH.plan(List.of(new BedrockObservation(NETHER, 5, ROOF_YS[3 - i], 7, bedrock)));
                 assertEquals(1, roof.roofBlocks());
-                assertEquals(rare, roof.roofRareBlocks());
+                assertEquals(rare, roof.roofRareWeight());
                 assertEquals(bits, roof.roofBits(), 0.005, "roof y" + ROOF_YS[3 - i] + " bedrock " + bedrock);
             }
         }
@@ -200,11 +200,16 @@ class NetherBedrockSearchTest {
             .toList();
         NetherBedrockSearch.Plan commonPlan = SEARCH.plan(common);
         assertTrue(commonPlan.floorBits() > 100, "bits " + commonPlan.floorBits());
-        assertEquals(0, commonPlan.floorRareBlocks());
+        assertEquals(0, commonPlan.floorRareWeight());
         assertFalse(commonPlan.canSearch());
-        List<BedrockObservation> withRare = new ArrayList<>(common);
-        withRare.addAll(columns(pattern, 0, 0, 32, 32, FLOOR_YS).stream().filter(block -> block.bedrock() != block.y() <= 2).limit(8).toList());
-        assertTrue(SEARCH.plan(withRare).canSearch());
+        // 8 weak rare blocks (bedrock at y 3, a gap at y 2) prune little: still too slow; 8 strong ones (y 4, y 1) do.
+        List<BedrockObservation> rare = columns(pattern, 0, 0, 32, 32, FLOOR_YS).stream().filter(block -> block.bedrock() != block.y() <= 2).toList();
+        List<BedrockObservation> withWeak = new ArrayList<>(common);
+        withWeak.addAll(rare.stream().filter(block -> block.y() == 2 || block.y() == 3).limit(8).toList());
+        assertFalse(SEARCH.plan(withWeak).canSearch());
+        List<BedrockObservation> withStrong = new ArrayList<>(common);
+        withStrong.addAll(rare.stream().filter(block -> block.y() == 1 || block.y() == 4).limit(8).toList());
+        assertTrue(SEARCH.plan(withStrong).canSearch());
     }
 
     // ------------------------------------------------------------------------------------------------ whole searches
@@ -242,6 +247,7 @@ class NetherBedrockSearchTest {
             assertEquals(withTwin(worldSeed), outcome.structureSeeds(), what);
             assertEquals(List.of(NetherBedrockSearch.bedrockKey(Seeds.structureSeed(worldSeed))), outcome.bedrockKeys(), what);
             assertTrue(outcome.proven(), what);
+            assertEquals(0, outcome.disagreements(), what);
         }
         assertEquals(10, index);
     }
@@ -268,6 +274,7 @@ class NetherBedrockSearchTest {
             assertTrue(outcome.structureSeeds().contains(Seeds.structureSeed(worldSeed)), what);
             assertEquals(withTwin(worldSeed), outcome.structureSeeds(), what);
             assertEquals(1, outcome.bedrockKeys().size(), what);
+            assertEquals(0, outcome.disagreements(), what);
             for (long seed : outcome.structureSeeds()) {
                 assertTrue(fitsEveryBlock(seed, chunk(worldSeed, chunkX, chunkZ, BOTH_YS)), what);
             }
@@ -579,5 +586,135 @@ class NetherBedrockSearchTest {
                 throw new ArithmeticException("broken progress");
             }));
         assertEquals("broken progress", failure.getCause().getMessage());
+    }
+
+    // ------------------------------------------------------------------------------------------------ added after review
+
+    /**
+     * The table step may only rule out a level-12 node that the exact single-block test at level 12 rules out too, also
+     * where the block's stretch wraps around the end of the circle.
+     */
+    @Test
+    void theTableStepNeverRulesOutWhatTheExactTestKeeps() {
+        Random random = new Random(3);
+        long a = BedrockSurface.A;
+        long w12 = a * ((1L << BedrockSurfaceSearch.TABLE_TARGET) - 1);
+        long checks = 0;
+        long wrapping = 0;
+        for (int round = 0; round < 8; round++) {
+            boolean roof = round % 2 == 1;
+            int x0 = random.nextInt(60_000_000) - 30_000_000;
+            int z0 = random.nextInt(60_000_000) - 30_000_000;
+            List<BedrockObservation> blocks = new ArrayList<>();
+            for (int i = 0; i < 300; i++) {
+                int y = (roof ? ROOF_YS : FLOOR_YS)[random.nextInt(4)];
+                blocks.add(new BedrockObservation(NETHER, x0 + random.nextInt(40), y, z0 + random.nextInt(40), random.nextBoolean()));
+            }
+            BedrockSurface surface = SEARCH.surfaceOf(roof, blocks);
+            BedrockSurfaceSearch search = new BedrockSurfaceSearch(surface);
+            assertTrue(search.tableBlocks() > 0);
+            for (int sample = 0; sample < 1500; sample++) {
+                long v = random.nextLong() & MASK & ~((1L << BedrockSurfaceSearch.TABLE_LEVEL) - 1);
+                for (int u = 0; u < search.tableBlocks(); u++) {
+                    int i = search.tableBlock(u);
+                    long mask = search.tableMask(u, v);
+                    for (int t = 0; t < 64; t++) {
+                        long node = v | ((long) t << BedrockSurfaceSearch.TABLE_TARGET);
+                        long lowCleared = (surface.position(i) ^ node) & ~((1L << BedrockSurfaceSearch.TABLE_TARGET) - 1) & MASK;
+                        long e = (lowCleared * a + BedrockSurface.C - surface.low(i) + w12) & MASK;
+                        if (e < surface.length(i) + w12) {
+                            checks++;
+                            wrapping += e < w12 ? 1 : 0;
+                            if ((mask >>> t & 1) == 0) {
+                                throw new AssertionError("the table rules out node " + node + " that block " + i + " allows");
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        assertTrue(checks > 1_000_000, "checks " + checks);
+        assertTrue(wrapping > 1000, "cases near the end of the circle: " + wrapping);
+    }
+
+    /** Just below {@link NetherBedrockSearch#PROOF_BITS} nothing can be proven; just above it can. */
+    @Test
+    void proofNeedsBothSurfacesAndTheProofBits() {
+        // A gap at y 1 or y 126 is worth log2(1 / 0.2) = 2.32 bits: 25 of them give 58.05 bits, 24 give 55.7.
+        List<BedrockObservation> strong = new ArrayList<>();
+        for (int i = 0; i < 13; i++) {
+            strong.add(new BedrockObservation(NETHER, i, 1, 0, false));
+            strong.add(new BedrockObservation(NETHER, i, 126, 0, false));
+        }
+        NetherBedrockSearch.Plan above = SEARCH.plan(strong.subList(0, 25));
+        assertTrue(above.bits() >= NetherBedrockSearch.PROOF_BITS && above.enough(), "bits " + above.bits());
+        NetherBedrockSearch.Plan below = SEARCH.plan(strong.subList(0, 24));
+        assertTrue(below.bits() < NetherBedrockSearch.PROOF_BITS && !below.enough(), "bits " + below.bits());
+        NetherBedrockSearch.Plan floorOnly = SEARCH.plan(chunk(5L, 0, 0, FLOOR_YS));
+        assertTrue(floorOnly.bits() > 500 && !floorOnly.enough());
+    }
+
+    /** A chunk not made from the seed (an older version, or misread) among chunks that only prove it together. */
+    @Test
+    void aChunkThatFitsNoSeedIsLeftOutOfTheJointSearchAndNamed() {
+        long worldSeed = 8_765_432_123L;
+        List<BedrockObservation> blocks = new ArrayList<>(chunk(worldSeed, 4, 4, FLOOR_YS)); // the floor alone: not enough
+        blocks.addAll(chunk(worldSeed, 9, -2, ROOF_YS)); // the roof alone: not enough
+        Random random = new Random(11);
+        for (BedrockObservation block : randomChunk(random, 20, 20)) {
+            if (block.y() <= 4) {
+                blocks.add(block); // a floor no seed made
+            }
+        }
+        NetherBedrockSearch.Finding finding = SEARCH.find(blocks, THREADS, NEVER, (search, pieces) -> { });
+        assertTrue(finding.proven(), "false keys " + finding.falseKeys());
+        assertEquals(withTwin(worldSeed), finding.structureSeeds());
+        assertEquals(List.of(new ChunkPos(20, 20)), finding.unusableChunks());
+        assertTrue(finding.falseKeys() <= NetherBedrockSearch.MAX_FALSE_FIT_CHANCE);
+    }
+
+    /**
+     * Candidates of a chunk with only a little roof, a few real roof blocks and a few blocks no seed made: whatever the
+     * order, the world's structure seed stays among the candidates (a weak chunk may not rule it out).
+     */
+    @Test
+    void weakChunksDontRuleOutTheRightCandidate() {
+        Random random = new Random(5);
+        for (int run = 0; run < 4; run++) {
+            long worldSeed = random.nextLong();
+            BedrockPattern pattern = new BedrockPattern(NETHER, worldSeed);
+            List<BedrockObservation> blocks = new ArrayList<>(chunk(worldSeed, 0, 0, FLOOR_YS));
+            blocks.addAll(columns(pattern, 0, 0, 2, 1, 123)); // two roof blocks in the same chunk
+            for (int i = 0; i < 6; i++) {
+                int x = 100 + random.nextInt(16);
+                int z = random.nextInt(16);
+                int y = ROOF_YS[random.nextInt(4)];
+                blocks.add(new BedrockObservation(NETHER, x, y, z, pattern.isBedrock(x, y, z))); // real, chunk (6, 0)
+                blocks.add(new BedrockObservation(NETHER, x + 160, y, z, random.nextBoolean())); // no seed made these, chunk (16, 0)
+            }
+            NetherBedrockSearch.Finding finding = SEARCH.find(blocks, THREADS, NEVER, (search, pieces) -> { });
+            assertTrue(finding.structureSeeds().contains(Seeds.structureSeed(worldSeed)), "run " + run + ": " + finding);
+        }
+    }
+
+    @Test
+    void aCappedSearchIsNeitherCompleteNorProven() {
+        NetherBedrockSearch capped = new NetherBedrockSearch(DATA, 2, NetherBedrockSearch.MAX_SURFACE_FITS);
+        Random random = new Random(9);
+        NetherBedrockSearch.Outcome outcome = null;
+        for (int i = 0; i < 6 && (outcome == null || !outcome.capped()); i++) {
+            // One surface leaves several keys: more than 2 seeds in most chunks.
+            outcome = capped.search(chunk(random.nextLong(), 1, 1, FLOOR_YS), THREADS, NEVER, QUIET);
+        }
+        assertTrue(outcome.capped());
+        assertFalse(outcome.complete());
+        assertFalse(outcome.proven());
+        assertTrue(outcome.structureSeeds().size() <= 2);
+        NetherBedrockSearch.Finding finding = capped.find(chunk(random.nextLong(), 1, 1, BOTH_YS).subList(0, 1024 + 40), THREADS, NEVER,
+            (search, pieces) -> { });
+        assertTrue(finding.capped() || !finding.structureSeeds().isEmpty());
+        if (finding.capped()) {
+            assertFalse(finding.proven());
+        }
     }
 }

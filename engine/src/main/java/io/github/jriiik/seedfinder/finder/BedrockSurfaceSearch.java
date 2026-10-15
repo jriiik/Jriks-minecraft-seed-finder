@@ -86,6 +86,8 @@ final class BedrockSurfaceSearch {
     private final long[] tableS;
     private final long[] tableOffset;
     private final long[] table;
+    /** The surface's index of each table block. */
+    private final int[] tableIndex;
     private final boolean useTable;
     private final int pairsUsed;
 
@@ -103,6 +105,7 @@ final class BedrockSurfaceSearch {
                 use[used++] = i;
             }
         }
+        tableIndex = Arrays.copyOf(use, used);
         tableS = new long[used];
         tableOffset = new long[used];
         table = new long[used << BUCKET_BITS];
@@ -315,6 +318,16 @@ final class BedrockSurfaceSearch {
             }
         }
         return true;
+    }
+
+    /** The surface's index of table block {@code u} (0 to {@link #tableBlocks()} - 1). */
+    int tableBlock(int u) {
+        return tableIndex[u];
+    }
+
+    /** {@link #tableMask(long)} for table block {@code u} alone. */
+    long tableMask(int u, long v) {
+        return table[(u << BUCKET_BITS) + (int) ((((tableS[u] ^ v) * A + tableOffset[u]) & MASK) >>> BUCKET_SHIFT)];
     }
 
     /**

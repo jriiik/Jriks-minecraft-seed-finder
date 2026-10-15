@@ -119,4 +119,55 @@ class WorldSeedSearchTest {
         assertEquals(Optional.of(WorldSeedSearch.Proof.HASHED_SEED), flagged.proof());
         assertTrue(flagged.biomesDisagree());
     }
+
+    /** One nether chunk's floor and roof, as BedrockText writes them (what the mod's notes hold). */
+    private static List<BedrockObservation> netherChunkOf(long worldSeed, int chunkX, int chunkZ) {
+        io.github.jriiik.seedfinder.bedrock.BedrockDimension nether = DATA.bedrockDimension("nether").orElseThrow();
+        BedrockPattern pattern = new BedrockPattern(nether, worldSeed);
+        List<String> lines = new java.util.ArrayList<>();
+        for (int y : new int[] {1, 2, 3, 4, 123, 124, 125, 126}) {
+            lines.addAll(BedrockText.layer(pattern, chunkX * 16, y, chunkZ * 16, 16, 16));
+        }
+        return ObservationReader.read(DATA, lines).bedrock();
+    }
+
+    @Test
+    void netherBedrockAloneGivesTheStructureSeedAndTheHashedSeedTheWorldSeed() {
+        List<BedrockObservation> nether = netherChunkOf(12345L, 7, -3);
+        WorldSeedSearch.StructureStep step = WorldSeedSearch.structureSeeds(DATA, List.of(), nether, 2, () -> false, (done, total) -> { },
+            (search, pieces) -> { });
+        assertTrue(step.searched());
+        assertTrue(step.nether().orElseThrow().proven());
+        assertTrue(step.structureSeeds().contains(12345L));
+        WorldSeedSearch.Result result = WorldSeedSearch.fullSeed(step, nether, OptionalLong.of(Seeds.hashedSeed(12345L)), 2);
+        assertEquals(OptionalLong.of(12345L), result.worldSeed());
+        assertEquals(Optional.of(WorldSeedSearch.Proof.HASHED_SEED), result.proof());
+
+        // without the hashed seed, the biomes of one area prove it (12345 can be typed)
+        List<BiomeObservation> biomes = BiomeEvidenceTest.area(12345L, io.github.jriiik.seedfinder.biome.OverworldBiomes.Preset.NORMAL, 0, 0, 6, 64);
+        WorldSeedSearch.Result fromBiomes = WorldSeedSearch.fullSeed(step, nether, new WorldSeedSearch.BiomeInput(
+            new BiomeEvidence(MinecraftVersion.V26_3, biomes, OptionalLong.empty()), null, () -> false), OptionalLong.empty(), 4);
+        assertEquals(OptionalLong.of(12345L), fromBiomes.worldSeed());
+        assertEquals(Optional.of(WorldSeedSearch.Proof.BIOMES), fromBiomes.proof());
+    }
+
+    @Test
+    void netherBedrockAndStructuresAreCombined() {
+        List<StructureObservation> structures = ObservationReader.read(DATA, STRUCTURES_12345).structures();
+        WorldSeedSearch.StructureStep agreeing = WorldSeedSearch.structureSeeds(DATA, structures, netherChunkOf(12345L, 0, 0), 2, () -> false,
+            (done, total) -> { }, (search, pieces) -> { });
+        assertEquals(List.of(12345L), agreeing.structureSeeds());
+        assertFalse(agreeing.netherDisagrees());
+        // nether bedrock of another world: the structures' seed is kept, and the disagreement shown
+        WorldSeedSearch.StructureStep disagreeing = WorldSeedSearch.structureSeeds(DATA, structures, netherChunkOf(999L, 0, 0), 2, () -> false,
+            (done, total) -> { }, (search, pieces) -> { });
+        assertEquals(List.of(12345L), disagreeing.structureSeeds());
+        assertTrue(disagreeing.netherDisagrees());
+        // too few structures to search: the nether alone
+        List<StructureObservation> one = ObservationReader.read(DATA, List.of("igloo 48 208")).structures();
+        WorldSeedSearch.StructureStep netherOnly = WorldSeedSearch.structureSeeds(DATA, one, netherChunkOf(12345L, 0, 0), 2, () -> false,
+            (done, total) -> { }, (search, pieces) -> { });
+        assertFalse(netherOnly.plan().canSearch());
+        assertTrue(netherOnly.searched() && netherOnly.structureSeeds().contains(12345L));
+    }
 }

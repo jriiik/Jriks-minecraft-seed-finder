@@ -54,7 +54,7 @@ import java.util.function.IntConsumer;
  *   <li>One surface (only the floor, or only the roof) never pins its hidden number down. Numbers that differ from the
  *       right one in a few bits move every block's 24-bit number only a little, so they agree with it on every block
  *       that is not right at its threshold: a chunk's floor leaves 3 to 16 of these near-misses, a 4 x 4 patch
- *       thousands. Each gives an unrelated key, so one surface gives several keys (2 to about 500), all of which fit
+ *       up to thousands. Each gives an unrelated key, so one surface gives several keys (2 to about 500), all of which fit
  *       it. The other surface removes them.</li>
  * </ul>
  *
@@ -106,13 +106,14 @@ public final class NetherBedrockSearch {
      */
     public static final double MIN_SEARCH_BITS = 40;
     /**
-     * The searched surface also needs this many rare blocks: bedrock at y 3, 4, 123 or 124, or no bedrock at y 1, 2, 125
-     * or 126 (what was seen happens for at most 40% of the numbers). Only those prune the upper part of the search, so
-     * its time depends mostly on them. Measured on one thread with 32 x 32 areas of the floor: 30 rare blocks about 30
-     * CPU seconds, 15 rare and 35 others 80, 8 and 60 others 3 to 4 minutes, 4 and 100 others about 13 minutes, none
-     * and 150 others about 70 minutes. (A chunk's floor has about 300.)
+     * The searched surface also needs this much rare-block weight. Only rare blocks prune the upper part of the search,
+     * so its time depends mostly on them: a strong one (bedrock at y 4 or 123, or no bedrock at y 1 or 126: what was
+     * seen happens for 20% of the numbers) weighs 4, a weak one (bedrock at y 3 or 124, no bedrock at y 2 or 125: 40%)
+     * weighs 1, as it prunes far less. Measured on one thread with 32 x 32 areas of the floor: 30 strong rare blocks
+     * about 30 CPU seconds; 8 strong ones among common blocks about 70 seconds, 8 weak ones 8 to 11 minutes; 4 rare and
+     * 100 others about 13 minutes; none and 150 others about 70 minutes. (A chunk's floor has about 300 rare blocks.)
      */
-    public static final int MIN_RARE_BLOCKS = 8;
+    public static final int MIN_RARE_WEIGHT = 32;
     /** At most this many structure seeds are listed; with more the search stops ({@link Outcome#capped()}). */
     public static final int MAX_STRUCTURE_SEEDS = 500;
     /**
@@ -129,14 +130,14 @@ public final class NetherBedrockSearch {
      *
      * @param floorBlocks     informative blocks of the floor (y 1 to 4); other heights never change and tell nothing
      * @param roofBlocks      informative blocks of the roof (y 123 to 126)
-     * @param floorRareBlocks how many of the floor blocks are rare (see {@link #MIN_RARE_BLOCKS})
-     * @param roofRareBlocks  how many of the roof blocks are rare
+     * @param floorRareWeight the floor's rare-block weight (see {@link #MIN_RARE_WEIGHT})
+     * @param roofRareWeight  the roof's rare-block weight
      * @param floorBits       the floor blocks' information, summed
      * @param roofBits        the roof blocks' information, summed
      * @param problems        notes left out: blocks noted both as bedrock and as not bedrock, and notes that break the
      *                        game's rules whatever the seed (see {@link BedrockEvidence#problems()})
      */
-    public record Plan(int floorBlocks, int roofBlocks, int floorRareBlocks, int roofRareBlocks, double floorBits, double roofBits,
+    public record Plan(int floorBlocks, int roofBlocks, int floorRareWeight, int roofRareWeight, double floorBits, double roofBits,
                        List<String> problems) {
 
         public Plan {
@@ -158,19 +159,19 @@ public final class NetherBedrockSearch {
         }
 
         /**
-         * True when the search can run: one surface has at least {@link #MIN_SEARCH_BITS} and {@link #MIN_RARE_BLOCKS}
-         * rare blocks.
+         * True when the search can run: one surface has at least {@link #MIN_SEARCH_BITS} and a rare-block weight of at
+         * least {@link #MIN_RARE_WEIGHT}.
          */
         public boolean canSearch() {
             return canSearchFloor() || canSearchRoof();
         }
 
         boolean canSearchFloor() {
-            return floorBits >= MIN_SEARCH_BITS && floorRareBlocks >= MIN_RARE_BLOCKS;
+            return floorBits >= MIN_SEARCH_BITS && floorRareWeight >= MIN_RARE_WEIGHT;
         }
 
         boolean canSearchRoof() {
-            return roofBits >= MIN_SEARCH_BITS && roofRareBlocks >= MIN_RARE_BLOCKS;
+            return roofBits >= MIN_SEARCH_BITS && roofRareWeight >= MIN_RARE_WEIGHT;
         }
 
         /**
@@ -195,9 +196,11 @@ public final class NetherBedrockSearch {
      * @param piecesDone     how many of the {@link #PIECES} pieces were searched
      * @param capped         true when too many seeds or numbers fit ({@link #MAX_STRUCTURE_SEEDS},
      *                       {@link #MAX_SURFACE_FITS}): the search stopped there and the lists are incomplete
+     * @param disagreements  structure seeds whose key passed the search's tests but which the engine's bedrock model then
+     *                       found not to fit (left out): 0 unless the search and the model disagree, which tests check
      */
     public record Outcome(Plan plan, List<Long> structureSeeds, List<Long> bedrockKeys, boolean searchedRoof, long surfaceFits,
-                          int piecesDone, boolean capped) {
+                          int piecesDone, boolean capped, int disagreements) {
 
         public Outcome {
             structureSeeds = List.copyOf(structureSeeds);
@@ -272,9 +275,11 @@ public final class NetherBedrockSearch {
      *                       didn't have enough on its own)
      * @param complete       false when the search was stopped before it had an answer
      * @param plan           what all the nether notes reveal together, with the notes left out
+     * @param falseKeys      wrong keys expected over all the searches run (see {@link #find}); at most
+     *                       {@link #MAX_FALSE_FIT_CHANCE} for a proven result
      */
     public record Finding(Optional<Outcome> outcome, List<Long> structureSeeds, List<Long> bedrockKeys, List<ChunkReport> chunks,
-                          boolean together, boolean complete, Plan plan) {
+                          boolean together, boolean complete, Plan plan, double falseKeys) {
 
         public Finding {
             structureSeeds = List.copyOf(structureSeeds);
@@ -282,9 +287,17 @@ public final class NetherBedrockSearch {
             chunks = List.copyOf(chunks);
         }
 
-        /** True when {@link #outcome()} is proven (see {@link Outcome#proven()}). */
+        /**
+         * True when {@link #outcome()} is proven (see {@link Outcome#proven()}) and the searches run, all together,
+         * would let a wrong key through only by a rare chance.
+         */
         public boolean proven() {
-            return outcome.isPresent() && outcome.get().proven() && !structureSeeds.isEmpty();
+            return outcome.isPresent() && outcome.get().proven() && !structureSeeds.isEmpty() && falseKeys <= MAX_FALSE_FIT_CHANCE;
+        }
+
+        /** True when the reported search stopped because too many seeds fitted: its list is then only part of them. */
+        public boolean capped() {
+            return outcome.isPresent() && outcome.get().capped();
         }
 
         /** The chunks that fit no seed or contradict the one found: made before 1.18, or misread. */
@@ -299,6 +312,8 @@ public final class NetherBedrockSearch {
     private final BedrockDimension dimension;
     private final BedrockRule floor;
     private final BedrockRule roof;
+    private final int maxStructureSeeds;
+    private final int maxSurfaceFits;
 
     /**
      * Uses the nether's bedrock rules of this version.
@@ -307,6 +322,13 @@ public final class NetherBedrockSearch {
      *                                  old 48-bit generator
      */
     public NetherBedrockSearch(VersionData data) {
+        this(data, MAX_STRUCTURE_SEEDS, MAX_SURFACE_FITS);
+    }
+
+    /** With other limits than {@link #MAX_STRUCTURE_SEEDS} and {@link #MAX_SURFACE_FITS} (for tests). */
+    NetherBedrockSearch(VersionData data, int maxStructureSeeds, int maxSurfaceFits) {
+        this.maxStructureSeeds = maxStructureSeeds;
+        this.maxSurfaceFits = maxSurfaceFits;
         BedrockDimension nether = data.bedrock().get(NETHER);
         if (nether == null) {
             throw new IllegalArgumentException("Minecraft " + data.version() + " has no bedrock rules for " + NETHER);
@@ -495,8 +517,8 @@ public final class NetherBedrockSearch {
         for (BedrockObservation block : blocks) {
             long length = allowed(block)[1];
             double bits = BedrockSurface.bitsOf(length);
-            // Rare: what was seen happens for at most 40% of the numbers (the shares are 0.2, 0.4, 0.6 or 0.8).
-            int rare = length < FULL / 2 ? 1 : 0;
+            // Rare: what was seen happens for 20% (strong, weight 4) or 40% (weak, 1) of the numbers.
+            int rare = length <= FULL / 4 ? 4 : length < FULL / 2 ? 1 : 0;
             if (floor.isRandomAt(block.y())) {
                 floorBlocks++;
                 floorRare += rare;
@@ -537,12 +559,12 @@ public final class NetherBedrockSearch {
             throw new IllegalArgumentException("threads must be at least 1, got " + threads);
         }
         if (!plan.canSearch()) {
-            return new Outcome(plan, List.of(), List.of(), false, 0, 0, false);
+            return new Outcome(plan, List.of(), List.of(), false, 0, 0, false, 0);
         }
         BedrockSurface floorSurface = surface(floor, blocks);
         BedrockSurface roofSurface = surface(roof, blocks);
         if (floorSurface.impossible() || roofSurface.impossible()) {
-            return new Outcome(plan, List.of(), List.of(), false, 0, PIECES, false);
+            return new Outcome(plan, List.of(), List.of(), false, 0, PIECES, false, 0);
         }
         // Search the surface that looks cheaper, among those that can be searched.
         BedrockSurfaceSearch floorSearch = plan.canSearchFloor() ? new BedrockSurfaceSearch(floorSurface) : null;
@@ -616,6 +638,7 @@ public final class NetherBedrockSearch {
         /** Structure seeds by key (guarded by this). */
         private final TreeMap<Long, long[]> seedsByKey = new TreeMap<>();
         private int seedCount;
+        private final AtomicInteger disagreements = new AtomicInteger();
 
         Collector(BedrockSurface searched, BedrockSurface other, List<BedrockObservation> blocks) {
             this.searched = searched;
@@ -632,7 +655,7 @@ public final class NetherBedrockSearch {
             if (full.get()) {
                 return;
             }
-            if (fits.incrementAndGet() > MAX_SURFACE_FITS) {
+            if (fits.incrementAndGet() > maxSurfaceFits) {
                 full.set(true);
                 return;
             }
@@ -642,7 +665,9 @@ public final class NetherBedrockSearch {
                 if (other.size() > 0 && !other.accepts(hiddenNumber(key, other.hash()))) {
                     continue;
                 }
-                long[] seeds = Arrays.stream(structureSeedsOfKey(key)).filter(seed -> fitsAll(seed, blocks)).toArray();
+                long[] all = structureSeedsOfKey(key);
+                long[] seeds = Arrays.stream(all).filter(seed -> fitsAll(seed, blocks)).toArray();
+                disagreements.addAndGet(all.length - seeds.length);
                 if (seeds.length == 0) {
                     continue;
                 }
@@ -650,7 +675,7 @@ public final class NetherBedrockSearch {
                     if (seedsByKey.put(key, seeds) == null) {
                         seedCount += seeds.length;
                     }
-                    if (seedCount > MAX_STRUCTURE_SEEDS) {
+                    if (seedCount > maxStructureSeeds) {
                         full.set(true);
                     }
                 }
@@ -661,34 +686,42 @@ public final class NetherBedrockSearch {
             List<Long> seeds = seedsByKey.values().stream()
                 .flatMap(list -> Arrays.stream(list).boxed())
                 .sorted()
-                .limit(MAX_STRUCTURE_SEEDS)
+                .limit(maxStructureSeeds)
                 .toList();
             Set<Long> kept = new HashSet<>(seeds);
             List<Long> keys = seedsByKey.entrySet().stream()
                 .filter(entry -> Arrays.stream(entry.getValue()).anyMatch(kept::contains))
                 .map(Map.Entry::getKey)
                 .toList();
-            return new Outcome(plan, seeds, keys, searchedRoof, fits.get(), piecesDone, full.get());
+            return new Outcome(plan, seeds, keys, searchedRoof, fits.get(), piecesDone, full.get(), disagreements.get());
         }
     }
 
     // ------------------------------------------------------------------------------------------------ chunk by chunk
 
+    /** {@link #find} tries leaving out each chunk in turn only when there are at most this many (each try is a search). */
+    public static final int MAX_LEAVE_OUT_CHUNKS = 8;
+
     /**
-     * Finds the structure seed from nether notes that may include chunks not made by 1.18 or later (or misread ones),
-     * one chunk at a time:
+     * Finds the structure seed from nether notes that may include chunks not made by 1.18 or later (or misread ones):
      * <ol>
      *   <li>Chunks with {@link Plan#enough() enough} on their own (both surfaces, {@link #PROOF_BITS}) are searched one
      *       by one, the most informative first. A chunk no seed fits is reported ({@link ChunkStatus#FITS_NO_SEED}) and
      *       the next one is tried; the first {@link Outcome#proven() proven} result ends this step.</li>
-     *   <li>Without one, the chunks not found to fit no seed are searched together, when that adds something (this is
-     *       how scattered notes, chunks with only one surface known, or a chunk whose result was only a list of
-     *       candidates get combined).</li>
+     *   <li>Without one, the chunks not found to fit no seed are searched together (this is how scattered notes, chunks
+     *       with only one surface known, or a chunk whose result was only a list of candidates get combined).</li>
+     *   <li>When nothing fits them together, one of them may be from an older version or misread: with at most
+     *       {@link #MAX_LEAVE_OUT_CHUNKS} of them, each is left out in turn, and when exactly one try finds seeds and
+     *       its result is proven, that is the result and the chunk left out is reported
+     *       ({@link ChunkStatus#CONTRADICTS}).</li>
      *   <li>Without a result from that either, the first chunk that gave candidates (not proven) is reported.</li>
      * </ol>
-     * A result of one chunk is then checked against every other chunk's notes with the engine's bedrock model
-     * ({@link ChunkStatus#FITS} or {@link ChunkStatus#CONTRADICTS}); when it has several keys, those that some fitting
-     * chunk rules out are dropped (unless that would drop them all). Notes from other dimensions are ignored.
+     * Every search run here is one more chance for notes that don't follow the formula to fit a wrong key, so a result
+     * counts as proven only when the expected number of wrong keys over all the searches run, added up, is at most
+     * {@link #MAX_FALSE_FIT_CHANCE} (for whole chunks this is always so). A result of one chunk is then checked against
+     * every other chunk's notes with the engine's bedrock model ({@link ChunkStatus#FITS} or
+     * {@link ChunkStatus#CONTRADICTS}); when it has several keys, a chunk rules some out only if a wrong key would pass
+     * its blocks by a rare chance. Notes from other dimensions are ignored.
      *
      * @param progress hears which search runs and how many of its pieces are done
      */
@@ -705,10 +738,10 @@ public final class NetherBedrockSearch {
         order.sort(Comparator.comparingDouble((ChunkPos chunk) -> -plans.get(chunk).bits())
             .thenComparingInt(ChunkPos::x)
             .thenComparingInt(ChunkPos::z));
+        Searches searches = new Searches(threads, stop, progress);
         Map<ChunkPos, ChunkStatus> status = new HashMap<>();
         order.forEach(chunk -> status.put(chunk, ChunkStatus.NOT_CHECKED));
 
-        int searches = 0;
         Outcome candidates = null;
         ChunkPos candidatesChunk = null;
         for (ChunkPos chunk : order) {
@@ -716,10 +749,9 @@ public final class NetherBedrockSearch {
             if (!plan.enough() || !plan.canSearch()) {
                 continue;
             }
-            int search = searches++;
-            Outcome outcome = run(byChunk.get(chunk), plan, threads, stop, pieces -> progress.update(search, pieces));
-            if (!outcome.complete() && !outcome.capped()) {
-                return finding(Optional.of(outcome), List.of(), order, plans, status, false, false, all); // stopped
+            Outcome outcome = searches.run(byChunk.get(chunk), plan);
+            if (searches.stopped(outcome)) {
+                return finding(Optional.of(outcome), List.of(), order, plans, status, false, false, all, searches.falseKeys); // stopped
             }
             if (outcome.structureSeeds().isEmpty()) {
                 if (outcome.complete()) {
@@ -729,7 +761,7 @@ public final class NetherBedrockSearch {
             }
             if (outcome.proven()) {
                 status.put(chunk, ChunkStatus.USED);
-                return checkOthers(outcome, chunk, byChunk, order, plans, status, all);
+                return checkOthers(outcome, Set.of(chunk), byChunk, order, plans, status, all, searches.falseKeys);
             }
             if (candidates == null) {
                 candidates = outcome;
@@ -738,66 +770,134 @@ public final class NetherBedrockSearch {
         }
 
         List<ChunkPos> rest = order.stream().filter(chunk -> status.get(chunk) == ChunkStatus.NOT_CHECKED).toList();
-        List<BedrockObservation> blocks = rest.stream().flatMap(chunk -> byChunk.get(chunk).stream()).toList();
-        Plan plan = planOf(blocks, List.of());
         boolean addsSomething = rest.size() > 1 || candidatesChunk == null;
         Outcome together = null;
-        if (!rest.isEmpty() && addsSomething && plan.canSearch()) {
-            int search = searches;
-            together = run(blocks, plan, threads, stop, pieces -> progress.update(search, pieces));
-            if (!together.complete() && !together.capped()) {
-                return finding(Optional.of(together), List.of(), order, plans, status, true, false, all); // stopped
+        if (!rest.isEmpty() && addsSomething) {
+            together = searches.run(blocksOf(rest, byChunk), null);
+            if (searches.stopped(together)) {
+                return finding(Optional.of(together), List.of(), order, plans, status, true, false, all, searches.falseKeys); // stopped
             }
             if (!together.structureSeeds().isEmpty()) {
                 rest.forEach(chunk -> status.put(chunk, ChunkStatus.USED));
-                return finding(Optional.of(together), together.structureSeeds(), order, plans, status, true, true, all);
+                return finding(Optional.of(together), together.structureSeeds(), order, plans, status, true, true, all, searches.falseKeys);
+            }
+            if (together.complete() && rest.size() > 1 && rest.size() <= MAX_LEAVE_OUT_CHUNKS) {
+                Outcome found = null;
+                ChunkPos leftOut = null;
+                int tries = 0;
+                for (ChunkPos chunk : rest) {
+                    List<ChunkPos> others = rest.stream().filter(other -> !other.equals(chunk)).toList();
+                    Outcome outcome = searches.run(blocksOf(others, byChunk), null);
+                    if (searches.stopped(outcome)) {
+                        return finding(Optional.of(outcome), List.of(), order, plans, status, true, false, all, searches.falseKeys); // stopped
+                    }
+                    if (!outcome.structureSeeds().isEmpty()) {
+                        tries++;
+                        found = outcome;
+                        leftOut = chunk;
+                    }
+                }
+                if (tries == 1 && found.proven() && searches.falseKeys <= MAX_FALSE_FIT_CHANCE) {
+                    ChunkPos misfit = leftOut;
+                    rest.stream().filter(chunk -> !chunk.equals(misfit)).forEach(chunk -> status.put(chunk, ChunkStatus.USED));
+                    status.put(misfit, ChunkStatus.CONTRADICTS);
+                    return finding(Optional.of(found), found.structureSeeds(), order, plans, status, true, true, all, searches.falseKeys);
+                }
             }
         }
         if (candidates != null) {
             status.put(candidatesChunk, ChunkStatus.USED);
-            return checkOthers(candidates, candidatesChunk, byChunk, order, plans, status, all);
+            return checkOthers(candidates, Set.of(candidatesChunk), byChunk, order, plans, status, all, searches.falseKeys);
         }
-        return finding(Optional.ofNullable(together), List.of(), order, plans, status, together != null, true, all);
+        return finding(Optional.ofNullable(together), List.of(), order, plans, status, together != null, true, all, searches.falseKeys);
     }
 
-    /** Checks the result of one chunk against every other chunk, and drops keys that a fitting chunk rules out. */
-    private Finding checkOthers(Outcome outcome, ChunkPos searched, Map<ChunkPos, List<BedrockObservation>> byChunk, List<ChunkPos> order,
-                                Map<ChunkPos, Plan> plans, Map<ChunkPos, ChunkStatus> status, Plan all) {
+    private static List<BedrockObservation> blocksOf(List<ChunkPos> chunks, Map<ChunkPos, List<BedrockObservation>> byChunk) {
+        return chunks.stream().flatMap(chunk -> byChunk.get(chunk).stream()).toList();
+    }
+
+    /** The searches of one {@link #find}, numbered for the progress, with their chances of a wrong key added up. */
+    private final class Searches {
+
+        private final int threads;
+        private final BooleanSupplier stop;
+        private final Progress progress;
+        private int count;
+        /** Wrong keys expected over all searches run so far (see {@link #find}). */
+        double falseKeys;
+
+        Searches(int threads, BooleanSupplier stop, Progress progress) {
+            this.threads = threads;
+            this.stop = stop;
+            this.progress = progress;
+        }
+
+        /**
+         * Searches these blocks ({@code plan} null: work it out). A search that could give a proven result is one more
+         * chance for a wrong key: notes that don't follow the formula fit by chance (2^(48 - bits)), and, when its
+         * near-misses are few enough for a proof, a misread block lets one of them through.
+         */
+        Outcome run(List<BedrockObservation> blocks, Plan plan) {
+            Plan used = plan != null ? plan : planOf(blocks, List.of());
+            int search = count++;
+            Outcome outcome = NetherBedrockSearch.this.run(blocks, used, threads, stop, pieces -> progress.update(search, pieces));
+            if (outcome.piecesDone() > 0 && used.enough()) {
+                falseKeys += used.expectedFalseKeys();
+                if (outcome.expectedNearMissKeys() <= MAX_FALSE_FIT_CHANCE) {
+                    falseKeys += outcome.expectedNearMissKeys();
+                }
+            }
+            return outcome;
+        }
+
+        /** True when the search was stopped before it had an answer (not when too many fitted). */
+        boolean stopped(Outcome outcome) {
+            return outcome.plan().canSearch() && !outcome.complete() && !outcome.capped();
+        }
+    }
+
+    /**
+     * Checks the result against every chunk not searched yet: a chunk fits when its blocks fit at least one of the keys
+     * kept. With several keys, a chunk rules out those whose seeds don't fit its blocks only when a wrong key would get
+     * through its blocks by a rare chance (keys x 2^-bits at most {@link #MAX_FALSE_FIT_CHANCE}), so a weak chunk with
+     * a misread block can't drop the right key.
+     */
+    private Finding checkOthers(Outcome outcome, Set<ChunkPos> searched, Map<ChunkPos, List<BedrockObservation>> byChunk, List<ChunkPos> order,
+                                Map<ChunkPos, Plan> plans, Map<ChunkPos, ChunkStatus> status, Plan all, double falseKeys) {
         // Seeds with one key have the same nether bedrock, so one seed per key is enough.
         Map<Long, Long> seedOfKey = new LinkedHashMap<>();
         for (long seed : outcome.structureSeeds()) {
             seedOfKey.putIfAbsent(bedrockKey(seed), seed);
         }
+        List<ChunkPos> others = order.stream().filter(chunk -> !searched.contains(chunk) && status.get(chunk) == ChunkStatus.NOT_CHECKED).toList();
         Set<Long> keys = new LinkedHashSet<>(seedOfKey.keySet());
-        for (ChunkPos chunk : order) {
-            if (chunk.equals(searched) || status.get(chunk) != ChunkStatus.NOT_CHECKED) {
-                continue; // searched on its own already: nothing fits it
-            }
+        for (ChunkPos chunk : others) {
             List<BedrockObservation> blocks = byChunk.get(chunk);
-            Set<Long> fitting = new HashSet<>();
-            seedOfKey.forEach((key, seed) -> {
-                if (fitsAll(seed, blocks)) {
+            Set<Long> fitting = new LinkedHashSet<>();
+            for (long key : keys) {
+                if (fitsAll(seedOfKey.get(key), blocks)) {
                     fitting.add(key);
                 }
-            });
-            status.put(chunk, fitting.isEmpty() ? ChunkStatus.CONTRADICTS : ChunkStatus.FITS);
-            if (!fitting.isEmpty()) {
-                Set<Long> narrowed = new LinkedHashSet<>(keys);
-                narrowed.retainAll(fitting);
-                if (!narrowed.isEmpty()) {
-                    keys = narrowed;
-                }
             }
+            if (!fitting.isEmpty() && fitting.size() < keys.size()
+                && keys.size() * plans.get(chunk).expectedFalseKeys() / Math.pow(2, 48) <= MAX_FALSE_FIT_CHANCE) {
+                keys = fitting;
+            }
+        }
+        for (ChunkPos chunk : others) {
+            List<BedrockObservation> blocks = byChunk.get(chunk);
+            boolean fits = keys.stream().anyMatch(key -> fitsAll(seedOfKey.get(key), blocks));
+            status.put(chunk, fits ? ChunkStatus.FITS : ChunkStatus.CONTRADICTS);
         }
         Set<Long> kept = keys;
         List<Long> seeds = outcome.structureSeeds().stream().filter(seed -> kept.contains(bedrockKey(seed))).toList();
-        return finding(Optional.of(outcome), seeds, order, plans, status, false, true, all);
+        return finding(Optional.of(outcome), seeds, order, plans, status, false, true, all, falseKeys);
     }
 
     private static Finding finding(Optional<Outcome> outcome, List<Long> seeds, List<ChunkPos> order, Map<ChunkPos, Plan> plans,
-                                   Map<ChunkPos, ChunkStatus> status, boolean together, boolean complete, Plan all) {
+                                   Map<ChunkPos, ChunkStatus> status, boolean together, boolean complete, Plan all, double falseKeys) {
         List<Long> keys = seeds.stream().map(NetherBedrockSearch::bedrockKey).distinct().sorted().toList();
         List<ChunkReport> chunks = order.stream().map(chunk -> new ChunkReport(chunk, plans.get(chunk), status.get(chunk))).toList();
-        return new Finding(outcome, seeds, keys, chunks, together, complete, all);
+        return new Finding(outcome, seeds, keys, chunks, together, complete, all, falseKeys);
     }
 }
