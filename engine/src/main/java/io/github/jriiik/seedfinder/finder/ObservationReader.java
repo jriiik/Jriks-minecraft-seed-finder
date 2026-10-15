@@ -3,10 +3,14 @@ package io.github.jriiik.seedfinder.finder;
 import io.github.jriiik.seedfinder.bedrock.BedrockDimension;
 import io.github.jriiik.seedfinder.bedrock.BedrockObservation;
 import io.github.jriiik.seedfinder.bedrock.BedrockRule;
+import io.github.jriiik.seedfinder.biome.OverworldBiomes;
 import io.github.jriiik.seedfinder.version.VersionData;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
+import java.util.Optional;
 import java.util.OptionalLong;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -26,14 +30,25 @@ import java.util.regex.Pattern;
  * bedrock 10 -61 20            single blocks
  * not-bedrock 11 -61 20
  * </pre>
+ * Overworld biomes can be written two ways:
+ * <pre>
+ * biome dark_forest 120 64 -35     the biome F3 shows at a block (x y z); "minecraft:" may be left out
+ *
+ * biome-grid 112 64 -48 a=plains b=forest   the biomes the game stored for 4 x 4 x 4 block cells (what the mod reads),
+ * aab?                                      below a header with a block of the north-west cell and a legend: one row
+ * abbb                                      per cell southwards (4 blocks), one letter per cell eastwards, ? = not read
+ * </pre>
+ * A line {@code preset large_biomes} (or {@code amplified}, {@code normal}) says which world preset the world uses;
+ * without it the biomes are tried with each preset in turn.
  * A line {@code hashed-seed <number>} gives the hashed seed the server sent (the mod writes it into its notes).
  * The overworld is assumed; write the dimension after the keyword for the nether ({@code bedrock-heights nether 0 0}).
  * A grid ends at an empty line or at the first line that is not a row.
  */
 public final class ObservationReader {
 
-    /** Structures, bedrock and the hashed seed read from a list of lines. */
-    public record Observations(List<StructureObservation> structures, List<BedrockObservation> bedrock, OptionalLong hashedSeed) {
+    /** Structures, bedrock, biomes, the world preset and the hashed seed read from a list of lines. */
+    public record Observations(List<StructureObservation> structures, List<BedrockObservation> bedrock, List<BiomeObservation> biomes,
+                               Optional<OverworldBiomes.Preset> preset, OptionalLong hashedSeed) {
     }
 
     /** A mistake in one line; {@link #lineIndex()} is 0-based. */
@@ -54,6 +69,9 @@ public final class ObservationReader {
     private static final Pattern HEADER = Pattern.compile(
         "(?i)(bedrock[- ]heights|bedrock[- ]layer|not[- ]bedrock|no[- ]bedrock|bedrock)(?=$|[\\s:,(\\[])(.*)");
     private static final Pattern HASHED_SEED = Pattern.compile("(?i)hashed[- ]seed[\\s:=]+(-?\\d+)");
+    private static final Pattern BIOME = Pattern.compile("(?i)(biome[- ]grid|biome)(?=$|[\\s:,(\\[])(.*)");
+    private static final Pattern PRESET = Pattern.compile("(?i)(?:world[- ])?preset[\\s:=]+(\\S.*?)\\s*");
+    private static final Pattern BIOME_ROW = Pattern.compile("[A-Za-z?]+");
     private static final Pattern NUMBER_ROW = Pattern.compile("(?:-?\\d+|\\?)(?:[\\s,;]+(?:-?\\d+|\\?))*");
     private static final Pattern DIGIT_ROW = Pattern.compile("[0-9?]+");
     private static final Pattern LAYER_ROW = Pattern.compile("[bB.?]+");
@@ -68,6 +86,8 @@ public final class ObservationReader {
     public static Observations read(VersionData data, List<String> lines) {
         List<StructureObservation> structures = new ArrayList<>();
         List<BedrockObservation> bedrock = new ArrayList<>();
+        List<BiomeObservation> biomes = new ArrayList<>();
+        Optional<OverworldBiomes.Preset> preset = Optional.empty();
         OptionalLong hashedSeed = OptionalLong.empty();
         int i = 0;
         while (i < lines.size()) {
@@ -82,6 +102,24 @@ public final class ObservationReader {
                         throw new IllegalArgumentException("the hashed seed must be a whole number from -9223372036854775808 to 9223372036854775807");
                     }
                     i++;
+                    continue;
+                }
+                Matcher presetLine = PRESET.matcher(withoutComment(text));
+                if (presetLine.matches()) {
+                    String name = presetLine.group(1);
+                    preset = Optional.of(OverworldBiomes.Preset.byName(name.replace(' ', '_')).orElseThrow(() -> new IllegalArgumentException(
+                        "unknown world preset '" + name + "' (use normal, large_biomes or amplified)")));
+                    i++;
+                    continue;
+                }
+                Matcher biome = BIOME.matcher(withoutComment(text));
+                if (biome.matches()) {
+                    if (biome.group(1).length() > "biome".length()) {
+                        i = readBiomeGrid(lines, i, biome.group(2), biomes);
+                    } else {
+                        biomes.add(biomeLine(biome.group(2)));
+                        i++;
+                    }
                     continue;
                 }
                 if (!header.matches()) {
@@ -120,7 +158,115 @@ public final class ObservationReader {
                 throw new LineException(i, e.getMessage());
             }
         }
-        return new Observations(structures, bedrock, hashedSeed);
+        return new Observations(structures, bedrock, biomes, preset, hashedSeed);
+    }
+
+    /** "biome dark_forest 120 64 -35": the name (words may be joined by spaces), then the block's x y z. */
+    private static BiomeObservation biomeLine(String text) {
+        String[] tokens = text.replaceAll("[\\[\\]()]", " ").strip().split("[\\s,;]+");
+        List<String> name = new ArrayList<>();
+        List<Integer> numbers = new ArrayList<>();
+        for (String raw : tokens) {
+            String token = stripColons(raw);
+            if (token.isEmpty() || token.equals("~")) {
+                continue;
+            }
+            if (numbers.isEmpty() && token.matches(".*[A-Za-z].*")) {
+                name.add(token);
+            } else {
+                numbers.add(coordinate(token));
+            }
+        }
+        if (name.isEmpty() || numbers.size() != 3) {
+            throw new IllegalArgumentException("expected biome <name> x y z, like: biome dark_forest 120 64 -35");
+        }
+        return new BiomeObservation(biomeId(String.join("_", name)), numbers.get(0), numbers.get(1), numbers.get(2), false);
+    }
+
+    /** "biome: forest" and "biome-grid: 3000 64 -3000" are read like the lines without the colon. */
+    private static String stripColons(String token) {
+        return token.replaceAll("^:+|:+$", "");
+    }
+
+    /** "Dark Forest", "dark_forest" and "minecraft:dark_forest" all name the same biome. */
+    private static String biomeId(String name) {
+        String id = name.strip().toLowerCase(Locale.ROOT).replace(' ', '_');
+        return id.contains(":") ? id : "minecraft:" + id;
+    }
+
+    private static int readBiomeGrid(List<String> lines, int headerIndex, String header, List<BiomeObservation> out) {
+        Map<Character, String> legend = new HashMap<>();
+        List<Integer> numbers = new ArrayList<>();
+        for (String raw : header.replaceAll("[\\[\\]()]", " ").strip().split("[\\s,;]+")) {
+            String token = stripColons(raw);
+            if (token.isEmpty()) {
+                continue;
+            }
+            int equals = token.indexOf('=');
+            if (equals > 0) {
+                if (equals != 1 || !Character.isLetter(token.charAt(0))) {
+                    throw new LineException(headerIndex, "a legend entry is one letter, '=' and a biome, like a=plains; not '" + token + "'");
+                }
+                legend.put(token.charAt(0), biomeId(token.substring(2)));
+            } else {
+                try {
+                    numbers.add(coordinate(token));
+                } catch (IllegalArgumentException e) {
+                    throw new LineException(headerIndex, e.getMessage());
+                }
+            }
+        }
+        if (numbers.size() != 3) {
+            throw new LineException(headerIndex, "expected biome-grid x y z a=plains b=forest ... (a block of the first cell, then the legend)");
+        }
+        int x0 = numbers.get(0) & ~3;
+        int y = numbers.get(1);
+        int z0 = numbers.get(2) & ~3;
+        int row = 0;
+        int i = headerIndex + 1;
+        for (; i < lines.size(); i++) {
+            if (lines.get(i).strip().startsWith("#")) {
+                continue;
+            }
+            String text = withoutComment(lines.get(i).strip());
+            String compact = text.replaceAll("\\s+", "");
+            if (compact.isEmpty() || !BIOME_ROW.matcher(compact).matches()) {
+                if (row == 0) {
+                    throw new LineException(i, "biome-grid needs rows of legend letters below it, like aab? (? = not read)");
+                }
+                break;
+            }
+            for (int column = 0; column < compact.length(); column++) {
+                char cell = compact.charAt(column);
+                if (cell == '?') {
+                    continue;
+                }
+                String biome = legend.get(cell);
+                if (biome == null) {
+                    throw new LineException(i, "the letter '" + cell + "' is not in the legend of the biome-grid line above");
+                }
+                out.add(new BiomeObservation(biome, x0 + 4 * column, y, z0 + 4 * row, true));
+            }
+            row++;
+        }
+        if (row == 0) {
+            throw new LineException(headerIndex, "biome-grid needs rows of legend letters below it, like aab? (? = not read)");
+        }
+        return i;
+    }
+
+    private static int coordinate(String token) {
+        if (token.matches("-?\\d*[.]\\d+|-?\\d+[.]\\d*")) {
+            throw new IllegalArgumentException("'" + token + "' is not a whole block coordinate");
+        }
+        if (!token.matches("-?\\d+")) {
+            throw new IllegalArgumentException("'" + token + "' is not a whole number");
+        }
+        long value = token.length() > 12 ? Long.MAX_VALUE : Long.parseLong(token);
+        if (Math.abs(value) > WORLD_LIMIT) {
+            throw new IllegalArgumentException(token + " is outside the world (coordinates go from -30000000 to 30000000)");
+        }
+        return (int) value;
     }
 
     /** A bedrock line without a trailing "# comment" (structure lines keep theirs: /locate output can contain '#'). */

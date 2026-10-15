@@ -5,8 +5,9 @@ such as where villages, temples and other structures are. Built from scratch, st
 Minecraft version (**26.3**).
 
 > **Work in progress.** From about six structure positions the finder works out the world's *structure seed* (the
-> part of the seed that decides where structures go), usually in under a second, and names the likely full seed.
-> With the bedrock floor of one chunk added, it finds the full seed for certain. A Fabric mod does all of this while
+> part of the seed that decides where structures go), usually in under a second, and names the likely full seed
+> (the nether's bedrock floor and roof of one chunk work instead of structures).
+> With the bedrock floor of one chunk, or the biomes around you, added, it finds the full seed for certain. A Fabric mod does all of this while
 > you play, and recognizes villages, outposts, trial chambers, ancient cities, trail ruins, camps, desert pyramids,
 > jungle temples, swamp huts, igloos, shipwrecks, ocean ruins and ruined portals by itself. See the
 > [roadmap](docs/ROADMAP.md).
@@ -20,14 +21,15 @@ Minecraft version (**26.3**).
 | Structure placement for Minecraft 26.3, checked against the real game | ✅ done |
 | `seedfinder locate`: list structure spots for a seed | ✅ done |
 | `seedfinder find`: work out the structure seed (48 bits) from structure positions | ✅ done |
+| Work out the structure seed from the nether's bedrock alone (one chunk's floor and roof; in `find`, or by the mod) | ✅ done |
 | Name the likely full seed (64 bits) of worlds whose seed was picked by Minecraft or typed as text | ✅ done |
 | Find the full seed for certain from the bedrock floor (`seedfinder full-seed`, or bedrock notes in `find`) | ✅ done |
+| Find the full seed from biomes (biome notes in `find` or `full-seed`; the mod reads them by itself) | ✅ done |
 | Find a seed that was typed (as text or a short number) from the "hashed seed" alone, in minutes (`seedfinder typed-seed`) | ✅ done |
-| `seedfinder bedrock`: show the bedrock floor of a seed you know | ✅ done |
+| `seedfinder bedrock` and `seedfinder biomes`: show the bedrock floor or the biomes of a seed you know | ✅ done |
 | Fabric client mod: notes structures and bedrock while you play and finds the seed by itself | ✅ first version |
 | The mod recognizes villages, pillager outposts, trial chambers, ancient cities, trail ruins and camps by itself | ✅ done |
 | The mod recognizes desert pyramids, jungle temples, swamp huts, igloos, shipwrecks, ocean ruins and ruined portals by itself | ✅ done |
-| Full seed from biomes, structure seed from nether bedrock alone | 🔜 later |
 
 ## Trying the command-line app
 
@@ -42,6 +44,7 @@ java -jar seedfinder.jar find desert_pyramid:272,80 swamp_hut:256,-144 village:3
 java -jar seedfinder.jar find --file my-structures.txt
 java -jar seedfinder.jar full-seed 12345 --file my-bedrock.txt
 java -jar seedfinder.jar bedrock --seed 12345
+java -jar seedfinder.jar biomes --seed 12345
 java -jar seedfinder.jar structure-seed 12345
 java -jar seedfinder.jar locate --seed 12345
 java -jar seedfinder.jar locate --seed "my world" --at 500,-1200 --radius 2000 villages pillager_outposts
@@ -133,7 +136,9 @@ depends on the whole seed. With bedrock notes, the finder checks every one of th
 
 What the answers mean:
 
-- **"Found the full seed"**: exactly one world seed fits all of your bedrock.
+- **"Found the full seed"**: exactly one world seed fits all of your bedrock, and there is enough of it that a wrong
+  structure seed would have a fitting seed only by a rare chance. With less (or with many structure seeds to choose
+  from) it says **"One world seed fits all of your bedrock"** instead, and how far to trust it.
 - **"N world seeds fit"**: the area was too small. The finder names a few columns where they differ; add those.
 - **"No world seed fits all of your bedrock"**: the finder lists the blocks that don't fit. Usually a height was
   noted wrong; check those spots, fix them and run again.
@@ -141,7 +146,55 @@ What the answers mean:
 A whole chunk is nearly always enough; an 8 x 8 area usually is too, but then a wrong structure seed could also
 match by chance, and the finder says so. Bedrock can also be noted block by block (`bedrock x y z`,
 `not-bedrock x y z`) or one layer at a time (`bedrock-layer x y z` followed by rows of `B` and `.`); see
-`seedfinder full-seed --help`. Nether bedrock only depends on the structure seed, so it can't give the full seed.
+`seedfinder full-seed --help`. Nether bedrock only depends on the structure seed, so it can't give the full seed,
+but it can replace the structures (next section).
+
+**Nether bedrock instead of structures.** The nether's bedrock floor (y 1 to 4) and roof (y 123 to 126) depend only on
+the structure seed, and one chunk of each gives it, in about a second, without any structures: note them as
+`bedrock-layer nether x y z` lines (rows of `B` for bedrock and `.` for netherrack, see `seedfinder full-seed --help`;
+`seedfinder bedrock --seed <seed> --dimension nether --layers` shows what they look like) and run `find` on the file.
+Structures in the same file are used too: the answer must fit both. When they disagree (a structure noted in the
+wrong place or from older chunks, or nether chunks of another world), the seeds of both sides are checked against the
+hashed seed, the overworld bedrock and the biomes, and a structure that doesn't fit the seed found is named. A few
+nether blocks, too few to search on their own, still rule out structure seeds that don't fit them (when so many are
+noted that a wrong seed would fit them all only by a rare chance). When no seed fits all the structures, `find` also
+tries again without each one in turn and names the one that doesn't fit, as the mod does.
+Both the floor and the roof are needed (each alone leaves several possible seeds); bedrock at y 4 or y 123, and
+gaps at y 1 or y 126, tell the most. About one structure seed in four has a "twin" with exactly the same nether
+bedrock, so the answer may be two structure seeds; the hashed seed, structures, overworld bedrock or biomes then tell
+them apart. Nether chunks made by Minecraft 1.17 or older have other bedrock: the finder leaves such a chunk out and
+says which one.
+
+**Biomes.** The overworld's biomes also depend on the whole seed, and Minecraft 26.3 picks them in a way the finder
+now repeats exactly (checked against the game on millions of spots and on whole generated chunks). Biomes are the
+easiest notes to take: stand somewhere, press F3, and write down the biome it shows with your position:
+
+```
+biome dark_forest 120 64 -35
+biome river 300 62 -10
+```
+
+Note places where different biomes meet; a place that is all ocean tells little. The finder checks all 65,536 world
+seeds against the notes and only presents a seed when it is the only one that fits **and** a wrong seed would fit the
+notes this well with a chance below 1 in 1,000. How often a wrong seed fits is measured on the other 65,535
+candidates, place by place:
+
+- The biomes of **one area** (what you see around you, a few hundred blocks across) prove a seed that Minecraft
+  picked by itself or that came from text, because only one or two of the 65,536 seeds could be such a seed.
+- **Any other seed** needs biomes from a **second area whose notes are at least 4,096 blocks from the first one's**
+  (16,384 in a "large biomes" world): biomes close together are alike in every world, so near places don't count
+  twice. Which places count is decided from the notes alone: as many as can all be that far apart, places with more
+  biomes first.
+- Seeds that Minecraft picks itself or that text gives are only named as "likely" when the biome notes don't rule
+  them out. If the overworld bedrock fits another seed perfectly while the biomes point elsewhere, neither is
+  presented as found.
+- Large-biome and amplified worlds are recognized (they are tried after normal ones); a line `preset large_biomes`
+  in the notes says it outright.
+
+Chunks made by an older Minecraft version, or changed by data packs, mods or `/fillbiome`, have other biomes; then
+no seed fits, and the finder says so rather than guessing. The mod notes the exact biome of every 4 x 4 x 4 block
+cell the game stored (F3 shows a blend of the cells around a block), as `biome-grid` lines in its notes file.
+`seedfinder biomes --seed <seed>` prints the biomes the finder expects for a seed you know, in that format.
 
 **Try it on your own world:** create a world, use `/locate structure` for about six structures of different
 types, put the results into a file, run `find`, and compare the answer with
@@ -165,7 +218,14 @@ itself. It needs Minecraft **26.3** with **Fabric Loader** (0.19.5 or newer) and
 3. In a world where you may look for the seed, press that key and switch **Collecting here** on. In every other world
    the mod notes nothing.
 4. Play. The mod then:
-   - reads the bedrock floor of chunks around you (overworld and nether);
+   - reads the bedrock floor of chunks around you (overworld and nether). In the nether, one chunk's floor and roof
+     give the structure seed by themselves, without any structures. Nether chunks made by Minecraft 1.17 or older
+     (their bedrock doesn't follow the seed) are left out and make room for others; once several are, chunks within
+     8 chunks of them are skipped, so in an upgraded world it reads the newer land farther away;
+   - reads the biomes the game stored around you (about 100 chunks, at the surface and three cave depths), and again
+     when you are about 4,500 blocks from every area noted (up to four areas, plus one far enough away for
+     large-biome worlds). One area proves a seed Minecraft picked itself or a text seed; a second area proves any
+     seed. In a world whose biomes come from a data pack or mod, biomes are not used;
    - recognizes **villages, pillager outposts, trial chambers, ancient cities, trail ruins, camps, desert pyramids,
      jungle temples, swamp huts, igloos, shipwrecks, ocean ruins and ruined portals** you come near, from their
      blocks, and notes the chunk where each one starts (see below). Ruined portals in the nether are only noted after
@@ -257,8 +317,11 @@ above), and it collects nothing until you switch it on for a world.
 **Testing against the real game.** `tools/oracle` runs Minecraft's own world generation code for a list of
 test seeds and records the results. The engine's tests then require our code to give exactly the same answers.
 For 26.3 that covers every structure type, 10 seeds, negative coordinates and positions far from spawn, the random
-number generators used for blocks, the seeds Minecraft picks by itself, and the bedrock of real chunks generated
-by the game (overworld and nether, 184,320 blocks). The finder's tests feed it structure positions recorded from
+number generators used for blocks, the seeds Minecraft picks by itself, the bedrock of real chunks generated
+by the game (overworld and nether, 184,320 blocks), and the overworld's biomes: the noises and climate values bit
+for bit, the biome search including its ties, every cell of whole generated chunks, and the F3 zoom, for the
+normal, large-biome and amplified presets. The in-game test also compares the biomes the real client receives
+with the finder's (6,400 cells) and with F3. The finder's tests feed it structure positions recorded from
 the game and require it to find the right seed.
 
 ## Building from source

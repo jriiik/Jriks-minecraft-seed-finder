@@ -35,25 +35,30 @@ final class BedrockScanner {
     }
 
     /**
-     * The random layers of this chunk, or empty when the chunk looks unusual: a layer that is always bedrock isn't
-     * (an upgraded old chunk, a changed world), or nothing useful was readable.
+     * The random layers of this chunk, or empty when nothing useful was readable. A floor or roof whose layer that is
+     * always bedrock isn't (an upgraded old chunk, a changed world, or a hole players made in the nether roof) is left
+     * out; the other one is still read.
      */
     static Optional<ScannedChunk> scan(BedrockDimension dimension, LevelChunk chunk) {
         ChunkPos pos = chunk.getPos();
         BlockPos.MutableBlockPos block = new BlockPos.MutableBlockPos();
+        List<BedrockRule> intact = new ArrayList<>();
         for (BedrockRule rule : dimension.rules()) {
             int alwaysBedrock = rule.inverted() ? rule.falseAtAndAbove() : rule.trueAtAndBelow();
-            for (int dz = 0; dz < 16; dz++) {
-                for (int dx = 0; dx < 16; dx++) {
-                    if (!chunk.getBlockState(block.set(pos.getMinBlockX() + dx, alwaysBedrock, pos.getMinBlockZ() + dz)).is(Blocks.BEDROCK)) {
-                        return Optional.empty();
-                    }
+            boolean whole = true;
+            for (int dz = 0; dz < 16 && whole; dz++) {
+                for (int dx = 0; dx < 16 && whole; dx++) {
+                    whole = chunk.getBlockState(block.set(pos.getMinBlockX() + dx, alwaysBedrock, pos.getMinBlockZ() + dz)).is(Blocks.BEDROCK);
                 }
+            }
+            if (whole) {
+                intact.add(rule);
             }
         }
         Map<Integer, List<String>> layers = new LinkedHashMap<>();
         for (int y = dimension.minY(); y < dimension.minY() + dimension.height(); y++) {
-            if (!dimension.isRandomAt(y)) {
+            int height = y;
+            if (intact.stream().noneMatch(rule -> rule.isRandomAt(height))) {
                 continue;
             }
             List<String> rows = new ArrayList<>(16);

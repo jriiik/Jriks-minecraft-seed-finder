@@ -527,4 +527,205 @@ class SeedFinderCliTest {
         assertEquals("2 minutes", TypedSeedCommand.duration(95));
         assertEquals("21 minutes", TypedSeedCommand.duration(1245));
     }
+
+    @Test
+    void biomesFromOneAreaGiveTheFullSeedOfTheExample(@org.junit.jupiter.api.io.TempDir java.nio.file.Path folder) throws java.io.IOException {
+        Result biomes = run("biomes", "--seed", "12345", "--at", "-96,-96", "--size", "48");
+        assertEquals(0, biomes.exitCode(), biomes.err());
+        assertTrue(biomes.out().contains("biome-grid -96 64 -96 "), biomes.out());
+        java.nio.file.Path file = folder.resolve("notes.txt");
+        java.nio.file.Files.writeString(file, String.join("\n", EXAMPLE).replace(':', ' ').replace(',', ' ') + "\n\n" + biomes.out());
+        Result result = run(find("--file", file.toString()));
+        assertEquals(0, result.exitCode(), result.out() + result.err());
+        assertTrue(result.out().contains("And 2,304 biome notes in 1 place that can help find the full seed."), result.out());
+        assertTrue(result.out().contains("Found the full seed: 12345\n"), result.out());
+    }
+
+    @Test
+    void biomesOfAnotherWorldDontFit(@org.junit.jupiter.api.io.TempDir java.nio.file.Path folder) throws java.io.IOException {
+        java.nio.file.Path file = folder.resolve("notes.txt");
+        java.nio.file.Files.writeString(file, run("biomes", "--seed", "999", "--size", "24").out());
+        Result result = run("full-seed", "12345", "--file", file.toString(), "--threads", "2");
+        assertEquals(1, result.exitCode(), result.out());
+        assertTrue(result.out().contains("fits your biome notes under any world preset"), result.out());
+    }
+
+    @Test
+    void netherBedrockAloneGivesTheStructureSeedAndTheHashedSeedTheRest(@org.junit.jupiter.api.io.TempDir java.nio.file.Path folder)
+        throws java.io.IOException {
+        Result nether = run("bedrock", "--seed", "12345", "--dimension", "nether", "--layers", "--at", "64,-32");
+        assertEquals(0, nether.exitCode(), nether.err());
+        java.nio.file.Path file = folder.resolve("notes.txt");
+        java.nio.file.Files.writeString(file, nether.out() + "\nhashed-seed " + io.github.jriiik.seedfinder.Seeds.hashedSeed(12345L) + "\n");
+        Result result = run(find("--file", file.toString()));
+        assertEquals(0, result.exitCode(), result.out() + result.err());
+        assertTrue(result.out().contains("Minecraft 26.3, no structures.\n"), result.out());
+        assertTrue(result.out().contains("Nether bedrock: 1,024 floor and 1,024 roof blocks"), result.out());
+        assertTrue(result.out().contains("structure seed") && result.out().contains("12345"), result.out());
+        assertTrue(result.out().contains("Found the full seed: 12345\n"), result.out());
+    }
+
+    @Test
+    void netherBedrockIsUsedWithStructuresToo(@org.junit.jupiter.api.io.TempDir java.nio.file.Path folder) throws java.io.IOException {
+        String nether = run("bedrock", "--seed", "12345", "--dimension", "nether", "--layers", "--at", "64,-32").out();
+        String hashed = "\nhashed-seed " + io.github.jriiik.seedfinder.Seeds.hashedSeed(12345L) + "\n";
+        java.nio.file.Path file = folder.resolve("notes.txt");
+
+        // one structure: too few to search, so the nether bedrock gives the structure seed
+        java.nio.file.Files.writeString(file, "village 336 80\n" + nether + hashed);
+        Result oneStructure = run(find("--file", file.toString()));
+        assertEquals(0, oneStructure.exitCode(), oneStructure.out() + oneStructure.err());
+        assertTrue(oneStructure.out().contains("The nether bedrock is searched instead."), oneStructure.out());
+        assertTrue(oneStructure.out().contains("Found the full seed: 12345\n"), oneStructure.out());
+
+        // a village noted a chunk off: the nether bedrock and the hashed seed give the seed, and the village is named
+        String structures = String.join("\n", EXAMPLE).replace(':', ' ').replace(',', ' ').replace("village 336 80", "village 352 80");
+        java.nio.file.Files.writeString(file, structures + "\n" + nether + hashed);
+        Result misfit = run(find("--file", file.toString()));
+        assertEquals(0, misfit.exitCode(), misfit.out() + misfit.err());
+        assertTrue(misfit.out().contains("Found the full seed: 12345\n"), misfit.out());
+        assertTrue(misfit.out().contains("villages at block (352, 80) doesn't fit this seed"), misfit.out());
+    }
+
+    @Test
+    void littleBedrockWithManyStructureSeedsIsNotCalledFound(@org.junit.jupiter.api.io.TempDir java.nio.file.Path folder) throws java.io.IOException {
+        java.nio.file.Path file = folder.resolve("bedrock.txt");
+        // a whole chunk: certain for one structure seed (a wrong one has a fitting seed about once in 100), not for 41
+        java.nio.file.Files.writeString(file, run("bedrock", "--seed", "12345").out());
+        assertTrue(run("full-seed", "12345", "--threads", "2", "--file", file.toString()).out().contains("Found the full seed: 12345"));
+        List<String> args = new java.util.ArrayList<>(List.of("full-seed", "--threads", "2", "--file", file.toString(), "12345"));
+        for (int i = 1; i <= 40; i++) {
+            args.add(Long.toString(12345L + 1000L * i));
+        }
+        Result result = run(args.toArray(String[]::new));
+        assertFalse(result.out().contains("Found the full seed"), result.out());
+        assertTrue(result.out().contains("One world seed fits all of your bedrock: ") || result.out().contains("world seeds fit all of your bedrock"),
+            result.out());
+    }
+
+    @Test
+    void biomeNotesWithMistakesAreReadOrLeftOut(@org.junit.jupiter.api.io.TempDir java.nio.file.Path folder) throws java.io.IOException {
+        Result biomes = run("biomes", "--seed", "12345", "--at", "-96,-96", "--size", "48");
+        java.nio.file.Path file = folder.resolve("notes.txt");
+        java.nio.file.Files.writeString(file, biomes.out() + "\nbiome dark forrest 120 64 -35\npreset normal\n");
+        Result result = run("full-seed", "12345", "--file", file.toString(), "--threads", "2");
+        assertEquals(0, result.exitCode(), result.out() + result.err());
+        assertTrue(result.out().contains("Found the full seed: 12345"), result.out());
+        assertTrue(result.out().contains("'minecraft:dark_forrest' is not an overworld biome"), result.out());
+        assertFalse(result.err().contains("Exception"), result.err());
+
+        java.nio.file.Files.writeString(file, "preset large biomes\nbiome: sparse jungle 0 64 0\n");
+        Result largeBiomes = run("full-seed", "12345", "--file", file.toString(), "--threads", "2");
+        assertTrue(largeBiomes.exitCode() != 2 && largeBiomes.out().contains("against 1 biome note"), largeBiomes.out() + largeBiomes.err());
+
+        java.nio.file.Files.writeString(file, "preset tiny\n");
+        Result unknownPreset = run("full-seed", "12345", "--file", file.toString());
+        assertEquals(2, unknownPreset.exitCode());
+        assertTrue(unknownPreset.err().contains("unknown world preset 'tiny'"), unknownPreset.err());
+        assertFalse(unknownPreset.err().contains("Write each structure"), unknownPreset.err());
+    }
+
+    @Test
+    void aFewNetherBlocksNarrowTheStructureSeeds(@org.junit.jupiter.api.io.TempDir java.nio.file.Path folder) throws java.io.IOException {
+        List<String> layers = run("bedrock", "--seed", "12345", "--dimension", "nether", "--layers").out().lines().toList();
+        int header = layers.indexOf("bedrock-layer nether 0 4 0");
+        assertTrue(header >= 0, String.join("\n", layers));
+        List<String> lines = new java.util.ArrayList<>(List.of("desert_pyramid 272 80", "swamp_hut 256 -144", "village 336 80",
+            "shipwreck -128 32", "ruined_portal 16 0"));
+        lines.addAll(layers.subList(header, header + 3)); // the header and 2 rows: 32 blocks, too few to search on their own
+        java.nio.file.Path file = folder.resolve("notes.txt");
+        java.nio.file.Files.write(file, lines);
+        Result result = run(find("--file", file.toString()));
+        assertTrue(result.out().contains("only 12345 fits all 32 bedrock blocks"), result.out());
+        assertTrue(result.out().contains("it is 5794443870565576761."), result.out());
+    }
+
+    @Test
+    void findLeavesOutAStructureThatDoesntFit(@org.junit.jupiter.api.io.TempDir java.nio.file.Path folder) throws java.io.IOException {
+        java.nio.file.Path file = folder.resolve("notes.txt");
+        String structures = String.join("\n", EXAMPLE).replace(':', ' ').replace(',', ' ').replace("village 336 80", "village 352 80");
+        java.nio.file.Files.writeString(file, structures + "\nhashed-seed " + io.github.jriiik.seedfinder.Seeds.hashedSeed(12345L) + "\n");
+        Result result = run(find("--file", file.toString()));
+        assertEquals(0, result.exitCode(), result.out() + result.err());
+        assertTrue(result.out().contains("Found the full seed: 12345\n"), result.out());
+        assertTrue(result.out().contains("villages at block (352, 80) doesn't fit it"), result.out());
+    }
+
+    /**
+     * World 8071994503331311257 (structure seed 136596199829145) with its ruined portal noted a chunk off: these six
+     * structures fit only the wrong structure seed 7421670452889, one of whose world seeds also fits this overworld chunk.
+     */
+    private static final long MISNOTED_WORLD = 8071994503331311257L;
+    private static final List<String> MISNOTED_STRUCTURES = List.of("desert_pyramid -176 112", "swamp_hut 80 -208", "village 288 80",
+        "shipwreck 48 80", "ruined_portal 256 256", "ocean_ruin 112 128");
+
+    private static String netherNote(long seed, int x, int y, int z) {
+        io.github.jriiik.seedfinder.version.VersionData data = io.github.jriiik.seedfinder.version.MinecraftVersion.V26_3.data();
+        boolean bedrock = new io.github.jriiik.seedfinder.bedrock.BedrockPattern(data.bedrockDimension("nether").orElseThrow(), seed).isBedrock(x, y, z);
+        return (bedrock ? "bedrock" : "not-bedrock") + " nether " + x + " " + y + " " + z;
+    }
+
+    private static List<String> layers(String dimension, long seed, int minX, int minZ, int... ys) {
+        io.github.jriiik.seedfinder.version.VersionData data = io.github.jriiik.seedfinder.version.MinecraftVersion.V26_3.data();
+        io.github.jriiik.seedfinder.bedrock.BedrockPattern pattern = new io.github.jriiik.seedfinder.bedrock.BedrockPattern(
+            data.bedrockDimension(dimension).orElseThrow(), seed);
+        List<String> lines = new java.util.ArrayList<>();
+        for (int y : ys) {
+            lines.addAll(io.github.jriiik.seedfinder.bedrock.BedrockText.layer(pattern, minX, y, minZ, 16, 16));
+        }
+        return lines;
+    }
+
+    @Test
+    void netherNotesAcrossAChunkBorderStillRuleOutAWrongStructureSeed(@org.junit.jupiter.api.io.TempDir java.nio.file.Path folder)
+        throws java.io.IOException {
+        List<String> nether = new java.util.ArrayList<>();
+        int[][] spots = {{48, 4, -28}, {48, 1, -26}, {48, 4, -25}, {48, 1, -21}, {48, 1, -19}, {48, 1, -18}, {49, 4, -28}, {49, 1, -25},
+            {49, 1, -21}, {49, 1, -19}, {50, 1, -32}, {50, 1, -30}, {47, 4, -28}};
+        for (int[] spot : spots) {
+            nether.add(netherNote(MISNOTED_WORLD, spot[0], spot[1], spot[2]));
+        }
+        List<String> overworld = layers("overworld", MISNOTED_WORLD, -3792, 320, -63, -62, -61, -60);
+        java.nio.file.Path file = folder.resolve("notes.txt");
+        for (List<String> notes : List.of(nether, new java.util.ArrayList<>(layers("nether", MISNOTED_WORLD, 48, -32, 1, 2, 3, 4)))) {
+            if (notes != nether) {
+                notes.add(netherNote(MISNOTED_WORLD, 47, 4, -28)); // a whole floor chunk, plus one block in the next chunk
+            }
+            List<String> lines = new java.util.ArrayList<>(MISNOTED_STRUCTURES);
+            lines.addAll(notes);
+            lines.addAll(overworld);
+            java.nio.file.Files.write(file, lines);
+            Result result = run(find("--file", file.toString()));
+            assertFalse(result.out().contains("Found the full seed"), result.out());
+            assertTrue(result.out().contains("Your nether bedrock doesn't fit"), result.out());
+            assertEquals(1, result.exitCode());
+            Result fullSeed = run("full-seed", "7421670452889", "--threads", "2", "--file", file.toString());
+            assertFalse(fullSeed.out().contains("Found the full seed"), fullSeed.out());
+            assertEquals(1, fullSeed.exitCode());
+        }
+    }
+
+    @Test
+    void oneMisreadRoofBlockDoesntPickTheWrongFloorTwin(@org.junit.jupiter.api.io.TempDir java.nio.file.Path folder) throws java.io.IOException {
+        // 136596199829145 (the world's) and 109940606698184 have the same nether floor everywhere: only the roof tells
+        // them apart. One roof block noted wrong fits the other one.
+        long right = 136596199829145L;
+        long twin = 109940606698184L;
+        List<String> lines = new java.util.ArrayList<>(layers("nether", right, 48, -32, 1, 2, 3, 4));
+        lines.add(netherNote(right, 48, 125, -32));
+        String misread = null;
+        for (int x = 80; x < 96 && misread == null; x++) {
+            if (netherNote(right, x, 123, -32).startsWith("not") && !netherNote(twin, x, 123, -32).startsWith("not")) {
+                misread = "bedrock nether " + x + " 123 -32";
+            }
+        }
+        assertTrue(misread != null);
+        lines.add(misread);
+        java.nio.file.Path file = folder.resolve("notes.txt");
+        java.nio.file.Files.write(file, lines);
+        Result result = run("full-seed", Long.toString(twin), Long.toString(right), "--threads", "2", "--file", file.toString());
+        assertFalse(result.out().contains("only " + twin + " fits"), result.out());
+        assertTrue(result.out().contains("so all of them are kept"), result.out());
+        assertFalse(result.out().contains("it is "), "no likely seed of either may be named: " + result.out());
+    }
 }

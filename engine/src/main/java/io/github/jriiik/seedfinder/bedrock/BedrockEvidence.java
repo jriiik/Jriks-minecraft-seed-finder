@@ -18,8 +18,11 @@ import java.util.Set;
  * <ul>
  *   <li>heights where bedrock is not random (always or never bedrock): they carry no information, and one that
  *       says the opposite of the game's rule is reported as a {@link #problems() problem};</li>
- *   <li>random bedrock in dimensions using the old 48-bit generator (the nether): it only depends on the structure
- *       seed, so it can tell look-alike structure seeds apart but not the upper 16 bits;</li>
+ *   <li>random bedrock in dimensions using the old 48-bit generator (the nether): it says nothing about the upper 16
+ *       bits, and of the structure seed it only depends on the lowest 48 bits of the generator's first
+ *       {@code nextLong()} (the "bedrock key", see {@code NetherBedrockSearch}). About 23% of structure seeds share
+ *       that key with one other structure seed, and the two have identical nether bedrock everywhere, so nether
+ *       bedrock tells most look-alike structure seeds apart, but never those twins;</li>
  *   <li>random bedrock in dimensions using Xoroshiro (the overworld): it depends on the whole 64-bit seed.</li>
  * </ul>
  */

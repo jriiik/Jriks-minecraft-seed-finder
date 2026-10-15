@@ -15,3 +15,6 @@ logs/
 .vscode/
 .DS_Store
 Thumbs.db
+
+# Temporary git worktrees made by Claude Code sessions
+.claude/worktrees/

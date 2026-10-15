@@ -15,7 +15,7 @@ import picocli.CommandLine.Command;
     },
     subcommands = {
         FindCommand.class, FullSeedCommand.class, TypedSeedCommand.class, StructureSeedCommand.class, LocateCommand.class,
-        BedrockCommand.class, StructuresCommand.class, VersionsCommand.class,
+        BedrockCommand.class, BiomesCommand.class, StructuresCommand.class, VersionsCommand.class,
         CommandLine.HelpCommand.class,
     },
     footer = {

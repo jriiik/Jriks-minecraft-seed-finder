@@ -6,13 +6,17 @@ import io.github.jriiik.seedfinder.bedrock.BedrockObservation;
 import io.github.jriiik.seedfinder.version.VersionData;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Optional;
 import java.util.OptionalLong;
+import java.util.Set;
+import io.github.jriiik.seedfinder.world.ChunkPos;
 
 /**
- * Everything from observations to the world seed in one go, for the mod: the structure seed from structures, then
- * the full seed from the hashed seed the server sent, from bedrock, or the likely seeds when neither settles it.
+ * Everything from observations to the world seed in one go, for the mod: the structure seed from structures or from
+ * nether bedrock, then the full seed from the hashed seed the server sent, from overworld bedrock or biomes, or the
+ * likely seeds when none of them settles it.
  *
  * <p>Steps that can't run yet (too few structures, too little bedrock) are reported, not treated as errors.
  */
@@ -26,9 +30,12 @@ public final class WorldSeedSearch {
 
     /** How far the search got. */
     public enum Stage {
-        /** The structures don't allow a search yet; see {@link Result#plan()}. */
+        /** Neither the structures nor the nether bedrock allow a search yet; see {@link Result#plan()}. */
         NEED_MORE_STRUCTURES,
-        /** No structure seed fits the structures. */
+        /**
+         * No structure seed fits the structures (and the nether bedrock); or, when the hashed seed is known to be
+         * genuine (single player), none of the structure seeds that fit has it ({@link Result#hashedSeedFitsNone()}).
+         */
         NO_STRUCTURE_SEED,
         /** The structure seed (or several) is known, the full seed is not certain yet. */
         STRUCTURE_SEED,
@@ -42,20 +49,35 @@ public final class WorldSeedSearch {
         HASHED_SEED,
         /** It is the only seed that fits all of the bedrock, and enough bedrock was seen to rule out chance. */
         BEDROCK,
+        /** It is the only seed that fits all of the biomes, and they rule out chance (see {@link BiomeEvidence}). */
+        BIOMES,
     }
 
     /**
      * @param plan           the structure search plan (why it can't run, suggestions)
-     * @param structureSeeds the structure seeds that fit the structures (empty before the search ran)
+     * @param structureSeeds the structure seeds that fit the structures and the nether bedrock (empty before the search
+     *                       ran); both sides' seeds when they disagree ({@link StructureStep#netherDisagrees()})
      * @param worldSeed      the world seed, once it is certain
      * @param proof          how the world seed was found
      * @param hashedSeedFitsNone true when a hashed seed was given but no candidate has it (the server may send a
      *                       different value, or the structure seed is wrong)
      * @param bedrock        the bedrock search, when there was overworld bedrock to check
      * @param bedrockProblems notes that contradict the game's bedrock rules whatever the seed
-     * @param bedrockDisagrees true when the world seed found from the hashed seed gets some bedrock wrong
-     * @param likelySeeds    without proof: the seeds Minecraft could have picked itself or a text seed would give
+     * @param bedrockDisagrees true when the world seed found gets some bedrock wrong; at {@link Stage#STRUCTURE_SEED}:
+     *                       the seed the biomes single out gets some bedrock wrong while another seed fits all of it
+     * @param likelySeeds    without proof: the seeds Minecraft could have picked itself or a text seed would give, of
+     *                       a single structure seed (only those that fit the biomes and the overworld bedrock noted,
+     *                       when some seed fits them; none after the biomes and the bedrock disagreed)
      * @param leftOut        a structure that doesn't fit the world seed and was left out (see {@link #withoutMisfit})
+     * @param biomes         the biome check, when biomes were noted and checked
+     * @param biomesDisagree true when the world seed found another way doesn't fit the biomes noted (under any preset)
+     * @param nether         the nether bedrock search, when there was nether bedrock to search
+     * @param netherDisagrees true when the nether bedrock proved structure seeds the structures don't allow (see
+     *                       {@link StructureStep#netherDisagrees()})
+     * @param misfits        with a world seed: the structures noted that don't fit it (found another way, for example
+     *                       from the nether bedrock)
+     * @param likelyRuledOut true when the single structure seed has likely seeds but the biomes or the overworld bedrock
+     *                       noted rule them all out (some seed fits those notes): the seed was typed as a number
      */
     public record Result(
         Stage stage,
@@ -68,12 +90,62 @@ public final class WorldSeedSearch {
         List<String> bedrockProblems,
         boolean bedrockDisagrees,
         List<Long> likelySeeds,
-        Optional<StructureObservation> leftOut
+        Optional<StructureObservation> leftOut,
+        Optional<BiomeEvidence.Decision> biomes,
+        boolean biomesDisagree,
+        Optional<NetherBedrockSearch.Finding> nether,
+        boolean netherDisagrees,
+        List<StructureObservation> misfits,
+        boolean likelyRuledOut
     ) {
+
+        public Result {
+            structureSeeds = List.copyOf(structureSeeds);
+            likelySeeds = List.copyOf(likelySeeds);
+            misfits = List.copyOf(misfits);
+        }
 
         Result withLeftOut(StructureObservation structure) {
             return new Result(stage, plan, structureSeeds, worldSeed, proof, hashedSeedFitsNone, bedrock, bedrockProblems, bedrockDisagrees,
-                likelySeeds, Optional.of(structure));
+                likelySeeds, Optional.of(structure), biomes, biomesDisagree, nether, netherDisagrees, misfits, likelyRuledOut);
+        }
+
+        /**
+         * True when the structure seeds came from the nether bedrock alone: no structures could be searched, or none
+         * fitted them all.
+         */
+        public boolean fromNetherAlone() {
+            return nether.map(finding -> !finding.structureSeeds().isEmpty()).orElse(false)
+                && (!plan.canSearch() || netherDisagrees && nether.get().structureSeeds().containsAll(structureSeeds));
+        }
+
+        /** With {@link #netherDisagrees()}: the structure seeds the structures fit and the nether bedrock doesn't. */
+        public List<Long> structuresOnlySeeds() {
+            List<Long> netherSeeds = nether.map(NetherBedrockSearch.Finding::structureSeeds).orElse(List.of());
+            return netherDisagrees ? structureSeeds.stream().filter(seed -> !netherSeeds.contains(seed)).toList() : List.of();
+        }
+    }
+
+    /** Biomes to check, with what the check needs; {@link #NONE} when there are none. */
+    public record BiomeInput(BiomeEvidence evidence, BiomeEvidence.ScanCache cache, java.util.function.BooleanSupplier stop) {
+
+        public static final BiomeInput NONE = new BiomeInput(null, null, () -> false);
+
+        boolean present() {
+            return evidence != null && !evidence.isEmpty();
+        }
+    }
+
+    /**
+     * The hashed seed the server sent, and whether it is known to be the world's own: in single player the game makes
+     * it from the real seed, while a server may send a made-up one.
+     */
+    public record HashedSeed(OptionalLong value, boolean genuine) {
+
+        public static final HashedSeed NONE = new HashedSeed(OptionalLong.empty(), false);
+
+        public static HashedSeed of(OptionalLong value) {
+            return new HashedSeed(value, false);
         }
     }
 
@@ -82,12 +154,67 @@ public final class WorldSeedSearch {
 
     /**
      * The first step on its own: the structure seeds that fit the structures (empty when the plan says the search
-     * can't run). It is the slow part, so the mod keeps its result while only bedrock or the hashed seed change.
+     * can't run), and those the nether bedrock allows. It is the slow part, so the mod keeps its result while only
+     * overworld bedrock, biomes or the hashed seed change.
+     *
+     * @param structureSeeds the structure seeds of the structures and the nether bedrock together (see {@link #withNether})
+     * @param nether         the nether bedrock search, if there was nether bedrock
+     * @param netherDisagrees true when the nether bedrock and the structures disagree: the nether proved structure
+     *                       seeds that the structures don't allow (then the seeds of both are kept, so the hashed
+     *                       seed, overworld bedrock or biomes can tell which side is right), or, with an unproven
+     *                       complete list, none of the structures' seeds is on it
      */
-    public record StructureStep(SearchPlan plan, List<Long> structureSeeds) {
+    public record StructureStep(VersionData data, SearchPlan plan, List<Long> structureSeeds, Optional<NetherBedrockSearch.Finding> nether,
+                                boolean netherDisagrees) {
 
         public StructureStep {
             structureSeeds = List.copyOf(structureSeeds);
+        }
+
+        public StructureStep(VersionData data, SearchPlan plan, List<Long> structureSeeds) {
+            this(data, plan, structureSeeds, Optional.empty(), false);
+        }
+
+        /**
+         * True when there is something to go on: the structures could be searched, or the nether bedrock gave seeds
+         * (a list cut off because too many seeds fit doesn't count: the right seed may be missing from it).
+         */
+        public boolean searched() {
+            return plan.canSearch() || nether.map(finding -> !finding.capped() && !finding.structureSeeds().isEmpty()).orElse(false);
+        }
+
+        /**
+         * Adds what the nether bedrock search found. Its seeds and the structures' are combined: both together when
+         * they agree; the nether's alone when the structures can't be searched yet or no seed fits them while the
+         * nether's candidates are complete. When a proven nether result and the structures disagree ({@link #netherDisagrees()}), one
+         * side is wrong (a structure noted in the wrong place, from older chunks or a command; or nether chunks of
+         * another world with the same hashed seed), so the seeds of both are kept. Unproven nether results (one
+         * surface, few blocks) only narrow the structures' seeds, or stand in for them when there are none, as
+         * candidates that the hashed seed or biomes can still prove. A list cut off because too many seeds fit
+         * ({@link NetherBedrockSearch.Finding#capped()}) is not used: the right seed may be missing from it.
+         */
+        public StructureStep withNether(NetherBedrockSearch.Finding finding) {
+            List<Long> netherSeeds = finding.structureSeeds();
+            if (netherSeeds.isEmpty() || finding.capped()) {
+                return new StructureStep(data, plan, structureSeeds, Optional.of(finding), false);
+            }
+            if (!plan.canSearch()) {
+                return new StructureStep(data, plan, netherSeeds, Optional.of(finding), false);
+            }
+            List<Long> both = structureSeeds.stream().filter(netherSeeds::contains).toList();
+            if (!both.isEmpty()) {
+                return new StructureStep(data, plan, both, Optional.of(finding), false);
+            }
+            if (finding.proven() || structureSeeds.isEmpty()) {
+                // No seed fits the structures (one doesn't follow the seed): the nether's candidates stand in, proven
+                // or not; a proven nether result that disagrees: the seeds of both sides.
+                Set<Long> union = new LinkedHashSet<>(netherSeeds);
+                union.addAll(structureSeeds);
+                return new StructureStep(data, plan, List.copyOf(union), Optional.of(finding), true);
+            }
+            // An unproven but complete list holds every seed whose nether bedrock fits: the right one too, unless a
+            // nether chunk doesn't follow the seed. Not on it: worth a note, but the structures' seeds are kept.
+            return new StructureStep(data, plan, structureSeeds, Optional.of(finding), true);
         }
     }
 
@@ -95,12 +222,55 @@ public final class WorldSeedSearch {
                                                StructureSeedFinder.ProgressListener progress) {
         StructureSeedFinder finder = new StructureSeedFinder(data, structures);
         SearchPlan plan = finder.plan();
-        return new StructureStep(plan, plan.canSearch() ? finder.search(threads, progress) : List.of());
+        return new StructureStep(data, plan, plan.canSearch() ? finder.search(threads, progress) : List.of());
     }
 
     public static Result run(VersionData data, List<StructureObservation> structures, List<BedrockObservation> bedrockNotes,
                              OptionalLong hashedSeed, int threads, StructureSeedFinder.ProgressListener progress) {
         return fullSeed(structureSeeds(data, structures, threads, progress), bedrockNotes, hashedSeed, threads);
+    }
+
+    /** {@link #structureSeeds}, then the nether bedrock search when there are nether notes ({@link StructureStep#withNether}). */
+    public static StructureStep structureSeeds(VersionData data, List<StructureObservation> structures, List<BedrockObservation> bedrockNotes,
+                                               int threads, java.util.function.BooleanSupplier stop, StructureSeedFinder.ProgressListener progress,
+                                               NetherBedrockSearch.Progress netherProgress) {
+        StructureStep step = structureSeeds(data, structures, threads, progress);
+        if (bedrockNotes.stream().noneMatch(note -> note.dimension().id().equals(NetherBedrockSearch.NETHER))) {
+            return step;
+        }
+        return step.withNether(new NetherBedrockSearch(data).find(bedrockNotes, threads, stop, netherProgress));
+    }
+
+    /**
+     * The bedrock notes the full-seed step checks. After a nether search, the notes of nether chunks it found unusable
+     * are left out (no seed made them: chunks of 1.17 or older, or changed; or they contradict a proven result), and
+     * when a proven nether result disagrees with the structures all nether notes are (the seeds of both sides are
+     * candidates, and the nether side's would always fit them). Every other nether note still counts against the seeds
+     * it doesn't fit: notes too few to search, a cut-off list, or candidates that were set aside.
+     */
+    public static List<BedrockObservation> bedrockForFullSeed(List<BedrockObservation> bedrockNotes, StructureStep step) {
+        if (step.nether().isEmpty()) {
+            return bedrockNotes;
+        }
+        NetherBedrockSearch.Finding finding = step.nether().get();
+        boolean dropAll = step.netherDisagrees() && finding.proven();
+        Set<ChunkPos> unusable = new LinkedHashSet<>(unusableNetherChunks(finding));
+        return bedrockNotes.stream()
+            .filter(note -> !note.dimension().id().equals(NetherBedrockSearch.NETHER)
+                || !dropAll && !unusable.contains(ChunkPos.ofBlock(note.x(), note.z())))
+            .toList();
+    }
+
+    /**
+     * The nether chunks a search found unusable for sure: no seed fits them on their own (searched completely), or they
+     * contradict a proven result. A chunk that only contradicts unproven candidates may be the one that is right.
+     */
+    public static List<ChunkPos> unusableNetherChunks(NetherBedrockSearch.Finding finding) {
+        return finding.chunks().stream()
+            .filter(report -> report.status() == NetherBedrockSearch.ChunkStatus.FITS_NO_SEED
+                || report.status() == NetherBedrockSearch.ChunkStatus.CONTRADICTS && finding.proven())
+            .map(NetherBedrockSearch.ChunkReport::chunk)
+            .toList();
     }
 
     /** Above this many structures {@link #withoutMisfit} doesn't try (one search per structure). */
@@ -114,6 +284,16 @@ public final class WorldSeedSearch {
      */
     public static Optional<Result> withoutMisfit(VersionData data, List<StructureObservation> structures, List<BedrockObservation> bedrockNotes,
                                                  OptionalLong hashedSeed, int threads) {
+        return withoutMisfit(data, structures, bedrockNotes, Optional.empty(), BiomeInput.NONE, HashedSeed.of(hashedSeed), threads);
+    }
+
+    /**
+     * {@link #withoutMisfit} with biomes as a way to prove the seed too, and the nether bedrock search already done
+     * (combined with each try as in {@link StructureStep#withNether}).
+     */
+    public static Optional<Result> withoutMisfit(VersionData data, List<StructureObservation> structures, List<BedrockObservation> bedrockNotes,
+                                                 Optional<NetherBedrockSearch.Finding> nether, BiomeInput biomes, HashedSeed hashedSeed,
+                                                 int threads) {
         if (structures.size() > MAX_MISFIT_CHECKS) {
             return Optional.empty();
         }
@@ -125,7 +305,10 @@ public final class WorldSeedSearch {
             if (!step.plan().canSearch() || step.structureSeeds().isEmpty()) {
                 continue;
             }
-            Result result = fullSeed(step, bedrockNotes, hashedSeed, threads);
+            if (nether.isPresent()) {
+                step = step.withNether(nether.get());
+            }
+            Result result = fullSeed(step, bedrockNotes, biomes, hashedSeed, threads);
             if (result.stage() == Stage.WORLD_SEED) {
                 if (proven != null) {
                     // Two different structures each seem to be the odd one out: no clear answer.
@@ -139,33 +322,62 @@ public final class WorldSeedSearch {
 
     /** The second step: the full seed from the hashed seed or bedrock, or the likely seeds. */
     public static Result fullSeed(StructureStep step, List<BedrockObservation> bedrockNotes, OptionalLong hashedSeed, int threads) {
+        return fullSeed(step, bedrockNotes, BiomeInput.NONE, HashedSeed.of(hashedSeed), threads);
+    }
+
+    /** {@link #fullSeed(StructureStep, List, BiomeInput, HashedSeed, int)} with a hashed seed that may be made up. */
+    public static Result fullSeed(StructureStep step, List<BedrockObservation> bedrockNotes, BiomeInput biomes, OptionalLong hashedSeed,
+                                  int threads) {
+        return fullSeed(step, bedrockNotes, biomes, HashedSeed.of(hashedSeed), threads);
+    }
+
+    /**
+     * The second step: the full seed from the hashed seed, bedrock or biomes (in that order: the hashed seed is
+     * instant, biomes take a few seconds per structure seed), or the likely seeds. After a nether search, nether
+     * chunks it found unusable are left out of the bedrock ({@link #bedrockForFullSeed}). A genuine hashed seed that none of the candidates has means the
+     * structure seeds are wrong: then nothing else is tried ({@link Stage#NO_STRUCTURE_SEED}), and a seed proven by
+     * bedrock or biomes must have it.
+     */
+    public static Result fullSeed(StructureStep step, List<BedrockObservation> bedrockNotes, BiomeInput biomes, HashedSeed hashedSeed,
+                                  int threads) {
         SearchPlan plan = step.plan();
         List<Long> structureSeeds = step.structureSeeds();
-        BedrockEvidence evidence = new BedrockEvidence(bedrockNotes);
+        Optional<NetherBedrockSearch.Finding> nether = step.nether();
+        BedrockEvidence evidence = new BedrockEvidence(bedrockForFullSeed(bedrockNotes, step));
         List<String> bedrockProblems = evidence.problems();
-        if (!plan.canSearch()) {
+        boolean netherDisagrees = step.netherDisagrees();
+        if (!step.searched()) {
             return new Result(Stage.NEED_MORE_STRUCTURES, plan, List.of(), OptionalLong.empty(), Optional.empty(), false,
-                Optional.empty(), bedrockProblems, false, List.of(), Optional.empty());
+                Optional.empty(), bedrockProblems, false, List.of(), Optional.empty(), Optional.empty(), false, nether, netherDisagrees, List.of(), false);
         }
         if (structureSeeds.isEmpty()) {
             return new Result(Stage.NO_STRUCTURE_SEED, plan, structureSeeds, OptionalLong.empty(), Optional.empty(), false,
-                Optional.empty(), bedrockProblems, false, List.of(), Optional.empty());
+                Optional.empty(), bedrockProblems, false, List.of(), Optional.empty(), Optional.empty(), false, nether, netherDisagrees, List.of(), false);
         }
 
         boolean hashedSeedFitsNone = false;
-        if (hashedSeed.isPresent()) {
-            long[] matches = Seeds.likelyWithHashedSeed(structureSeeds, hashedSeed.getAsLong());
+        OptionalLong hashed = hashedSeed.value();
+        if (hashed.isPresent()) {
+            long[] matches = Seeds.likelyWithHashedSeed(structureSeeds, hashed.getAsLong());
             boolean checkedAll = matches.length == 0 && structureSeeds.size() <= MAX_HASHED_SEED_CHECKS;
             if (checkedAll) {
-                matches = Seeds.withHashedSeed(structureSeeds, hashedSeed.getAsLong());
+                matches = Seeds.withHashedSeed(structureSeeds, hashed.getAsLong());
             }
             if (matches.length == 1) {
                 long worldSeed = matches[0];
                 boolean disagrees = bedrockProblems.isEmpty() && !evidence.mismatchesOf(worldSeed).isEmpty();
+                boolean biomesDisagree = biomes.present() && !biomes.evidence().fitsUnderAnyPreset(worldSeed);
                 return new Result(Stage.WORLD_SEED, plan, structureSeeds, OptionalLong.of(worldSeed), Optional.of(Proof.HASHED_SEED),
-                    false, Optional.empty(), bedrockProblems, disagrees, List.of(), Optional.empty());
+                    false, Optional.empty(), bedrockProblems, disagrees, List.of(), Optional.empty(), Optional.empty(), biomesDisagree, nether,
+                    netherDisagrees, misfits(step, worldSeed), false);
             }
             hashedSeedFitsNone = checkedAll && matches.length == 0;
+            if (hashedSeedFitsNone && hashedSeed.genuine()) {
+                // The world's own hashed seed fits none of them: the structure seeds are wrong (a structure that
+                // doesn't follow the seed, for example), so nothing found from them could be the world seed.
+                return new Result(Stage.NO_STRUCTURE_SEED, plan, structureSeeds, OptionalLong.empty(), Optional.empty(), true,
+                    Optional.empty(), bedrockProblems, false, List.of(), Optional.empty(), Optional.empty(), false, nether, netherDisagrees, List.of(), false);
+            }
         }
 
         Optional<FullSeedFinder.Result> bedrock = Optional.empty();
@@ -174,24 +386,82 @@ public final class WorldSeedSearch {
             FullSeedFinder.Result found = new FullSeedFinder(structureSeeds, evidence).search(threads);
             bedrock = Optional.of(found);
             List<FullSeedFinder.Candidate> best = found.best();
+            // Each wrong structure seed among the candidates may have a seed that fits by chance.
             boolean certain = best.size() == 1 && best.get(0).mismatches() == 0
-                && FullSeedFinder.expectedFalseFits(evidence.fullSeedObservations().size()) < 0.02;
+                && structureSeeds.size() * FullSeedFinder.expectedFalseFits(evidence.fullSeedObservations().size()) < 0.02
+                && hasHashedSeed(best.get(0).worldSeed(), hashedSeed);
             if (certain) {
-                return new Result(Stage.WORLD_SEED, plan, structureSeeds, OptionalLong.of(best.get(0).worldSeed()), Optional.of(Proof.BEDROCK),
-                    hashedSeedFitsNone, bedrock, bedrockProblems, false, List.of(), Optional.empty());
+                long worldSeed = best.get(0).worldSeed();
+                boolean biomesDisagree = biomes.present() && !biomes.evidence().fitsUnderAnyPreset(worldSeed);
+                return new Result(Stage.WORLD_SEED, plan, structureSeeds, OptionalLong.of(worldSeed), Optional.of(Proof.BEDROCK),
+                    hashedSeedFitsNone, bedrock, bedrockProblems, false, List.of(), Optional.empty(), Optional.empty(), biomesDisagree, nether,
+                    netherDisagrees, misfits(step, worldSeed), false);
+            }
+        }
+
+        Optional<BiomeEvidence.Decision> biomeDecision = Optional.empty();
+        boolean bedrockDisagrees = false;
+        if (biomes.present() && structureSeeds.size() <= BiomeEvidence.MAX_STRUCTURE_SEEDS) {
+            List<Long> likelyForBiomes = new ArrayList<>();
+            for (long structureSeed : structureSeeds) {
+                likelyForBiomes.addAll(likelySeeds(structureSeed));
+            }
+            BiomeEvidence.Decision decision = biomes.evidence().search(structureSeeds, likelyForBiomes, threads, biomes.stop(), biomes.cache());
+            biomeDecision = Optional.of(decision);
+            if (decision.proven() && hasHashedSeed(decision.seed().getAsLong(), hashedSeed)) {
+                long worldSeed = decision.seed().getAsLong();
+                bedrockDisagrees = bedrockProblems.isEmpty() && !evidence.mismatchesOf(worldSeed).isEmpty();
+                // Bedrock that another seed fits perfectly while this one gets some wrong is evidence against it:
+                // then neither is presented (notes from two worlds, or changed chunks on one side).
+                boolean anotherFitsBedrock = bedrock.map(found -> found.best().stream()
+                    .anyMatch(candidate -> candidate.mismatches() == 0 && candidate.worldSeed() != worldSeed)).orElse(false);
+                if (!(bedrockDisagrees && anotherFitsBedrock)) {
+                    return new Result(Stage.WORLD_SEED, plan, structureSeeds, decision.seed(), Optional.of(Proof.BIOMES), hashedSeedFitsNone, bedrock,
+                        bedrockProblems, bedrockDisagrees, List.of(), Optional.empty(), biomeDecision, false, nether, netherDisagrees,
+                        misfits(step, worldSeed), false);
+                }
             }
         }
 
         List<Long> likely = new ArrayList<>();
-        if (structureSeeds.size() == 1) {
-            Arrays.stream(Seeds.randomSeedCandidates(structureSeeds.get(0))).forEach(likely::add);
-            Seeds.textSeedCandidate(structureSeeds.get(0)).ifPresent(seed -> {
-                if (!likely.contains(seed)) {
-                    likely.add(seed);
-                }
-            });
+        boolean likelyRuledOut = false;
+        // Nether notes that still count and contradict the structure seed: its likely seeds can't be right either.
+        if (structureSeeds.size() == 1 && !bedrockDisagrees && evidence.structureSeedMismatches(structureSeeds.get(0)) == 0) {
+            likely.addAll(likelySeeds(structureSeeds.get(0)));
+            // Likely seeds the notes rule out are not named: those the biomes don't fit (when some seed fits them;
+            // biomes no seed fits say nothing), and those the overworld bedrock doesn't fit (when some seed fits it).
+            if (biomeDecision.map(BiomeEvidence.Decision::ruleOut).orElse(false)) {
+                likely.removeIf(seed -> !biomes.evidence().fitsUnderAnyPreset(seed));
+            }
+            if (bedrock.map(found -> !found.best().isEmpty() && found.best().get(0).mismatches() == 0).orElse(false)) {
+                likely.removeIf(seed -> !evidence.mismatchesOf(seed).isEmpty());
+            }
+            likelyRuledOut = likely.isEmpty() && !likelySeeds(structureSeeds.get(0)).isEmpty();
         }
         return new Result(Stage.STRUCTURE_SEED, plan, structureSeeds, OptionalLong.empty(), Optional.empty(), hashedSeedFitsNone,
-            bedrock, bedrockProblems, false, likely, Optional.empty());
+            bedrock, bedrockProblems, bedrockDisagrees, likely, Optional.empty(), biomeDecision, false, nether, netherDisagrees, List.of(),
+            likelyRuledOut);
+    }
+
+    /** False only when the hashed seed is genuine and the seed doesn't have it. */
+    private static boolean hasHashedSeed(long worldSeed, HashedSeed hashedSeed) {
+        return !hashedSeed.genuine() || hashedSeed.value().isEmpty() || Seeds.hashedSeed(worldSeed) == hashedSeed.value().getAsLong();
+    }
+
+    /** The structures of the step's plan that don't fit the world seed. */
+    private static List<StructureObservation> misfits(StructureStep step, long worldSeed) {
+        return SeedCheck.misfits(step.data(), step.plan().observations(), worldSeed);
+    }
+
+    /** The world seeds of a structure seed that Minecraft could have picked itself, or that a text seed would give. */
+    public static List<Long> likelySeeds(long structureSeed) {
+        List<Long> likely = new ArrayList<>();
+        Arrays.stream(Seeds.randomSeedCandidates(structureSeed)).forEach(likely::add);
+        Seeds.textSeedCandidate(structureSeed).ifPresent(seed -> {
+            if (!likely.contains(seed)) {
+                likely.add(seed);
+            }
+        });
+        return likely;
     }
 }

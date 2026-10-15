@@ -131,4 +131,48 @@ class ObservationReaderTest {
             assertEquals(observation.bedrock(), nether.isBedrock(observation.x(), observation.y(), observation.z()));
         }
     }
+
+    @Test
+    void biomeLinesAndGridsAreRead() {
+        ObservationReader.Observations read = read(
+            "biome Dark Forest 120 64 -35",
+            "biome minecraft:plains (1, 2, 3)  # from F3",
+            "biome-grid 113 64 -47 a=plains b=minecraft:forest",
+            "ab?",
+            "",
+            "preset large-biomes",
+            "village 336 80");
+        assertEquals(List.of(
+            new BiomeObservation("minecraft:dark_forest", 120, 64, -35, false),
+            new BiomeObservation("minecraft:plains", 1, 2, 3, false),
+            new BiomeObservation("minecraft:plains", 112, 64, -48, true),
+            new BiomeObservation("minecraft:forest", 116, 64, -48, true)), read.biomes());
+        assertEquals(io.github.jriiik.seedfinder.biome.OverworldBiomes.Preset.LARGE_BIOMES, read.preset().orElseThrow());
+        assertEquals(1, read.structures().size());
+    }
+
+    @Test
+    void biomeMistakesNameTheLine() {
+        assertEquals(0, assertThrows(ObservationReader.LineException.class, () -> read("biome forest 1 2")).lineIndex());
+        assertEquals(1, assertThrows(ObservationReader.LineException.class, () -> read("biome-grid 0 64 0 a=plains", "ac")).lineIndex());
+        assertEquals(0, assertThrows(ObservationReader.LineException.class, () -> read("biome-grid 0 64 0 a=plains")).lineIndex());
+        assertEquals(0, assertThrows(ObservationReader.LineException.class, () -> read("preset flat")).lineIndex());
+        assertEquals(0, assertThrows(ObservationReader.LineException.class, () -> read("biome forest 1.5 2 3")).lineIndex());
+    }
+
+    @Test
+    void biomeNotesWithAColonOrThePresetsInGameName() {
+        ObservationReader.Observations read = read(
+            "biome: forest 3000 64 -3000",
+            "biome:plains 1 2 3",
+            "biome-grid: 113 64 -47 a=plains",
+            "a",
+            "",
+            "world preset: Large Biomes");
+        assertEquals(List.of(
+            new BiomeObservation("minecraft:forest", 3000, 64, -3000, false),
+            new BiomeObservation("minecraft:plains", 1, 2, 3, false),
+            new BiomeObservation("minecraft:plains", 112, 64, -48, true)), read.biomes());
+        assertEquals(io.github.jriiik.seedfinder.biome.OverworldBiomes.Preset.LARGE_BIOMES, read.preset().orElseThrow());
+    }
 }

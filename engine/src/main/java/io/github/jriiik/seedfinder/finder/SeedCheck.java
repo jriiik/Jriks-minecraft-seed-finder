@@ -4,6 +4,7 @@ import io.github.jriiik.seedfinder.bedrock.BedrockDimension;
 import io.github.jriiik.seedfinder.bedrock.BedrockEvidence;
 import io.github.jriiik.seedfinder.bedrock.BedrockObservation;
 import io.github.jriiik.seedfinder.bedrock.BedrockPattern;
+import io.github.jriiik.seedfinder.biome.OverworldBiomes;
 import io.github.jriiik.seedfinder.structure.RandomSpreadPlacement;
 import io.github.jriiik.seedfinder.structure.SpreadType;
 import io.github.jriiik.seedfinder.structure.StructureLocator;
@@ -15,7 +16,10 @@ import java.util.HashSet;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
+import java.util.OptionalDouble;
 import java.util.Set;
+import java.util.function.BooleanSupplier;
 
 /**
  * How the notes fit a world seed that was found without them: a typed seed found from the hashed seed alone
@@ -36,11 +40,14 @@ import java.util.Set;
  *       were measured up to about 10 times higher, and notes next to x = 0 or z = 0 (where the game's random numbers
  *       for neighbouring blocks are alike) up to about 90 times. So bedrock alone confirms a seed only from
  *       {@link #BEDROCK_ALONE} informative blocks; less still helps together with structures.</li>
+ *   <li>Overworld biomes, when every note fits under some world preset: the measured chance that a wrong seed fits
+ *       them (see {@link BiomeEvidence}; one loaded area with two or more biomes is usually enough).</li>
  * </ul>
  * Overworld bedrock that doesn't fit contradicts the seed: the right seed fits every valid overworld bedrock note,
  * also in chunks of worlds made before Minecraft 1.18 (their part below y = 0 was made with the seed). Nether bedrock
  * that doesn't fit contradicts it unless the rest confirms it, because nether chunks made by 1.17 or older have
- * bedrock that doesn't follow the seed; the same goes for structures, because a server may place structures
+ * bedrock that doesn't follow the seed; the same goes for biomes (chunks of older versions and changed worlds) and
+ * for structures, because a server may place structures
  * differently and chunks made by older versions or commands don't follow the seed. Bedrock notes that break the
  * game's rules whatever the seed, or say both bedrock and not bedrock for one block, are left out and reported.
  * Structures are checked with the game's placement rules without biomes (see {@link StructureLocator}); strongholds
@@ -56,6 +63,7 @@ import java.util.Set;
  * @param falseFitChance  at most this chance that a wrong seed fits the notes as well as this one (1 when the
  *                        overworld bedrock doesn't fit)
  * @param structureChance the same for the structures alone
+ * @param biomes          the overworld biomes checked
  */
 public record SeedCheck(
     long worldSeed,
@@ -66,8 +74,27 @@ public record SeedCheck(
     Bedrock nether,
     List<String> bedrockProblems,
     double falseFitChance,
-    double structureChance
+    double structureChance,
+    BiomeCheck biomes
 ) {
+
+    /**
+     * The overworld biomes checked.
+     *
+     * @param notes      how many biome notes were checked (0: none, or the check didn't run)
+     * @param places     in how many places (see {@link BiomeEvidence#places()})
+     * @param fitsUnder  the world preset under which the seed fits every note, if any
+     * @param chance     at most this chance that a wrong seed fits them as well (1 when they don't fit)
+     */
+    public record BiomeCheck(int notes, int places, Optional<OverworldBiomes.Preset> fitsUnder, double chance) {
+
+        public static final BiomeCheck NONE = new BiomeCheck(0, 0, Optional.empty(), 1);
+
+        /** True when biomes were checked and the seed doesn't fit them under any preset. */
+        public boolean misfit() {
+            return notes > 0 && fitsUnder.isEmpty();
+        }
+    }
 
     /**
      * Bedrock blocks of one kind that depend on the seed and were checked, how many the seed gets wrong, and the first
@@ -126,23 +153,22 @@ public record SeedCheck(
     }
 
     public static SeedCheck of(VersionData data, List<StructureObservation> structures, List<BedrockObservation> bedrock, long worldSeed) {
-        StructureLocator locator = new StructureLocator(data, worldSeed);
+        return of(data, structures, bedrock, null, worldSeed, 1, () -> false, null);
+    }
+
+    /**
+     * Checks the seed against the notes, biomes included.
+     *
+     * @param biomes the biome notes, or null; checking them takes a few seconds (all 65,536 seeds of the structure
+     *               seed are checked to measure how often a wrong seed fits), less with a cache
+     * @param stop   when it says stop during the biome check, the biomes count as not checked
+     */
+    public static SeedCheck of(VersionData data, List<StructureObservation> structures, List<BedrockObservation> bedrock, BiomeEvidence biomes,
+                               long worldSeed, int threads, BooleanSupplier stop, BiomeEvidence.ScanCache cache) {
         List<StructureObservation> checked = new ArrayList<>();
         List<StructureObservation> fitting = new ArrayList<>();
         List<StructureObservation> misfits = new ArrayList<>();
-        for (StructureObservation structure : new LinkedHashSet<>(structures)) {
-            if (!StructureLocator.canLocate(structure.set())) {
-                continue;
-            }
-            boolean fits;
-            try {
-                fits = locator.isStructureChunk(structure.set(), structure.chunk().x(), structure.chunk().z());
-            } catch (UnsupportedOperationException e) {
-                continue; // an exclusion zone around strongholds: can't be checked yet
-            }
-            checked.add(structure);
-            (fits ? fitting : misfits).add(structure);
-        }
+        checkStructures(data, structures, worldSeed, checked, fitting, misfits);
         double structureChance = structuresFitChance(checked, new HashSet<>(fitting));
         double chance = structureChance;
 
@@ -156,11 +182,50 @@ public record SeedCheck(
             chance *= Math.min(1, BEDROCK_SAFETY * FullSeedFinder.falseFitChance(overworld.blocks()));
         }
 
+        BiomeCheck biomeCheck = BiomeCheck.NONE;
+        if (biomes != null && !biomes.isEmpty()) {
+            OptionalDouble biomeChance = biomes.falseFitChance(worldSeed, threads, stop, cache);
+            if (biomeChance.isEmpty()) {
+                biomeCheck = new BiomeCheck(biomes.noted(), biomes.places(), Optional.empty(), 1);
+            } else if (!Double.isNaN(biomeChance.getAsDouble())) {
+                OverworldBiomes.Preset preset = BiomeEvidence.PRESET_ORDER.stream().filter(p -> biomes.fits(worldSeed, p)).findFirst().orElseThrow();
+                biomeCheck = new BiomeCheck(biomes.noted(), biomes.places(), Optional.of(preset), biomeChance.getAsDouble());
+                if (overworld.mismatches() == 0) {
+                    chance *= biomeChance.getAsDouble();
+                }
+            }
+        }
+
         Verdict verdict = overworld.mismatches() > 0 ? Verdict.CONTRADICTED
             : chance <= MAX_FALSE_FIT_CHANCE ? Verdict.CONFIRMED
-            : !misfits.isEmpty() || nether.mismatches() > 0 ? Verdict.CONTRADICTED
+            : !misfits.isEmpty() || nether.mismatches() > 0 || biomeCheck.misfit() ? Verdict.CONTRADICTED
             : Verdict.UNCONFIRMED;
-        return new SeedCheck(worldSeed, verdict, fitting, misfits, overworld, nether, evidence.problems(), chance, structureChance);
+        return new SeedCheck(worldSeed, verdict, fitting, misfits, overworld, nether, evidence.problems(), chance, structureChance, biomeCheck);
+    }
+
+    /** The noted structures this seed doesn't let start where they were noted (those that can be checked). */
+    public static List<StructureObservation> misfits(VersionData data, List<StructureObservation> structures, long worldSeed) {
+        List<StructureObservation> misfits = new ArrayList<>();
+        checkStructures(data, structures, worldSeed, new ArrayList<>(), new ArrayList<>(), misfits);
+        return List.copyOf(misfits);
+    }
+
+    private static void checkStructures(VersionData data, List<StructureObservation> structures, long worldSeed, List<StructureObservation> checked,
+                                        List<StructureObservation> fitting, List<StructureObservation> misfits) {
+        StructureLocator locator = new StructureLocator(data, worldSeed);
+        for (StructureObservation structure : new LinkedHashSet<>(structures)) {
+            if (!StructureLocator.canLocate(structure.set())) {
+                continue;
+            }
+            boolean fits;
+            try {
+                fits = locator.isStructureChunk(structure.set(), structure.chunk().x(), structure.chunk().z());
+            } catch (UnsupportedOperationException e) {
+                continue; // an exclusion zone around strongholds: can't be checked yet
+            }
+            checked.add(structure);
+            (fits ? fitting : misfits).add(structure);
+        }
     }
 
     private static Bedrock check(List<BedrockObservation> observations, Set<String> conflicting, long worldSeed) {

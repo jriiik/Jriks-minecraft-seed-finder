@@ -24,6 +24,13 @@ the client already received.
     `RandomState` (per-name block generators of a dimension), `WorldgenSeeds` (incl. `positional` = `Mth.getSeed`).
   - `bedrock/`: bedrock rules per dimension (data from the oracle), `BedrockPattern` (which blocks are bedrock),
     `BedrockEvidence` (observations compiled for fast checking of many seeds), `BedrockText` (the notes format).
+  - `biome/`: overworld biomes of 26.x bit for bit (float arithmetic as the game's compiled samplers): `PerlinNoise`,
+    `NormalNoise` (octaves from the world factory by name, so noises are made lazily), `ClimateFunctions` (the six
+    climate functions of a preset from the oracle's `climate.json`; only the types the climate uses, others fail
+    when read), `BiomeParameters` + `BiomeTree` (the list from `biome_parameters.json`; the game's RTree built exactly
+    as the game builds it, because the tree and the last-result shortcut decide ties), `OverworldBiomes` (per version
+    and preset; a `Sampler` is reused across seeds; `couldBe` = the biome is among the closest), `BiomeZoom` (F3's
+    block biome, picked among 8 cells with the hashed seed).
   - `structure/`: placements, `StructureLocator` (placement + frequency + exclusion zones; no biome checks yet),
     `RigidStructures` (from version data `rigid_structures.json`: how each rigid structure's main piece is placed).
   - `version/`: `MinecraftVersion` enum, data loaded from `src/main/resources/io/github/jriiik/seedfinder/versions/<v>/`.
@@ -45,6 +52,42 @@ the client already received.
     or z = 0 fit wrong seeds up to ~90x more often); any overworld bedrock mismatch contradicts it; nether bedrock
     (old chunks) and structures only contradict it when nothing confirms it. `SeedCheckTest` guards the measured
     rates (60 notes; an 18 x 18 layer around the origin).
+    `BiomeEvidence`: biomes as proof of the upper 16 bits. Notes are grouped by place (within 512 blocks of a group's
+    first note); groups count separately only `groupSpacing` apart (4,096; 16,384 for large biomes, whose noises are
+    4x coarser), between the boxes around their notes; `groups` picks as many as can be (exactly up to 16 places,
+    preferring more biomes, then more notes, then note order: from the notes only, never from candidates). Each
+    group's rate is measured on the other candidates: (k + 3) / M. Proven when it is the only
+    candidate that fits and H x 2^(G-1) x prod (k + 3) / M <= 0.001, H = all candidates checked or the likely seeds
+    (Minecraft-picked/text). One loaded area proves a likely seed; others need two areas. Of stored cells only
+    borders and one per chunk are checked (chosen from the notes, never from candidates). Presets are tried in turn
+    (normal, large biomes, amplified) and every scan counts. Unknown biome names are left out of every check.
+    `BiomeEvidenceTest.theFalseFitEstimateIsNotBelowReality` guards the estimate per preset (real <= estimate,
+    real <= 1.5 x independent, estimate >= 500); re-measure if grouping, spacing or LIFT change. A seed proven
+    otherwise is only flagged when biomes don't fit (old or blended chunks, data packs and /fillbiome make the right
+    seed miss).
+    `NetherBedrockSearch`: the structure seed from nether bedrock alone. Searches one surface's hidden number exactly
+    (`BedrockSurfaceSearch`: single, pair and table tests, all superset tests; tests compare with trying every
+    number), checks each key against the other surface, inverts `nextLong()` (with the borrow) twice. Proven with
+    both surfaces, >= 58 bits together, the near-miss bound, and the chances of a wrong key added up over all
+    searches of one `find`. `find` searches chunk by chunk, then together, then leaving out one chunk (old chunks fit
+    nothing; the result without it is kept as candidates when not proven) and names chunks that don't fit; every chunk
+    that can be searched alone is (FITS_NO_SEED whenever such a search finds nothing: every number was tried); a weak
+    chunk never rules out candidate keys: a key is ruled out only with >= `MIN_MISMATCHES_TO_RULE_OUT` (3) blocks
+    wrong and keys x 2^-`separatingBits` <= 0.001 (a surface whose hidden number two keys share doesn't count). About 23% of structure seeds have a twin with the same nether bedrock, so
+    the answer is one or two seeds. A capped list (too many fit) is never used as complete.
+    `WorldSeedSearch` takes the structure seed from structures and/or nether bedrock (`StructureStep.withNether`:
+    both agree -> both; structures can't search, or fit none -> nether candidates; proven nether disagrees -> the
+    seeds of both sides, so the later steps decide; capped -> not used), then the hashed seed (`HashedSeed.genuine`
+    in single player: none fitting means the structure seeds are wrong, NO_STRUCTURE_SEED, and bedrock/biome proofs
+    must have the hash), overworld bedrock (`bedrockForFullSeed`: nether notes still count, except chunks found
+    unusable for sure (`unusableNetherChunks`: FITS_NO_SEED, or CONTRADICTS of a proven result) and all of them in a
+    proven disagreement; certain only if structure seeds x expected false fits < 0.02), biomes (not presented when
+    the bedrock fits another seed perfectly), likely seeds (minus those the biomes rule out when some seed fits them
+    (`Decision.ruleOut`), and those the overworld bedrock rules out when some seed fits it; none after a biome/bedrock
+    disagreement). A world seed result names the noted structures that don't fit it (`Result.misfits`).
+    `BiomeEvidence.fitChance` uses the best part of the counted groups (a group whose LIFT x rate is >= 1 is left
+    out: fitting all groups implies fitting any part). A seed is only taken as fitting (and proven) when it also fits
+    every cell noted, the thinned-out ones included (`fits`).
   - `recognize/`: start chunks of jigsaw structures from blocks. `StartPiece` (a start piece's blueprint: blocks,
     built/terrain split, reference point, anchors), `StartPieceRecognizer` (anchor -> candidate placements that pass
     the chunk-corner and region checks, looked up by the anchor's position in its chunk -> score; the all, built and
@@ -72,7 +115,13 @@ the client already received.
     fit, cluster test and tracker answer). Keep the thresholds unless a measurement on chunks made by the game's
     code shows a change is safe.
 - `cli/`: picocli app `seedfinder` (`find`, `full-seed`, `typed-seed`, `structure-seed`, `locate`, `bedrock`,
-  `structures`, `versions`).
+  `biomes`, `structures`, `versions`). Notes: `biome <name> x y z` (F3), `biome-grid x y z a=... b=...` with rows of
+  stored cells (the mod writes these), `preset large_biomes`. `find` searches nether bedrock alone or together with
+  structures (`StructureStep.withNether`, as the mod), names structures that don't fit the seed found, and retries
+  without each structure (`withoutMisfit`) when none fits; `full-seed` runs the nether search only to leave out
+  chunks no seed made; `FullSeedReport` uses the engine's certainty rule for bedrock, checks biomes when bedrock
+  doesn't settle it, and narrows by nether notes only when every seed ruled out gets >= 3 blocks wrong and
+  (seeds - 1) x 2^-`separatingBits` <= 0.001 (it never leaves chunks out itself).
 - `mod/`: Fabric client mod for 26.3 (Loom, non-remapping, Mojang names; the engine is nested as jar-in-jar, Gson
   comes from Minecraft). `SeedFinderClient` registers an unbound key, a HUD line, chunk-load and system-message
   listeners; `WorldSession` holds per-world notes (opt-in `collecting`, saved as JSON plus a CLI-readable notes
@@ -81,7 +130,18 @@ the client already received.
   once the seed is known or the player leaves; kept by "Remove all notes", since it depends only on the hashed seed
   in the notes' key), and `SearchRunner` checks a typed seed against the notes (`SeedCheck`) before its structure
   search;
-  `BedrockScanner` reads bedrock layers (B / natural stone / unknown); `StartPieceLibrary` builds the start-piece
+  `BedrockScanner` reads bedrock layers (B / natural stone / unknown; floor and roof separately, so a hole in the nether
+  roof doesn't lose the floor); `BiomeScanner` reads the exact stored biome of each 4 x 4 x 4 cell of loaded overworld
+  chunks at y 64, -48, -16 and 16 (a biome the vanilla list lacks marks the world as data-pack and stops biome notes);
+  `WorldSession` keeps biome areas (up to 100 chunks within 192 blocks of an area's first chunk; a new area only where
+  its notes are sure to be `groupSpacing` from every area's notes, about 4,500 blocks between first chunks; 4 areas,
+  plus a fifth 16,384 + reach from one of them for large-biome worlds), written as `biome-grid` lines, and leaves
+  out nether chunks the search found unusable (`leaveOutBedrock`: notes dropped, not read again, not counted against
+  the 4-chunk limit; once 8 are left out, chunks within 8 chunks of one are not read, so newer land farther away
+  is; at most 256 remembered; a chunk contradicting a proven result is only left out when the structures agree with
+  it); `SearchRunner` checks biomes (with a scan cache sized for every structure seed,
+  preset and area), caches the structure search and the nether search separately, and searches nether bedrock
+  (also with no structures); the biome list for `BiomeScanner` loads off the main thread; `StartPieceLibrary` builds the start-piece
   blueprints at runtime from the game jar's own data (structure, template pool, processor list, block tag JSON and
   `.nbt` templates; 26.x block states use `id`/`properties`); `RigidLibrary` builds the rigid layouts at runtime:
   templates from the game jar placed as `rigid_structures.json` says (turned with the game's
@@ -106,7 +166,9 @@ the client already received.
   server's own structure starts, runs `RecognitionSweep` (the recognizers on the nearest real starts of each set,
   at least one per set, searching farther for sets of rare biomes; chunks generated by the server; rigid ones in
   both dimensions), checks that nether portals are only noted once switched on, and checks that a /place'd camp,
-  ruined portal and portal template are set aside and not noted.
+  ruined portal and portal template are set aside and not noted. It also checks every biome cell the client received
+  against the engine, F3's biome against `BiomeZoom`, that the area's biomes prove the seed, and that the nether
+  bedrock read in the nether alone proves the structure seed.
   Recognition was measured offline with a probe that runs the real classes on chunks generated by the game's code
   (scratch harness, not in the repo); wrong answers matter far more than misses, so keep both thresholds at 0.70
   unless such a measurement shows a change is safe.
@@ -117,7 +179,10 @@ the client already received.
   `BedrockOracle` generates real chunks up to the TERRAIN step without a server; that needs the static block tags
   bound (done in `loadVanillaWorldRegistries`). `RigidOracle` runs the game's structure generation in thousands of
   chunks (any biome allowed) and records how each rigid structure's main piece is placed; it fails unless every
-  template was seen in every rotation and mirror.
+  template was seen in every rotation and mirror. `BiomeOracle` writes `climate.json` and `biome_parameters.json`
+  (version data, in the game's codec format and the game's list order) and `fixtures/26.3/biomes.json` (noise and
+  climate values, a lookup series with ties and whole chunks filled on fresh threads, so the RTree's last-result
+  shortcut starts empty, and the zoom).
 
 ## Commands
 

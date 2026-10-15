@@ -2,12 +2,15 @@ package io.github.jriiik.seedfinder.mod;
 
 import com.mojang.blaze3d.platform.InputConstants;
 import io.github.jriiik.seedfinder.bedrock.BedrockDimension;
+import io.github.jriiik.seedfinder.biome.OverworldBiomes;
 import io.github.jriiik.seedfinder.version.MinecraftVersion;
 import io.github.jriiik.seedfinder.version.VersionData;
 import java.io.IOException;
 import java.nio.file.Path;
 import java.util.Objects;
 import java.util.Optional;
+import java.util.Set;
+import java.util.concurrent.CompletableFuture;
 import net.fabricmc.api.ClientModInitializer;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientChunkEvents;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
@@ -44,6 +47,8 @@ public final class SeedFinderClient implements ClientModInitializer {
     static KeyMapping openKey;
     private static SearchRunner runner;
     private static final TypedSeedRunner TYPED_SEEDS = new TypedSeedRunner();
+    /** The overworld biome ids, loaded in the background on first need (a few hundred ms); main thread only. */
+    private static CompletableFuture<Set<String>> overworldBiomes;
     /** The current world's notes; only touched on the game's main thread. */
     private static WorldSession session;
     private static StructureRecognition recognition;
@@ -165,8 +170,48 @@ public final class SeedFinderClient implements ClientModInitializer {
     private static void onChunkLoad(ClientLevel level, LevelChunk chunk) {
         WorldSession current = session(Minecraft.getInstance());
         if (current != null && current.collecting()) {
-            bedrockDimension(level, current).ifPresent(dimension -> BedrockScanner.scan(dimension, chunk).ifPresent(current::offerBedrock));
+            bedrockDimension(level, current)
+                .filter(dimension -> current.wantsBedrock(dimension.id(), chunk.getPos().x(), chunk.getPos().z()))
+                .ifPresent(dimension -> BedrockScanner.scan(dimension, chunk).ifPresent(current::offerBedrock));
+            scanBiomes(level, current, chunk);
             recognition.chunkLoaded(level, chunk);
+        }
+    }
+
+    /**
+     * The overworld biome ids of this version (other biomes mean a data pack or mod changes the world), or null while
+     * they are still being loaded off the main thread (or failed to load).
+     */
+    private static Set<String> overworldBiomes() {
+        if (overworldBiomes == null) {
+            overworldBiomes = CompletableFuture.supplyAsync(
+                () -> Set.copyOf(OverworldBiomes.of(MinecraftVersion.V26_3, OverworldBiomes.Preset.NORMAL).parameters().biomes()));
+            overworldBiomes.exceptionally(error -> {
+                LOG.warn("Could not load the overworld biomes; biomes are not noted", error);
+                return null;
+            });
+        }
+        return overworldBiomes.isDone() && !overworldBiomes.isCompletedExceptionally() ? overworldBiomes.join() : null;
+    }
+
+    /** True when the biome list could not be loaded (then biomes are never noted; see the game log). */
+    static boolean biomeListFailed() {
+        return overworldBiomes != null && overworldBiomes.isCompletedExceptionally();
+    }
+
+    /** Notes the chunk's biomes when they are wanted (overworld, not superflat, an area that still needs chunks). */
+    private static void scanBiomes(ClientLevel level, WorldSession current, LevelChunk chunk) {
+        if (!level.dimension().identifier().toString().equals("minecraft:overworld") || WorldIdentity.isSuperflat(level)
+            || !current.wantsBiomes(chunk.getPos().x(), chunk.getPos().z())) {
+            return;
+        }
+        Set<String> known = overworldBiomes();
+        if (known == null) {
+            return; // still loading: the loaded chunks are looked at again every 2 seconds
+        }
+        switch (BiomeScanner.scan(chunk, known)) {
+            case BiomeScanner.Read read -> current.offerBiomes(read.chunk());
+            case BiomeScanner.Unknown unknown -> current.foreignBiomeSeen(unknown.biome());
         }
     }
 
@@ -176,17 +221,13 @@ public final class SeedFinderClient implements ClientModInitializer {
             return Optional.empty();
         }
         return data().bedrockDimension(level.dimension().identifier().toString())
-            .filter(dimension -> !dimension.rules().isEmpty() && current.bedrockChunks(dimension.id()) < WorldSession.MAX_BEDROCK_CHUNKS);
+            .filter(dimension -> !dimension.rules().isEmpty() && current.wantsBedrock(dimension.id()));
     }
 
     /** Chunks that were already loaded when collecting was switched on, nearest first. */
     private static void scanLoadedChunks(Minecraft minecraft, WorldSession current) {
         ClientLevel level = minecraft.level;
         if (level == null || minecraft.player == null) {
-            return;
-        }
-        Optional<BedrockDimension> dimension = bedrockDimension(level, current);
-        if (dimension.isEmpty()) {
             return;
         }
         int centerX = minecraft.player.blockPosition().getX() >> 4;
@@ -197,12 +238,12 @@ public final class SeedFinderClient implements ClientModInitializer {
                     if (Math.max(Math.abs(dx), Math.abs(dz)) != radius) {
                         continue;
                     }
-                    if (current.bedrockChunks(dimension.get().id()) >= WorldSession.MAX_BEDROCK_CHUNKS) {
-                        return;
-                    }
                     LevelChunk chunk = level.getChunkSource().getChunk(centerX + dx, centerZ + dz, ChunkStatus.FULL, false);
                     if (chunk != null) {
-                        BedrockScanner.scan(dimension.get(), chunk).ifPresent(current::offerBedrock);
+                        Optional<BedrockDimension> dimension = bedrockDimension(level, current);
+                        dimension.filter(rules -> current.wantsBedrock(rules.id(), chunk.getPos().x(), chunk.getPos().z()))
+                            .ifPresent(rules -> BedrockScanner.scan(rules, chunk).ifPresent(current::offerBedrock));
+                        scanBiomes(level, current, chunk);
                     }
                 }
             }
