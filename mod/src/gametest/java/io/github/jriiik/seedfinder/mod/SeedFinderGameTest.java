@@ -237,14 +237,16 @@ public class SeedFinderGameTest implements FabricClientGameTest {
         int x = chunkX * 16;
         int z = chunkZ * 16;
         int templateChunkX = chunkX + (chunkX - regionX * grid.spacing() == 0 ? 3 : -3);
+        // Placed while the player is far away (the chunks are force-loaded on the server): the mod first sees these
+        // chunks with the structures in them. (A chunk is judged once; one judged before something was placed in it
+        // is not judged again, so a structure placed there is never noted anyway.)
+        world.getServer().runCommand("tp @a " + (x + 8 + 1000) + " 160 " + (z + 8));
         world.getServer().runCommand("forceload add " + (x - 96) + " " + (z - 64) + " " + (x + 96) + " " + (z + 64));
-        world.getServer().runCommand("tp @a " + (x + 8) + " 160 " + (z + 8));
         context.waitTicks(100);
         context.runOnClient(client -> client.getConnection().sendCommand("place structure minecraft:ruined_portal " + x + " 100 " + z));
         context.runOnClient(client -> client.getConnection().sendCommand("place template minecraft:ruined_portal/portal_3 " + templateChunkX * 16 + " 100 " + z));
         context.waitTicks(40);
         world.getServer().runCommand("forceload remove all");
-        world.getServer().runCommand("tp @a " + (x + 8 + 1000) + " 160 " + (z + 8));
         context.waitTicks(100);
         world.getServer().runCommand("tp @a " + (x + 8) + " 160 " + (z + 8));
         RecognizedStarts.Start placed = new RecognizedStarts.Start("ruined_portals", chunkX, chunkZ);
