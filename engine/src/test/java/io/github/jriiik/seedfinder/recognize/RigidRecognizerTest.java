@@ -851,6 +851,48 @@ class RigidRecognizerTest {
     }
 
     @Test
+    void aChunkReadAgainIsJudgedOnItsBlocksAsTheyAreNow() {
+        Template portal = portal();
+        RigidRecognizer recognizer = new RigidRecognizer(poses(portal, RigidKind.RUINED_PORTAL, "portal"), rules(Set.of()));
+        RigidTracker told = new RigidTracker(recognizer, false);
+        RigidTracker notTold = new RigidTracker(recognizer, false);
+        World world = new World().load(-6, 8);
+        world.place(portal, 16, 70, 16, "minecraft:air");
+        int missing = 1 + told.reach();
+        for (int x = -6; x <= 8; x++) {
+            for (int z = -6; z <= 8; z++) {
+                if (x != missing || z != 1) {
+                    told.chunkScanned(x, z, recognizer.triggersOf(world, x, z, MIN_Y, MAX_Y));
+                    notTold.chunkScanned(x, z, recognizer.triggersOf(world, x, z, MIN_Y, MAX_Y));
+                }
+            }
+        }
+        // The portal's own fit is compared and passes; its rivals wait for the chunk not read yet.
+        assertEquals(List.of(), told.work(world, () -> false));
+        assertEquals(List.of(), notTold.work(world, () -> false));
+        assertEquals(1, told.pendingCount());
+        // Its stone-brick base is taken away (not a trigger block: the votes stay the same) and the chunk read again.
+        for (Block block : portal.blocks()) {
+            if (block.id().equals("minecraft:stone_bricks")) {
+                world.set(16 + block.x(), 70 + block.y(), 16 + block.z(), "minecraft:air");
+            }
+        }
+        told.chunkScanned(1, 1, recognizer.triggersOf(world, 1, 1, MIN_Y, MAX_Y));
+        told.chunkScanned(missing, 1, recognizer.triggersOf(world, missing, 1, MIN_Y, MAX_Y));
+        notTold.chunkScanned(missing, 1, recognizer.triggersOf(world, missing, 1, MIN_Y, MAX_Y));
+        List<RigidRecognizer.Detection> found = new ArrayList<>();
+        List<RigidRecognizer.Detection> stale = new ArrayList<>();
+        for (int i = 0; i < 100; i++) {
+            found.addAll(told.work(world, () -> false));
+            stale.addAll(notTold.work(world, () -> false));
+        }
+        assertEquals(List.of(), found(found));
+        assertEquals(List.of(), found(recognizer.scan(world, -2, 4, -2, 4, MIN_Y, MAX_Y, false)));
+        // Without the second read, the fit compared earlier stands.
+        assertEquals(List.of("RUINED_PORTAL 1,1 y 70"), found(stale));
+    }
+
+    @Test
     void theTrackerWaitsForEverythingTheClusterTestReads() {
         // A small ruin 29 blocks long: the cluster test around a fit reads 24 blocks to either side of its origin.
         List<Block> line = new ArrayList<>();

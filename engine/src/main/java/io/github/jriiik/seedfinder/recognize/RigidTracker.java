@@ -23,8 +23,10 @@ import java.util.function.BooleanSupplier;
  * and most chunks are done then. If one passes, the chunk is judged with the fits of every chunk within
  * {@link #RIVALS} chunks of it, each fit compared over its whole extent: so a wrong fit next to a real structure
  * always meets the real one, complete (fits that share blocks never start farther apart). That needs everything the
- * fits read loaded and read: the chunks within {@link #reach}. Either way the answer is the one a scan of a window
- * holding all those chunks gives for the chunk. Each chunk is judged once. Two accepted fits of one set that are
+ * fits read loaded and read: the chunks within {@link #reach}. Either way the answer is what
+ * {@link RigidRecognizer#resolve} gives for the chunk on the fits of the chunks within {@link #RIVALS}, compared in
+ * full with the blocks as last read: when a chunk is read again, what was learned from its blocks is learned afresh
+ * (blocks that change in a loaded chunk are not seen). Each chunk is judged once. Two accepted fits of one set that are
  * farther apart than {@link #RIVALS} but closer than the set's separation can't both be starts; unlike a scan of one
  * big window, which keeps the stronger, the tracker reports both, and {@link RecognizedStarts} then finds them in one
  * placement region and reports neither: a miss, never a wrong start.
@@ -98,6 +100,27 @@ public final class RigidTracker {
             detections = new RigidRecognizer.Detection[candidates.size()];
             verified = new boolean[candidates.size()];
         }
+
+        /** Forgets the comparisons with the world (keeping the votes); true when there were any. */
+        boolean forgetComparisons() {
+            boolean any = ownAcceptable != null || forgetClusterAnswers();
+            if (candidates != null) {
+                for (int i = 0; i < verified.length && !any; i++) {
+                    any = verified[i];
+                }
+                detections = new RigidRecognizer.Detection[candidates.size()];
+                verified = new boolean[candidates.size()];
+            }
+            ownAcceptable = null;
+            return any;
+        }
+
+        /** Forgets the answers of the cluster test; true when there were any. */
+        boolean forgetClusterAnswers() {
+            boolean any = !clusterPiece.isEmpty();
+            clusterPiece.clear();
+            return any;
+        }
     }
 
     /** The chunk being judged, and how far along. */
@@ -137,21 +160,37 @@ public final class RigidTracker {
     public void chunkScanned(int chunkX, int chunkZ, int[] found) {
         long key = RigidRecognizer.chunkKey(chunkX, chunkZ);
         int[] before = triggers.put(key, found.clone());
-        if (before == null || !Arrays.equals(before, found)) {
-            // The votes of the origins around it change: they are counted afresh when needed.
-            int span = recognizer.span();
-            boolean dropped = false;
-            for (int x = chunkX - span; x <= chunkX + span; x++) {
-                for (int z = chunkZ - span; z <= chunkZ + span; z++) {
-                    dropped |= origins.remove(RigidRecognizer.chunkKey(x, z)) != null;
+        boolean changed = before == null || !Arrays.equals(before, found);
+        // Its blocks may have changed since it was read last: what was learned from them is learned afresh when
+        // needed. Votes change only with the trigger blocks; fits are compared again, and cluster tests done again.
+        int span = recognizer.span();
+        int readSpan = recognizer.readSpan();
+        int affected = Math.max(readSpan, recognizer.clusterSpan());
+        boolean forgot = false;
+        for (int x = chunkX - affected; x <= chunkX + affected; x++) {
+            for (int z = chunkZ - affected; z <= chunkZ + affected; z++) {
+                long originKey = RigidRecognizer.chunkKey(x, z);
+                Origin origin = origins.get(originKey);
+                if (origin == null) {
+                    continue;
+                }
+                int distance = Math.max(Math.abs(x - chunkX), Math.abs(z - chunkZ));
+                if (changed && distance <= span) {
+                    origins.remove(originKey);
+                    forgot = true;
+                } else {
+                    forgot |= distance <= readSpan ? origin.forgetComparisons() : origin.forgetClusterAnswers();
+                }
+                if (verifyingOrigin == origin) {
+                    verification = null;
+                    verifyingOrigin = null;
                 }
             }
-            if (dropped && job != null && near(job.key, chunkX, chunkZ, reach)) {
-                stopJob();
-            }
+        }
+        if (forgot && job != null && near(job.key, chunkX, chunkZ, reach)) {
+            stopJob();
         }
         if (found.length > 0) {
-            int span = recognizer.span();
             for (int x = chunkX - span; x <= chunkX + span; x++) {
                 for (int z = chunkZ - span; z <= chunkZ + span; z++) {
                     long around = RigidRecognizer.chunkKey(x, z);

@@ -62,7 +62,8 @@ the client already received.
     fits is acceptable is done once its `readSpan` is read; otherwise it is judged with the fits of the chunks within
     `RIVALS` = 2, once everything within `reach` = `RIVALS + max(readSpan, clusterSpan)` is loaded and read, so the
     answer never depends on what happens to be loaded; steps of at most `STEP_READS` = 512 block reads under a time
-    budget; waiting chunks are looked at again when a chunk around them is read). Any change must give the same
+    budget; waiting chunks are looked at again when a chunk around them is read; a chunk read again makes it compare
+    the fits around it afresh, its votes too if its trigger blocks changed). Any change must give the same
     answers: compare with the committed version on chunks made by the game's code (scratch probe, every vote count,
     fit, cluster test and tracker answer). Keep the thresholds unless a measurement on chunks made by the game's
     code shows a change is safe.
