@@ -3,6 +3,7 @@ package io.github.jriiik.seedfinder.mod;
 import java.util.OptionalLong;
 import net.minecraft.client.gui.components.Button;
 import net.minecraft.client.gui.components.FittingMultiLineTextWidget;
+import net.minecraft.client.gui.components.Tooltip;
 import net.minecraft.client.gui.layouts.HeaderAndFooterLayout;
 import net.minecraft.client.gui.layouts.LinearLayout;
 import net.minecraft.client.gui.screens.Screen;
@@ -16,6 +17,7 @@ final class SeedFinderScreen extends Screen {
     private final SearchRunner runner;
     private FittingMultiLineTextWidget status;
     private Button collect;
+    private Button netherPortals;
     private Button showStatus;
     private Button copySeed;
 
@@ -37,6 +39,8 @@ final class SeedFinderScreen extends Screen {
         row.addChild(Button.builder(Component.translatable("gui.jriksseedfinder.add_structure"),
             button -> minecraft.gui.setScreen(new StructurePickerScreen(this, session))).width(176).build());
         contents.addChild(row);
+        netherPortals = contents.addChild(Button.builder(Component.empty(), button -> session.setNetherPortals(!session.netherPortals()))
+            .tooltip(Tooltip.create(Component.translatable("gui.jriksseedfinder.nether_portals.tooltip"))).width(358).build());
 
         LinearLayout footer = layout.addToFooter(LinearLayout.vertical().spacing(4));
         LinearLayout tools = footer.addChild(LinearLayout.horizontal().spacing(6));
@@ -66,6 +70,8 @@ final class SeedFinderScreen extends Screen {
     private void refresh() {
         status.setMessage(Component.literal(String.join("\n", StatusText.lines(session, runner))));
         collect.setMessage(Component.translatable(session.collecting() ? "gui.jriksseedfinder.collect.on" : "gui.jriksseedfinder.collect.off"));
+        netherPortals.setMessage(Component.translatable(session.netherPortals() ? "gui.jriksseedfinder.nether_portals.on"
+            : "gui.jriksseedfinder.nether_portals.off"));
         showStatus.setMessage(Component.translatable(session.showStatus() ? "gui.jriksseedfinder.show_status.on" : "gui.jriksseedfinder.show_status.off"));
         copySeed.active = StatusText.seedToCopy(session).isPresent();
     }

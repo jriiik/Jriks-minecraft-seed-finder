@@ -33,7 +33,7 @@
 | 2 | Find the 48-bit structure seed from a list of structure observations (`seedfinder find`) | ✅ |
 | 3 | Find the full 64-bit seed: the `nextLong()` shortcut, text seeds, and the overworld bedrock floor | ✅ |
 | 4 | CLI polish: a `verify` command, saving results | 🔜 |
-| 5 | Fabric client mod: notes structures and bedrock while you explore, shows progress, turned on per server | ✅ first version; recognizing the remaining structure types ⏳ |
+| 5 | Fabric client mod: notes structures and bedrock while you explore, recognizes 13 structure types by itself, shows progress, turned on per server | ✅ |
 | 6 | Extras: structure seed from nether bedrock alone, biomes, more data sources (End pillars), older versions | 🔜 |
 
 ### Phase 2: how the structure seed search works
@@ -146,6 +146,25 @@ Typical searches take well under a second. Villages-only searches need more stru
   ancient cities). A placement is only accepted when its reference point lands on a chunk corner, the chunk is one
   the structure can start in at all, and at least 70% of the blueprint and 70% of its built blocks match. Matches
   are grouped per placement region; a region whose matches disagree reports nothing.
+- **Rigid structures recognized from blocks** (desert pyramids, jungle temples, swamp huts, igloos, shipwrecks,
+  ocean ruins, ruined portals, also in the nether). Each is one fixed piece: the game puts a code-built piece's box
+  corner, or a template's origin, exactly on the start chunk's north-west corner, and turns templates about a fixed
+  pivot (portals are also mirrored). How each one is placed (templates, turns, mirrors, pivots) comes from the
+  oracle, which runs the game's own structure generation in thousands of chunks; the mod builds every variant in
+  every pose at runtime (440 layouts) from the templates in the game jar and, for pyramids, temples and huts, by
+  running the game's own building code in a made-up world in memory. Blocks typical of each structure vote for the
+  placements they could belong to, but only those with their origin on a chunk corner; the placements with at least
+  3 votes are compared block by block. A fit is accepted when at least 12 telling blocks match (fewer for tiny
+  layouts) and at least half of the compared ones (55% for ocean ruins), also when every kind of block counts the
+  same; when the spots the structure leaves empty are not filled with its own material (for ruined portals not a
+  single one: a complete frame or a floor is a player's portal); when an ocean ruin lies in open water; when the
+  biome is one the structure starts in; and when a small ocean ruin doesn't fit better off the chunk grid (the
+  cluster ruins around a big one). Fits are then taken strongest first: two starts of one set closer than the set's
+  separation can't both exist, a fit that mostly explains blocks already explained is dropped, and when another
+  start chunk fits about as well nothing is noted. A chunk where none of its own fits passes is done once its
+  neighbours are read; otherwise the mod judges it with the fits of the chunks within 2 as rivals, once everything
+  they read is loaded (3 chunks around it; 4 when a small ocean ruin needs the cluster test), so a wrong fit
+  next to a real structure always meets the real one whole.
 
 **What we learned while testing:**
 
@@ -165,14 +184,48 @@ Typical searches take well under a second. Villages-only searches need more stru
   blocks are mostly those stairs). Now 70% of the built blocks other than the most common one must match too, and
   the most common block is only used to search when nothing else can be.
 - *Real structures that don't follow the seed:* chunks made by older versions (before 1.18 villages used a 32-chunk
-  grid), `/place structure` (it puts the start piece on the corner of the chunk you name) and copied areas. The mod
-  reads `/place` answers and ignores those spots; for the rest, "no seed fits" triggers a search that leaves out one
-  structure at a time and only reports a result that the hashed seed or bedrock proves.
-- *Every build checks real structures.* The in-game test generates the chunks around the 4 nearest starts of each
-  of the six types (24) with the game itself and requires the recognizer to find them with no wrong or
-  contradicting start; it also checks that a camp placed with `/place` is not noted.
+  grid; up to 1.12 jungle temples, swamp huts and igloos shared the desert pyramids' grid; from 1.16 to 1.18.1
+  nether ruined portals used a grid of 25 x 25 chunks), `/place structure` (it puts the start piece on the corner of
+  the chunk you name), `/place template` (a structure's own template, put anywhere) and copied areas. The mod reads
+  the answers to both `/place` commands and ignores those spots (a template's answer doesn't say how it was turned,
+  so every turn is left out), also while collecting is off (then only for the session) and after "Remove all notes";
+  such a spot doesn't count against the real start of its region either. Ruined portals in the nether are only
+  noted when the player says the nether is from 1.18.2 or newer: an old nether hub would otherwise fill the notes
+  with portals on the old grid. For the rest, "no seed fits" triggers a search that leaves out one structure at a
+  time and only reports a result that the hashed seed or bedrock proves.
+- *Every build checks real structures.* The in-game test generates the chunks around the nearest starts of each
+  recognized type with the game itself (up to 4 per type and at least one, looking farther for types of rare biomes;
+  ruined portals also in the nether) and requires the recognizers to find them with no wrong or contradicting
+  start; it visits one start of each type, and a ruined portal in the nether, as a player would, and checks that a
+  camp and a ruined portal placed with `/place` are not noted.
 - *Underground structures need real blocks.* Servers with anti-xray hide them; the mod doesn't try to get around
   that, and they are simply not found there.
+- *Rigid structures: research first, then a port checked against it.* The recognizer was worked out on worlds made
+  by the game's own code (tuned on some seeds, then measured on fresh ones: 56 of each type, 0 wrong start chunks,
+  0 false alarms in 238 areas and on 3,150 player-style portal frames). A separate check found two gaps, both
+  closed: a player's portal on a stone-brick floor passed as a ruined portal about 1 time in 12, and a desert village
+  by a warm ocean once looked like an ocean ruin on dry land. The look-alikes that needed rules: a mansion's
+  cobblestone foundation (95% of a jungle temple's cobblestone), underground stone-brick structures that look like
+  small cold ruins, the cluster ruins around a big ocean ruin, and an intact portal fitting another pose one chunk
+  away at 0.70 (only the stronger true fit next to it rules that out). The mod's code was then compared with the
+  research version on worlds made by the game's code: the same 440 layouts, and the same answers in every area,
+  also from the mod's chunk-by-chunk tracker reading chunks in random order: 160 structures of the seven kinds in
+  the overworld and 28 nether portals, all found; no wrong start chunk; no false alarm in 30 random areas or on
+  2,400 player-built portal frames (many on stone-brick, slab or blackstone floors).
+- *Rigid recognition never holds up the game for long.* It works in small steps (at most 512 blocks read per step,
+  1 ms per tick plus whatever the chunk scan leaves of its 2 ms). A chunk where nothing fits is done as soon as its
+  neighbours are read; one with a fit waits until everything its rivals and the ocean-ruin cluster test read is
+  loaded (3 chunks around it, 4 when the cluster test is needed), so the answer never depends on what happens to be
+  loaded. (Minecraft keeps a bit less loaded than the render distance, so a structure is judged once the player is
+  within about render distance minus 5 chunks.) Checked against the first version on worlds made by the game's
+  code: the same answer for every one of about 1.3 million placements compared (votes, fit, cluster test) and in
+  every area, also with anti-xray-style fake blocks. In busy
+  areas (villages, temples, ocean ruins) judging takes about 0.4 ms of work per chunk; on an anti-xray server that
+  sends 1 in 21 hidden blocks as obsidian and 1 in 21 as mossy cobblestone, about 7 ms, which only means it catches
+  up more slowly there.
+- *What rigid recognition misses:* tiny warm ocean ruins (only 9 telling blocks), portals mostly covered by
+  netherrack or, in the nether, by lava, ocean ruins buried in coastal rock, and anything players have repaired or
+  taken apart (a ruined portal someone completed or lit no longer counts as a ruin).
 
 ## Things that can't work
 
@@ -185,7 +238,8 @@ Typical searches take well under a second. Villages-only searches need more stru
 - **Old chunks**: chunks generated by an older Minecraft version keep that version's generation, so the finder must
   know which version made the chunks you looked at. This includes structures the mod recognizes by itself: a
   village from an older version can look the same but follow older placement rules, and then no seed fits. Remove
-  structures in old parts of an upgraded world on the mod's screen.
+  structures in old parts of an upgraded world on the mod's screen. The client can't tell old chunks from new ones,
+  so the mod can't do this by itself.
 
 ## Keeping up with new Minecraft versions
 

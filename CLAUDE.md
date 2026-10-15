@@ -24,7 +24,8 @@ the client already received.
     `RandomState` (per-name block generators of a dimension), `WorldgenSeeds` (incl. `positional` = `Mth.getSeed`).
   - `bedrock/`: bedrock rules per dimension (data from the oracle), `BedrockPattern` (which blocks are bedrock),
     `BedrockEvidence` (observations compiled for fast checking of many seeds), `BedrockText` (the notes format).
-  - `structure/`: placements, `StructureLocator` (placement + frequency + exclusion zones; no biome checks yet).
+  - `structure/`: placements, `StructureLocator` (placement + frequency + exclusion zones; no biome checks yet),
+    `RigidStructures` (from version data `rigid_structures.json`: how each rigid structure's main piece is placed).
   - `version/`: `MinecraftVersion` enum, data loaded from `src/main/resources/io/github/jriiik/seedfinder/versions/<v>/`.
   - `finder/`: Phase 2 structure-seed search. `StructureSeedFinder` (plan + search), `ObservationCheck` (low-bit
     lifting, fast checks, twin probabilities), `TopBitsSolver` (solves bits 35..47), `ObservationParser`.
@@ -49,6 +50,27 @@ the client already received.
     the chunk-corner and region checks, looked up by the anchor's position in its chunk -> score; the all, built and
     "distinct" (built minus the most common built block) scores must each be >= 0.70), `RecognizedStarts` (grouping
     by set and region; disagreeing regions report nothing). No game data here: the mod builds the blueprints.
+    Rigid structures (pyramids, jungle temples, swamp huts, igloos, shipwrecks, ocean ruins, ruined portals), ported
+    from the measured research recognizer: `RigidKind` (per kind: trigger and informative block classes, thresholds),
+    `RigidBlocks` (block classes: wood types, mossy/cracked variants...), `RigidLayout` (one variant in one pose, as
+    offsets from the start chunk's corner, plus its empty spots), `RigidRecognizer` (votes only for origins on chunk
+    corners, via tables by trigger class, position in the chunk and chunk offset; `verify` leaves out only fits that
+    can never be accepted or be a rival (score sure to stay below minScore - 0.15; with `allVotes`, as the tracker
+    counts them, also by votes + `RigidLayout.unvoted`); `acceptable` = thresholds, empty spots, ocean water, biome
+    in 3 x 3 cells +-16 blocks; `isClusterPiece` by voting over the distinct small-ruin layouts; `resolve` strongest
+    first: separation, overlap >= 0.3, ambiguity; reports only chunks where the set can start; each step also comes
+    in small pieces: `Votes`, `Verification`, `ClusterTest` (budgeted by work, reusable `ClusterBuffers`),
+    `Resolution`) and `RigidTracker` (the mod's chunk-by-chunk driver: a chunk none of whose own
+    fits is acceptable is done once its `readSpan` is read; otherwise it is judged with the fits of the chunks within
+    `RIVALS` = 2, once everything within `rivalReach` = `RIVALS + max(span, readSpan)` is loaded and read, or within
+    `reach` = `RIVALS + clusterSpan` when a small ocean ruin in the batch needs the cluster test, so the
+    answer never depends on what happens to be loaded; steps of at most `STEP_READS` = 512 block reads under a time
+    budget; waiting chunks are looked at again when a chunk around them is read; a chunk read again makes it compare
+    the fits around it afresh, its votes too if its trigger blocks changed; `forgetFarFrom` is done in slices by
+    `work`). Any change must give the same
+    answers: compare with the committed version on chunks made by the game's code (scratch probe, every vote count,
+    fit, cluster test and tracker answer). Keep the thresholds unless a measurement on chunks made by the game's
+    code shows a change is safe.
 - `cli/`: picocli app `seedfinder` (`find`, `full-seed`, `typed-seed`, `structure-seed`, `locate`, `bedrock`,
   `structures`, `versions`).
 - `mod/`: Fabric client mod for 26.3 (Loom, non-remapping, Mojang names; the engine is nested as jar-in-jar, Gson
@@ -61,26 +83,41 @@ the client already received.
   search;
   `BedrockScanner` reads bedrock layers (B / natural stone / unknown); `StartPieceLibrary` builds the start-piece
   blueprints at runtime from the game jar's own data (structure, template pool, processor list, block tag JSON and
-  `.nbt` templates; 26.x block states use `id`/`properties`), and `StructureRecognition` scans loaded chunks for
-  anchor blocks on the main thread (2 ms per tick, resumable scans) and notes recognized starts; `WorldSession`
+  `.nbt` templates; 26.x block states use `id`/`properties`); `RigidLibrary` builds the rigid layouts at runtime:
+  templates from the game jar placed as `rigid_structures.json` says (turned with the game's
+  `StructureTemplate.transform`), and pyramids, temples and huts by running the game's own piece code in a
+  `SyntheticLevel` (an in-memory `WorldGenLevel`; no reflection or proxies). `StructureRecognition` scans loaded
+  chunks for anchor and trigger blocks on the main thread (2 ms per tick, resumable scans; rigid judging gets 1 ms
+  of it first and whatever is left at the end, one tracker per dimension; the rigid recognizers are made in the
+  background with the layouts; ruined portals in the nether only when the player switches `netherPortals` on, since
+  nether chunks made by 1.16 to 1.18.1 have them on a 25/10 grid) and notes recognized starts; `WorldSession`
   keys notes by address + hashed seed (`WorldIdentity.key`), checks recognized starts against all notes of their
   placement region, and persists starts not to note again (`removed_structures`: removed by the player, placed
-  with /place, or contradicted). `WorldSeedSearch.withoutMisfit` retries a failed search leaving out one structure
+  with /place (source `PLACED`), or contradicted; kept by "Remove all notes"). The answers to `/place structure`
+  (`PlacedStructureMessage`) and `/place template` (`PlacedTemplateMessage`: every pose's start chunk, rigid
+  templates about their pivot, start pieces by their reference point) are read also while collecting is off (then
+  kept only in memory until collecting is switched on); recognition sets such matches aside, also from the region
+  conflicts. `WorldSeedSearch.withoutMisfit` retries a failed search leaving out one structure
   and only returns a proven seed; the class tweaker opens
   `BiomeManager.biomeZoomSeed` (the hashed seed). `NoNetworkGuardTest` scans the built jar and fails on any
   command, networking, packet, mixin or reflection reference. `src/gametest` is an in-game test (real client under
   Xvfb) with a test-only mixin that works around Xvfb's missing sRGB framebuffer; it also teleports to one start of
-  each recognized structure set and checks the mod's answers against the server's own structure starts, runs
-  `RecognitionSweep` (the recognizer on the 24 nearest real starts, chunks generated by the server), and checks
-  that a /place'd camp is not noted.
+  each recognized structure set (and a ruined portal in the nether) and checks the mod's answers against the
+  server's own structure starts, runs `RecognitionSweep` (the recognizers on the nearest real starts of each set,
+  at least one per set, searching farther for sets of rare biomes; chunks generated by the server; rigid ones in
+  both dimensions), checks that nether portals are only noted once switched on, and checks that a /place'd camp,
+  ruined portal and portal template are set aside and not noted.
   Recognition was measured offline with a probe that runs the real classes on chunks generated by the game's code
   (scratch harness, not in the repo); wrong answers matter far more than misses, so keep both thresholds at 0.70
   unless such a measurement shows a change is safe.
 - `tools/oracle/`: `run-oracle.sh <version>` downloads the official server jar into `tools/oracle/build/` and runs
-  `Oracle.java` (plus `BedrockOracle.java` next to it, found by Java's multi-file source launcher) against the
-  game's own code to write version data and test fixtures (`engine/src/test/resources/fixtures/<v>/`). Output is
-  deterministic; rerunning must not change existing files. `BedrockOracle` generates real chunks up to the TERRAIN
-  step without a server; that needs the static block tags bound (done in `loadVanillaWorldRegistries`).
+  `Oracle.java` (plus `BedrockOracle.java` and `RigidOracle.java` next to it, found by Java's multi-file source
+  launcher) against the game's own code to write version data and test fixtures
+  (`engine/src/test/resources/fixtures/<v>/`). Output is deterministic; rerunning must not change existing files.
+  `BedrockOracle` generates real chunks up to the TERRAIN step without a server; that needs the static block tags
+  bound (done in `loadVanillaWorldRegistries`). `RigidOracle` runs the game's structure generation in thousands of
+  chunks (any biome allowed) and records how each rigid structure's main piece is placed; it fails unless every
+  template was seen in every rotation and mirror.
 
 ## Commands
 

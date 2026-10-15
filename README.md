@@ -7,8 +7,9 @@ Minecraft version (**26.3**).
 > **Work in progress.** From about six structure positions the finder works out the world's *structure seed* (the
 > part of the seed that decides where structures go), usually in under a second, and names the likely full seed.
 > With the bedrock floor of one chunk added, it finds the full seed for certain. A Fabric mod does all of this while
-> you play, and recognizes villages, outposts, trial chambers, ancient cities, trail ruins and camps by itself. See
-> the [roadmap](docs/ROADMAP.md).
+> you play, and recognizes villages, outposts, trial chambers, ancient cities, trail ruins, camps, desert pyramids,
+> jungle temples, swamp huts, igloos, shipwrecks, ocean ruins and ruined portals by itself. See the
+> [roadmap](docs/ROADMAP.md).
 
 *Not an official Minecraft product. Not approved by or associated with Mojang or Microsoft.*
 
@@ -25,7 +26,7 @@ Minecraft version (**26.3**).
 | `seedfinder bedrock`: show the bedrock floor of a seed you know | ✅ done |
 | Fabric client mod: notes structures and bedrock while you play and finds the seed by itself | ✅ first version |
 | The mod recognizes villages, pillager outposts, trial chambers, ancient cities, trail ruins and camps by itself | ✅ done |
-| The mod recognizes the other structures (temples, igloos, shipwrecks, ...) by itself | ⏳ next |
+| The mod recognizes desert pyramids, jungle temples, swamp huts, igloos, shipwrecks, ocean ruins and ruined portals by itself | ✅ done |
 | Full seed from biomes, structure seed from nether bedrock alone | 🔜 later |
 
 ## Trying the command-line app
@@ -58,8 +59,11 @@ The first example uses structure positions of seed 12345 and finds exactly that.
    look-alike seeds. Several structures of the same kind help much less than a mix.
 2. **Note where each one starts.** The finder needs the chunk where the structure starts, written as block
    coordinates of any block in that chunk. `/locate` prints exactly that spot. Without `/locate`: desert pyramids,
-   jungle temples and swamp huts start in the chunk of their north-west corner (lowest x and z); other structures
-   are built outwards from a corner of their start chunk, close to their center piece.
+   jungle temples and swamp huts start in the chunk of their north-west corner (lowest x and z); a desert pyramid's
+   blue terracotta in the middle of the main floor is always 10 blocks east and 10 south of its start chunk's
+   corner, and the igloo's white carpet next to the middle light-gray carpet 3 east and 5 south (whichever way the
+   igloo faces); other structures are built outwards from a corner of their start chunk, close to their center
+   piece.
 3. **Run the finder**, either with the structures on the command line (`igloo:48,208`) or from a text file with
    one structure per line. Lines copied from `/locate` work as they are:
 
@@ -162,8 +166,11 @@ itself. It needs Minecraft **26.3** with **Fabric Loader** (0.19.5 or newer) and
    the mod notes nothing.
 4. Play. The mod then:
    - reads the bedrock floor of chunks around you (overworld and nether);
-   - recognizes **villages, pillager outposts, trial chambers, ancient cities, trail ruins and camps** you come
-     near, from their blocks, and notes the chunk where each one starts (see below);
+   - recognizes **villages, pillager outposts, trial chambers, ancient cities, trail ruins, camps, desert pyramids,
+     jungle temples, swamp huts, igloos, shipwrecks, ocean ruins and ruined portals** you come near, from their
+     blocks, and notes the chunk where each one starts (see below). Ruined portals in the nether are only noted after
+     you switch **Ruined portals in the nether** on, which you should only do if the world's nether was made by
+     Minecraft 1.18.2 or newer: in nether chunks made by 1.16 to 1.18.1 they sit on another grid;
    - notes the answer when you use `/locate structure ...` (if you are allowed to use it);
    - notes structures you mark: stand in the chunk where a structure starts and press **Add a structure here**;
    - uses the "hashed seed" that Minecraft sends to every player, which settles the full seed as soon as the
@@ -188,12 +195,33 @@ players have taken apart. Underground structures (trial chambers, ancient cities
 where the server sends the real underground blocks; servers that hide them (anti-xray) simply mean they are not
 found.
 
-Some structures are real but don't follow the seed: villages and outposts in chunks made by Minecraft 1.17 or
-older (an upgraded world), structures placed with `/place` or copied from elsewhere, and exact copies players
-built on a chunk corner. The mod ignores structures you place with `/place` yourself. When the others make "no
-seed fits", the mod tries again leaving out one structure at a time; if that proves a seed (with the hashed seed or
-bedrock), it shows the seed and names the structure that doesn't fit. Structures you remove on the mod's screen
-are not noted again.
+Desert pyramids, jungle temples, swamp huts, igloos, shipwrecks, ocean ruins and ruined portals are each one fixed
+piece, which the game puts on the corner of the start chunk and turns (ruined portals are also mirrored). The mod
+builds every variant in every turn from the game itself (the templates from the Minecraft you are running; pyramids,
+jungle temples and swamp huts by letting the game's own building code draw them in memory) and lets blocks typical
+of each structure point at the places where it could stand with its corner on a chunk corner. The likeliest places
+are compared block by block. A structure is only noted when enough of its own blocks are there (also when every
+kind of block counts the same), its rooms aren't filled with its own material, an ocean ruin lies in open water,
+the biome is one the structure can start in, and no other start chunk fits about as well. Tested on worlds made by
+the game's own code: on worlds not used to tune it, it found 388 of 392 structures (it missed three tiny warm ocean
+ruins and one ruined portal) and never named a wrong chunk. A separate check found two kinds of false alarm (a
+player's nether portal standing on a stone-brick floor, and a desert village by a warm ocean that looked like an
+ocean ruin); both were fixed, and after that the tests gave no false alarm (random areas, villages, and thousands of
+portal frames built the way players build them). The mod's own code then gave exactly the same answers as that
+version on 188 more structures (overworld and nether), and every build checks real structures again in a real game.
+It misses some: tiny warm ocean ruins (only 9 telling blocks), ruined portals mostly covered by netherrack or (in the
+nether) lava, ocean ruins buried in coastal rock, and anything players have repaired or taken apart (a ruined portal
+someone completed or lit no longer counts as a ruin).
+
+Some structures are real but don't follow the seed: in an upgraded world, villages and outposts in chunks made by
+Minecraft 1.17 or older, jungle temples, swamp huts and igloos in chunks made by 1.12 or older, and ruined portals
+in nether chunks made by 1.16 to 1.18.1; structures placed with `/place` or copied from elsewhere; and exact copies
+players built on a chunk corner. The mod ignores structures placed with `/place structure` or `/place template`
+when it sees the game's answer in your chat (also while collecting is off, for as long as you play), but not when
+the answers are hidden (the `sendCommandFeedback` rule is off, or chat is hidden) or the command came from a
+command block. When the others make "no seed fits", the mod tries again leaving out one structure at a time; if
+that proves a seed (with the hashed seed or bedrock), it shows the seed and names the structure that doesn't fit.
+Structures you remove on the mod's screen are not noted again, also after **Remove all notes**.
 
 Each world has its own notes, told apart by the server address (or save name) and the hashed seed, so a server
 network's lobby and game world, or a world that was reset, never mix.

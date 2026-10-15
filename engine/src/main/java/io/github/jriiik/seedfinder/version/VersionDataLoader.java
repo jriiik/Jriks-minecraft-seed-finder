@@ -11,6 +11,7 @@ import io.github.jriiik.seedfinder.structure.DimensionOriginPlacement;
 import io.github.jriiik.seedfinder.structure.ExclusionZone;
 import io.github.jriiik.seedfinder.structure.FrequencyReduction;
 import io.github.jriiik.seedfinder.structure.RandomSpreadPlacement;
+import io.github.jriiik.seedfinder.structure.RigidStructures;
 import io.github.jriiik.seedfinder.structure.SpreadType;
 import io.github.jriiik.seedfinder.structure.StructureInfo;
 import io.github.jriiik.seedfinder.structure.StructurePlacement;
@@ -45,8 +46,34 @@ public final class VersionDataLoader {
         JsonObject structures = readResource(base + "structures.json").getAsJsonObject("structures");
         JsonObject dimensions = readResource(base + "dimensions.json").getAsJsonObject("dimensions");
         JsonObject bedrock = readResource(base + "bedrock.json").getAsJsonObject("dimensions");
+        JsonObject rigid = readResource(base + "rigid_structures.json");
         return new VersionData(version, parseStructureSets(structureSets), parseStructures(structures), parseDimensions(dimensions),
-            parseBedrock(bedrock));
+            parseBedrock(bedrock), parseRigidStructures(rigid));
+    }
+
+    static RigidStructures parseRigidStructures(JsonObject json) {
+        Map<String, RigidStructures.TemplateSet> templateSets = new LinkedHashMap<>();
+        for (Map.Entry<String, JsonElement> entry : json.getAsJsonObject("template_structure_sets").entrySet()) {
+            JsonObject set = entry.getValue().getAsJsonObject();
+            List<RigidStructures.Piece> pieces = new ArrayList<>();
+            for (JsonElement element : set.getAsJsonArray("pieces")) {
+                JsonObject piece = element.getAsJsonObject();
+                pieces.add(new RigidStructures.Piece(strings(piece.getAsJsonArray("templates")), parseOffset(piece.getAsJsonArray("pivot"))));
+            }
+            templateSets.put(normalizeId(entry.getKey()), new RigidStructures.TemplateSet(strings(set.getAsJsonArray("rotations")),
+                strings(set.getAsJsonArray("mirrors")), pieces));
+        }
+        Map<String, List<String>> codeBuiltSets = new LinkedHashMap<>();
+        for (Map.Entry<String, JsonElement> entry : json.getAsJsonObject("code_built_structure_sets").entrySet()) {
+            codeBuiltSets.put(normalizeId(entry.getKey()), strings(entry.getValue().getAsJsonObject().getAsJsonArray("piece_types")));
+        }
+        return new RigidStructures(templateSets, codeBuiltSets);
+    }
+
+    private static List<String> strings(JsonArray array) {
+        List<String> strings = new ArrayList<>();
+        array.forEach(element -> strings.add(element.getAsString()));
+        return strings;
     }
 
     static Map<String, BedrockDimension> parseBedrock(JsonObject byId) {

@@ -11,6 +11,7 @@ import io.github.jriiik.seedfinder.structure.ConcentricRingsPlacement;
 import io.github.jriiik.seedfinder.structure.ExclusionZone;
 import io.github.jriiik.seedfinder.structure.FrequencyReduction;
 import io.github.jriiik.seedfinder.structure.RandomSpreadPlacement;
+import io.github.jriiik.seedfinder.structure.RigidStructures;
 import io.github.jriiik.seedfinder.structure.SpreadType;
 import io.github.jriiik.seedfinder.structure.StructureSet;
 import io.github.jriiik.seedfinder.world.BlockPos;
@@ -64,6 +65,22 @@ class VersionDataTest {
         for (StructureSet set : DATA.structureSets()) {
             assertTrue(!DATA.dimensionsOf(set).isEmpty(), set.id() + " should belong to a dimension");
         }
+    }
+
+    @Test
+    void rigidStructuresKnowHowTheirMainPieceIsPlaced() {
+        RigidStructures rigid = DATA.rigidStructures();
+        assertEquals(List.of("minecraft:igloos", "minecraft:ocean_ruins", "minecraft:ruined_portals", "minecraft:shipwrecks"),
+            rigid.templateSets().keySet().stream().sorted().toList());
+        RigidStructures.TemplateSet portals = rigid.templateSets().get("minecraft:ruined_portals");
+        assertEquals(List.of("front_back", "none"), portals.mirrors());
+        assertEquals(4, portals.rotations().size());
+        assertEquals(13, portals.pieces().size());
+        // Cold ocean ruins are three templates at one spot.
+        assertTrue(rigid.templateSets().get("minecraft:ocean_ruins").pieces().stream().anyMatch(piece -> piece.templates().size() == 3));
+        assertEquals(new BlockPos(3, 5, 5), rigid.templateSets().get("minecraft:igloos").pieces().get(0).pivot());
+        assertEquals(List.of("minecraft:tedp"), rigid.codeBuiltSets().get("minecraft:desert_pyramids"));
+        assertEquals(3, rigid.codeBuiltSets().size());
     }
 
     @Test

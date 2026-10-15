@@ -66,8 +66,9 @@ final class StatusText {
         }
         if (result == null) {
             lines.add(structures.isEmpty()
-                ? "Villages, outposts, trial chambers, ancient cities, trail ruins and camps are recognized when you come near. Pyramids,"
-                    + " jungle temples and swamp huts you can add yourself (\"Add a structure here\"). Answers to /locate (if you may use it) are noted too."
+                ? "Villages, outposts, trial chambers, ancient cities, trail ruins, camps, desert pyramids, jungle temples, swamp huts,"
+                    + " igloos, shipwrecks, ocean ruins and ruined portals are recognized when you come near. Other structures you can add"
+                    + " yourself (\"Add a structure here\"). Answers to /locate (if you may use it) are noted too."
                 : "About to search...");
             return lines;
         }
