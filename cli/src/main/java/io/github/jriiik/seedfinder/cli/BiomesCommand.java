@@ -3,6 +3,7 @@ package io.github.jriiik.seedfinder.cli;
 import io.github.jriiik.seedfinder.Seeds;
 import io.github.jriiik.seedfinder.biome.OverworldBiomes;
 import io.github.jriiik.seedfinder.finder.BiomeText;
+import io.github.jriiik.seedfinder.finder.ObservationReader;
 import io.github.jriiik.seedfinder.version.MinecraftVersion;
 import java.io.PrintWriter;
 import java.util.OptionalLong;
@@ -89,6 +90,7 @@ final class BiomesCommand implements Runnable {
         out.printf("# Overworld biomes for seed %d (Minecraft %s, %s preset) at y %d, %d x %d cells of 4 blocks from block (%d, %d).%n",
             worldSeed, minecraft.displayName(), worldPreset.id().substring("minecraft:".length()), y, size, size, x & ~3, z & ~3);
         out.println("# Rows go from north to south (z), each row from west to east (x).");
+        out.println(ObservationReader.versionLine(minecraft));
         if (worldPreset != OverworldBiomes.Preset.NORMAL) {
             out.println("preset " + worldPreset.id().substring("minecraft:".length()));
         }

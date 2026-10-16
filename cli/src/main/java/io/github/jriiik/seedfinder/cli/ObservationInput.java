@@ -1,6 +1,7 @@
 package io.github.jriiik.seedfinder.cli;
 
 import io.github.jriiik.seedfinder.finder.ObservationReader;
+import io.github.jriiik.seedfinder.version.MinecraftVersion;
 import io.github.jriiik.seedfinder.version.VersionData;
 import java.io.IOException;
 import java.nio.ByteBuffer;
@@ -12,6 +13,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Optional;
 import java.util.regex.Pattern;
 import picocli.CommandLine;
 
@@ -25,8 +27,8 @@ record ObservationInput(Path file, List<String> lines, int fromFile) {
 
     /** Lines that belong to bedrock notes, for which the structure hint would not help. */
     private static final Pattern BEDROCK_LINE = Pattern.compile("(?i)\\s*((not[- ]|no[- ])?bedrock.*|[0-9?bB.,;\\s-]+)");
-    /** Biome, preset and hashed-seed lines: not structures either. */
-    private static final Pattern OTHER_NOTE = Pattern.compile("(?i)\\s*(biome|(world[- ])?preset|hashed[- ]seed).*");
+    /** Biome, preset, hashed-seed and Minecraft version lines: not structures either. */
+    private static final Pattern OTHER_NOTE = Pattern.compile("(?i)\\s*(biome|(world[- ])?preset|hashed[- ]seed|minecraft\\s).*");
     /** A row of a biome grid (letters of its legend). */
     private static final Pattern GRID_ROW = Pattern.compile("[A-Za-z?\\s]+");
 
@@ -80,16 +82,30 @@ record ObservationInput(Path file, List<String> lines, int fromFile) {
         return lines.stream().allMatch(String::isBlank);
     }
 
+    /** The Minecraft version the notes name in a 'minecraft &lt;version&gt;' line, if any. */
+    Optional<MinecraftVersion> minecraftVersion(CommandLine commandLine) {
+        try {
+            return ObservationReader.minecraftVersion(lines);
+        } catch (ObservationReader.LineException e) {
+            throw problem(commandLine, e);
+        }
+    }
+
     ObservationReader.Observations read(CommandLine commandLine, VersionData data) {
         try {
             return ObservationReader.read(data, lines);
         } catch (ObservationReader.LineException e) {
-            int i = e.lineIndex();
-            String line = lines.get(i);
-            String where = i < fromFile ? "line " + (i + 1) + " of " + file : "'" + line + "'";
-            String hint = BEDROCK_LINE.matcher(line).matches() || OTHER_NOTE.matcher(line).matches() || isGridRow(i) ? ""
-                : ". Write each structure as its name and the block x and z of its start chunk, like igloo:48,208";
-            throw new CommandLine.ParameterException(commandLine, where + ": " + e.getMessage() + hint + ".");
+            throw problem(commandLine, e);
         }
+    }
+
+    /** The mistake with where it is: the line of the file or the argument. */
+    private CommandLine.ParameterException problem(CommandLine commandLine, ObservationReader.LineException e) {
+        int i = e.lineIndex();
+        String line = lines.get(i);
+        String where = i < fromFile ? "line " + (i + 1) + " of " + file : "'" + line + "'";
+        String hint = BEDROCK_LINE.matcher(line).matches() || OTHER_NOTE.matcher(line).matches() || isGridRow(i) ? ""
+            : ". Write each structure as its name and the block x and z of its start chunk, like igloo:48,208";
+        return new CommandLine.ParameterException(commandLine, where + ": " + e.getMessage() + hint + ".");
     }
 }

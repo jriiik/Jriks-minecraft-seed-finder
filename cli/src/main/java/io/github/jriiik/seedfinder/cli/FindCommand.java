@@ -27,8 +27,10 @@ import picocli.CommandLine.Command;
         "Work out a world's seed from structures you have seen in it, and optionally its bedrock.",
         "Give each structure's type and the block position of the chunk where it starts: /locate shows exactly that. "
             + "About 6 structures of mixed types are usually enough: at least one temple, pillager outpost, shipwreck, "
-            + "ocean ruin or village to start the search, plus a ruined portal, abandoned camp, trial chamber or ancient "
-            + "city to rule out look-alike seeds.",
+            + "ocean ruin or village to start the search, plus a ruined portal, trial chamber, ancient city or (in 26.3) "
+            + "abandoned camp to rule out look-alike seeds.",
+        "For a world of another Minecraft version than the newest, put a line like 'minecraft 1.21.11' in the file "
+            + "(the mod writes it) or use --minecraft.",
         "The structures give the structure seed (the last 48 bits of the world seed). For the full seed, add the bedrock "
             + "floor of one chunk or the biomes of a place to the file (see 'seedfinder full-seed --help'); without them, the likely "
             + "full seeds are named.",
@@ -70,9 +72,9 @@ final class FindCommand implements Callable<Integer> {
     public Integer call() {
         CommandLine commandLine = spec.commandLine();
         PrintWriter out = commandLine.getOut();
-        MinecraftVersion minecraft = version.resolve(commandLine);
-        VersionData data = minecraft.data();
         ObservationInput input = ObservationInput.of(commandLine, file, observationTexts);
+        MinecraftVersion minecraft = version.resolve(commandLine, input);
+        VersionData data = minecraft.data();
         if (input.isEmpty()) {
             throw new CommandLine.ParameterException(commandLine, "Tell me which structures you saw, for example: seedfinder find igloo:48,208 village:336,80");
         }

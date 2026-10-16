@@ -4,6 +4,7 @@ import io.github.jriiik.seedfinder.bedrock.BedrockDimension;
 import io.github.jriiik.seedfinder.bedrock.BedrockObservation;
 import io.github.jriiik.seedfinder.bedrock.BedrockRule;
 import io.github.jriiik.seedfinder.biome.OverworldBiomes;
+import io.github.jriiik.seedfinder.version.MinecraftVersion;
 import io.github.jriiik.seedfinder.version.VersionData;
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -41,14 +42,20 @@ import java.util.regex.Pattern;
  * A line {@code preset large_biomes} (or {@code amplified}, {@code normal}) says which world preset the world uses;
  * without it the biomes are tried with each preset in turn.
  * A line {@code hashed-seed <number>} gives the hashed seed the server sent (the mod writes it into its notes).
+ * A line {@code minecraft 1.21.11} says which Minecraft version made the world (the mod writes it first); notes
+ * without it are for the newest supported version. Notes are read with one version's data, see
+ * {@link #minecraftVersion}.
  * The overworld is assumed; write the dimension after the keyword for the nether ({@code bedrock-heights nether 0 0}).
  * A grid ends at an empty line or at the first line that is not a row.
  */
 public final class ObservationReader {
 
-    /** Structures, bedrock, biomes, the world preset and the hashed seed read from a list of lines. */
+    /**
+     * Structures, bedrock, biomes, the world preset, the hashed seed and the Minecraft version line (if the notes
+     * have one) read from a list of lines.
+     */
     public record Observations(List<StructureObservation> structures, List<BedrockObservation> bedrock, List<BiomeObservation> biomes,
-                               Optional<OverworldBiomes.Preset> preset, OptionalLong hashedSeed) {
+                               Optional<OverworldBiomes.Preset> preset, OptionalLong hashedSeed, Optional<MinecraftVersion> minecraft) {
     }
 
     /** A mistake in one line; {@link #lineIndex()} is 0-based. */
@@ -71,6 +78,8 @@ public final class ObservationReader {
     private static final Pattern HASHED_SEED = Pattern.compile("(?i)hashed[- ]seed[\\s:=]+(-?\\d+)");
     private static final Pattern BIOME = Pattern.compile("(?i)(biome[- ]grid|biome)(?=$|[\\s:,(\\[])(.*)");
     private static final Pattern PRESET = Pattern.compile("(?i)(?:world[- ])?preset[\\s:=]+(\\S.*?)\\s*");
+    /** "minecraft 1.21.11" (also "Minecraft version: 26.3"); the version starts with a digit, unlike "minecraft:igloo". */
+    private static final Pattern MINECRAFT = Pattern.compile("(?i)minecraft(?:[- ]version)?[\\s:=]+(\\d\\S*)");
     private static final Pattern BIOME_ROW = Pattern.compile("[A-Za-z?]+");
     private static final Pattern NUMBER_ROW = Pattern.compile("(?:-?\\d+|\\?)(?:[\\s,;]+(?:-?\\d+|\\?))*");
     private static final Pattern DIGIT_ROW = Pattern.compile("[0-9?]+");
@@ -83,17 +92,69 @@ public final class ObservationReader {
     private ObservationReader() {
     }
 
+    /** The line that says which Minecraft version notes are for, like {@code minecraft 1.21.11}. */
+    public static String versionLine(MinecraftVersion version) {
+        return "minecraft " + version.displayName();
+    }
+
+    /**
+     * The Minecraft version the notes name in a {@code minecraft <version>} line, if they have one (notes without one
+     * are for the newest supported version). Read this first to pick the data the notes are read with.
+     *
+     * @throws LineException for a version the engine doesn't support, or a second line naming another version
+     */
+    public static Optional<MinecraftVersion> minecraftVersion(List<String> lines) {
+        Optional<MinecraftVersion> found = Optional.empty();
+        for (int i = 0; i < lines.size(); i++) {
+            Matcher line = MINECRAFT.matcher(withoutComment(lines.get(i).strip()));
+            if (line.matches()) {
+                try {
+                    found = Optional.of(version(line.group(1), found));
+                } catch (IllegalArgumentException e) {
+                    throw new LineException(i, e.getMessage());
+                }
+            }
+        }
+        return found;
+    }
+
+    /** The version a line names, which must be supported and agree with the one named before (if any). */
+    private static MinecraftVersion version(String name, Optional<MinecraftVersion> before) {
+        MinecraftVersion named = MinecraftVersion.byName(name).orElseThrow(() -> new IllegalArgumentException(
+            "Minecraft " + name + " is not supported (supported: " + MinecraftVersion.supportedNames() + ")"));
+        if (before.isPresent() && before.get() != named) {
+            throw new IllegalArgumentException("this line says Minecraft " + named.displayName() + ", but an earlier line says "
+                + before.get().displayName() + "; notes can only be from one version");
+        }
+        return named;
+    }
+
+    /**
+     * Reads notes with one version's data. A {@code minecraft <version>} line must name that version (see
+     * {@link #minecraftVersion}).
+     */
     public static Observations read(VersionData data, List<String> lines) {
         List<StructureObservation> structures = new ArrayList<>();
         List<BedrockObservation> bedrock = new ArrayList<>();
         List<BiomeObservation> biomes = new ArrayList<>();
         Optional<OverworldBiomes.Preset> preset = Optional.empty();
         OptionalLong hashedSeed = OptionalLong.empty();
+        Optional<MinecraftVersion> minecraft = Optional.empty();
         int i = 0;
         while (i < lines.size()) {
             String text = lines.get(i).strip();
             Matcher header = HEADER.matcher(withoutComment(text));
             try {
+                Matcher versionLine = MINECRAFT.matcher(withoutComment(text));
+                if (versionLine.matches()) {
+                    minecraft = Optional.of(version(versionLine.group(1), minecraft));
+                    if (!minecraft.get().displayName().equals(data.version())) {
+                        throw new IllegalArgumentException("these notes are from Minecraft " + minecraft.get().displayName()
+                            + ", but are being read as Minecraft " + data.version());
+                    }
+                    i++;
+                    continue;
+                }
                 Matcher hashed = HASHED_SEED.matcher(withoutComment(text));
                 if (hashed.matches()) {
                     try {
@@ -158,7 +219,7 @@ public final class ObservationReader {
                 throw new LineException(i, e.getMessage());
             }
         }
-        return new Observations(structures, bedrock, biomes, preset, hashedSeed);
+        return new Observations(structures, bedrock, biomes, preset, hashedSeed, minecraft);
     }
 
     /** "biome dark_forest 120 64 -35": the name (words may be joined by spaces), then the block's x y z. */

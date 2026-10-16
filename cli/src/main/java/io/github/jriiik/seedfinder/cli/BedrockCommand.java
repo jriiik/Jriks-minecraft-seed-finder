@@ -5,6 +5,8 @@ import io.github.jriiik.seedfinder.bedrock.BedrockDimension;
 import io.github.jriiik.seedfinder.bedrock.BedrockPattern;
 import io.github.jriiik.seedfinder.bedrock.BedrockRule;
 import io.github.jriiik.seedfinder.bedrock.BedrockText;
+import io.github.jriiik.seedfinder.finder.ObservationReader;
+import io.github.jriiik.seedfinder.version.MinecraftVersion;
 import io.github.jriiik.seedfinder.version.VersionData;
 import java.io.PrintWriter;
 import java.util.ArrayList;
@@ -63,7 +65,8 @@ final class BedrockCommand implements Runnable {
     public void run() {
         CommandLine commandLine = spec.commandLine();
         PrintWriter out = commandLine.getOut();
-        VersionData data = version.resolve(commandLine).data();
+        MinecraftVersion minecraft = version.resolve(commandLine);
+        VersionData data = minecraft.data();
         OptionalLong parsed = Seeds.parse(seed);
         if (parsed.isEmpty()) {
             throw new CommandLine.ParameterException(commandLine, "--seed must not be empty");
@@ -91,6 +94,7 @@ final class BedrockCommand implements Runnable {
             out.println("# Bedrock here only depends on the structure seed, " + Seeds.structureSeed(worldSeed) + ".");
         }
         out.println();
+        out.println(ObservationReader.versionLine(minecraft));
         BedrockText.heights(pattern, corner[0], corner[1], size, size).forEach(out::println);
         if (layers) {
             for (int y = bedrock.minY(); y < bedrock.minY() + bedrock.height(); y++) {

@@ -64,9 +64,10 @@ final class TypedSeedCommand implements Callable<Integer> {
     public Integer call() {
         CommandLine commandLine = spec.commandLine();
         PrintWriter out = commandLine.getOut();
-        MinecraftVersion minecraft = version.resolve(commandLine);
+        Optional<ObservationInput> input = input(commandLine);
+        MinecraftVersion minecraft = input.isPresent() ? version.resolve(commandLine, input.get()) : version.resolve(commandLine);
         VersionData data = minecraft.data();
-        Optional<ObservationReader.Observations> notes = notes(commandLine, data);
+        Optional<ObservationReader.Observations> notes = notes(commandLine, input, data);
         long hashedSeed = notes.isPresent() ? notes.get().hashedSeed().getAsLong() : parsedHashedSeed(commandLine);
         int threadCount = Threads.resolve(commandLine, threads);
 
@@ -190,16 +191,21 @@ final class TypedSeedCommand implements Callable<Integer> {
         return 0;
     }
 
-    private Optional<ObservationReader.Observations> notes(CommandLine commandLine, VersionData data) {
+    /** The notes file, if the hashed seed comes from one. */
+    private Optional<ObservationInput> input(CommandLine commandLine) {
         if ((hashedSeedText == null) == (file == null)) {
             throw new CommandLine.ParameterException(commandLine, hashedSeedText == null
                 ? "Give the hashed seed, or a notes file with a 'hashed-seed' line (--file), for example: seedfinder typed-seed 293737985876514017"
                 : "Give the hashed seed or a notes file (--file), not both");
         }
-        if (file == null) {
+        return file == null ? Optional.empty() : Optional.of(ObservationInput.of(commandLine, file, List.of()));
+    }
+
+    private Optional<ObservationReader.Observations> notes(CommandLine commandLine, Optional<ObservationInput> input, VersionData data) {
+        if (input.isEmpty()) {
             return Optional.empty();
         }
-        ObservationReader.Observations read = ObservationInput.of(commandLine, file, List.of()).read(commandLine, data);
+        ObservationReader.Observations read = input.get().read(commandLine, data);
         if (read.hashedSeed().isEmpty()) {
             throw new CommandLine.ParameterException(commandLine, file + " has no 'hashed-seed' line");
         }
