@@ -42,8 +42,9 @@ sulfur caves).
 
 - **The command-line app** reads notes as 26.3 unless told otherwise: add `-m 1.21.11` (or `--minecraft 1.21.11`)
   to a command, or put a line `minecraft 1.21.11` into the notes file. The mod writes that line itself, as the first
-  line of its notes. If the option and the line disagree, the app stops and says so instead of guessing.
-  `seedfinder versions` lists the versions it knows.
+  line of its notes. If the option and the line disagree, the app stops and says so instead of guessing. The version
+  matters for biome notes: when notes that name no version have biomes that don't fit, the app reminds you that it
+  read them as 26.3. `seedfinder versions` lists the versions it knows.
 - **The mod** comes as one file per Minecraft version: `jriks-seed-finder-mod-<version>-mc26.3.jar` for 26.3 and
   `jriks-seed-finder-mod-<version>-mc1.21.11.jar` for 1.21.11 (see [The Minecraft mod](#the-minecraft-mod)).
 

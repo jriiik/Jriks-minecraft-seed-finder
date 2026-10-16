@@ -164,8 +164,12 @@ the client already received.
   (`VersionOption`; picocli's own `--version` is the app's); `resolve(commandLine, notes)` (find, full-seed,
   typed-seed with notes) = the option, else the notes' `minecraft <v>` line, else `latest()`, and refuses an option
   that contradicts the line; `bedrock` and `biomes` print the version line in the notes they write, `full-seed`
-  prints "Minecraft <v>." first, `locate`/`structures` take the option alone, `versions` lists them.
-  `ObservationInput` gives version-line errors no structure hint.
+  and `typed-seed` with notes print "Minecraft <v>." first, `locate`/`structures` take the option alone, `versions`
+  lists them. A printed command that reads the same notes file carries `--minecraft <v>` when the file doesn't name
+  a version that isn't the newest (`VersionOption.argumentFor`); when the version was only assumed (`assumed`: no
+  option, no line) and biome notes fit no seed, don't fit the seed found or rule likely seeds out, the output says
+  so (`assumedVersionHint`), since biomes differ between versions. `ObservationInput` gives version-line errors no
+  structure hint, and a structure written right that only another version has a hint about the version instead.
 - `mod/`: Fabric client mod, one source tree for every Minecraft version (the engine is nested as jar-in-jar, Gson
   comes from Minecraft). Shared, version-neutral code: `mod/src/{main,test,gametest}` (chunk coordinates through
   `Chunks` (`getMinBlockX() >> 4`, the game's packing formula), the key type from `InputConstants.UNKNOWN.getType()`,

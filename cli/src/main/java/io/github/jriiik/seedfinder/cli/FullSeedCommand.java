@@ -106,7 +106,7 @@ final class FullSeedCommand implements Callable<Integer> {
         }
         int threadCount = Threads.resolve(commandLine, threads);
         List<BedrockObservation> bedrock = withoutOldNetherChunks(out, data, observations.bedrock(), threadCount);
-        FullSeedReport.Biomes biomes = FullSeedReport.Biomes.of(out, observations, minecraft);
+        FullSeedReport.Biomes biomes = FullSeedReport.Biomes.of(out, observations, minecraft, version.assumed(observations));
         return FullSeedReport.run(out, data, structureSeeds, new BedrockEvidence(bedrock), biomes, observations.hashedSeed(), threadCount).named()
             ? 0 : 1;
     }

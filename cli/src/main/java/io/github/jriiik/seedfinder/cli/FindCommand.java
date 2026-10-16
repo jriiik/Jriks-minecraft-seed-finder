@@ -68,6 +68,9 @@ final class FindCommand implements Callable<Integer> {
     @CommandLine.Mixin
     VersionOption version = new VersionOption();
 
+    /** What a printed command reading the same notes file needs to read them as the same version (see {@link VersionOption#argumentFor}). */
+    private String versionArgument = "";
+
     @Override
     public Integer call() {
         CommandLine commandLine = spec.commandLine();
@@ -75,6 +78,7 @@ final class FindCommand implements Callable<Integer> {
         ObservationInput input = ObservationInput.of(commandLine, file, observationTexts);
         MinecraftVersion minecraft = version.resolve(commandLine, input);
         VersionData data = minecraft.data();
+        versionArgument = VersionOption.argumentFor(minecraft, input);
         if (input.isEmpty()) {
             throw new CommandLine.ParameterException(commandLine, "Tell me which structures you saw, for example: seedfinder find igloo:48,208 village:336,80");
         }
@@ -90,7 +94,8 @@ final class FindCommand implements Callable<Integer> {
         }
         if (observations.isEmpty() && read.bedrock().isEmpty() && !read.biomes().isEmpty()) {
             out.println("There are biome notes but no structures. Biomes can give the full seed once the structure seed is known: add");
-            out.println("about 6 structures, or if you know the structure seed, use 'seedfinder full-seed <structure seed> --file <notes>'.");
+            out.println("about 6 structures, or if you know the structure seed, use 'seedfinder full-seed <structure seed> --file <notes>"
+                + versionArgument + "'.");
             return 1;
         }
         if (observations.isEmpty() && read.bedrock().isEmpty()) {
@@ -122,7 +127,7 @@ final class FindCommand implements Callable<Integer> {
             out.printf(Locale.ROOT, "And %,d bedrock block%s that can help find the %s.%n%n", bedrockBlocks, bedrockBlocks == 1 ? "" : "s",
                 nether ? "structure seed and the full seed" : "full seed");
         }
-        FullSeedReport.Biomes biomes = FullSeedReport.Biomes.of(out, read, minecraft);
+        FullSeedReport.Biomes biomes = FullSeedReport.Biomes.of(out, read, minecraft, version.assumed(read));
         if (biomes != null) {
             int notes = biomes.evidence().noted();
             out.printf(Locale.ROOT, "And %,d biome note%s in %d place%s that can help find the full seed.%n%n", notes, notes == 1 ? "" : "s",
@@ -396,8 +401,11 @@ final class FindCommand implements Callable<Integer> {
         }
     }
 
-    /** The typed-seed command for these notes: with the file, so the seed found is checked against them too. */
+    /**
+     * The typed-seed command for these notes: with the file, so the seed found is checked against them too, read as the
+     * same Minecraft version.
+     */
     private String typedSeedCommand(long hashedSeed) {
-        return file != null ? "seedfinder typed-seed --file " + file : "seedfinder typed-seed " + hashedSeed;
+        return file != null ? "seedfinder typed-seed --file " + file + versionArgument : "seedfinder typed-seed " + hashedSeed;
     }
 }

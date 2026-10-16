@@ -70,6 +70,11 @@ final class TypedSeedCommand implements Callable<Integer> {
         Optional<ObservationReader.Observations> notes = notes(commandLine, input, data);
         long hashedSeed = notes.isPresent() ? notes.get().hashedSeed().getAsLong() : parsedHashedSeed(commandLine);
         int threadCount = Threads.resolve(commandLine, threads);
+        // The hashed seed is the same in every version; the notes it is checked against are read as this one.
+        boolean versionAssumed = notes.isPresent() && version.assumed(notes.get());
+        if (notes.isPresent()) {
+            out.printf("Minecraft %s.%n", data.version());
+        }
 
         long estimate = Math.round((1L << 32) / (SEEDS_PER_SECOND_PER_THREAD * threadCount));
         out.printf(Locale.ROOT, "Checking the 4,294,967,296 seeds that can be typed against hashed seed %d on %d thread%s. That takes about %s "
@@ -147,6 +152,9 @@ final class TypedSeedCommand implements Callable<Integer> {
                 }
                 out.println("Either the server sends a made-up hashed seed, or " + String.join(" and ", otherwise)
                     + ". Bedrock notes from the overworld would tell which.");
+                if (contradicted.biomes().misfit() && versionAssumed) {
+                    VersionOption.assumedVersionHint(minecraft).forEach(out::println);
+                }
                 if (contradicted.nether().mismatches() > 0) {
                     out.println("Nether bedrock that doesn't fit:");
                     contradicted.nether().examples().forEach(observation -> out.println("  " + FullSeedReport.mistake(observation)));
@@ -179,6 +187,9 @@ final class TypedSeedCommand implements Callable<Integer> {
             if (confirmed.biomes().misfit()) {
                 out.println("The biome notes don't fit it: they may come from chunks made by an older Minecraft version, or the server changes"
                     + " biomes (or they were noted wrong).");
+                if (versionAssumed) {
+                    VersionOption.assumedVersionHint(minecraft).forEach(out::println);
+                }
             }
             if (confirmed.nether().mismatches() > 0) {
                 boolean one = confirmed.nether().mismatches() == 1;

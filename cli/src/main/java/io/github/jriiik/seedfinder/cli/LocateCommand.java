@@ -186,7 +186,8 @@ final class LocateCommand implements Runnable {
                     .filter(other -> !other.displayName().equals(data.version()) && other.data().structureSet(id).isPresent())
                     .map(MinecraftVersion::displayName).collect(Collectors.joining(", "));
                 return new CommandLine.ParameterException(commandLine, others.isEmpty()
-                    ? "Unknown structure '" + name + "'. Run 'seedfinder structures' to see the names."
+                    ? "Unknown structure '" + name + "'. Run 'seedfinder structures" + (data.version().equals(MinecraftVersion.latest().displayName())
+                        ? "" : " --minecraft " + data.version()) + "' to see the names."
                     : "Minecraft " + data.version() + " has no " + name + " (only Minecraft " + others + " has them). Run 'seedfinder structures --minecraft "
                         + data.version() + "' to see the names.");
             });
