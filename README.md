@@ -1,15 +1,15 @@
 # Jrik's Minecraft Seed Finder
 
 A tool that works out a Minecraft **Java Edition** world's seed from things you can see in the world,
-such as where villages, temples and other structures are. Built from scratch, starting with the newest
-Minecraft version (**26.3**).
+such as where villages, temples and other structures are. Built from scratch, for the newest Minecraft version
+(**26.3**) and for **1.21.11**.
 
 > **Work in progress.** From about six structure positions the finder works out the world's *structure seed* (the
 > part of the seed that decides where structures go), usually in under a second, and names the likely full seed
 > (the nether's bedrock floor and roof of one chunk work instead of structures).
 > With the bedrock floor of one chunk, or the biomes around you, added, it finds the full seed for certain. A Fabric mod does all of this while
-> you play, and recognizes villages, outposts, trial chambers, ancient cities, trail ruins, camps, desert pyramids,
-> jungle temples, swamp huts, igloos, shipwrecks, ocean ruins and ruined portals by itself. See the
+> you play, and recognizes villages, outposts, trial chambers, ancient cities, trail ruins, camps (26.3 only), desert
+> pyramids, jungle temples, swamp huts, igloos, shipwrecks, ocean ruins and ruined portals by itself. See the
 > [roadmap](docs/ROADMAP.md).
 
 *Not an official Minecraft product. Not approved by or associated with Mojang or Microsoft.*
@@ -18,7 +18,8 @@ Minecraft version (**26.3**).
 
 | Feature | Status |
 |---|---|
-| Structure placement for Minecraft 26.3, checked against the real game | ✅ done |
+| Structure placement for Minecraft 26.3 and 1.21.11, checked against the real game | ✅ done |
+| Minecraft 1.21.11 worlds next to 26.3 (the command-line app and a mod file for each version) | ✅ done |
 | `seedfinder locate`: list structure spots for a seed | ✅ done |
 | `seedfinder find`: work out the structure seed (48 bits) from structure positions | ✅ done |
 | Work out the structure seed from the nether's bedrock alone (one chunk's floor and roof; in `find`, or by the mod) | ✅ done |
@@ -28,8 +29,22 @@ Minecraft version (**26.3**).
 | Find a seed that was typed (as text or a short number) from the "hashed seed" alone, in minutes (`seedfinder typed-seed`) | ✅ done |
 | `seedfinder bedrock` and `seedfinder biomes`: show the bedrock floor or the biomes of a seed you know | ✅ done |
 | Fabric client mod: notes structures and bedrock while you play and finds the seed by itself | ✅ first version |
-| The mod recognizes villages, pillager outposts, trial chambers, ancient cities, trail ruins and camps by itself | ✅ done |
+| The mod recognizes villages, pillager outposts, trial chambers, ancient cities, trail ruins and camps (26.3 only) by itself | ✅ done |
 | The mod recognizes desert pyramids, jungle temples, swamp huts, igloos, shipwrecks, ocean ruins and ruined portals by itself | ✅ done |
+
+## Minecraft versions
+
+The finder works for worlds of Minecraft Java Edition **26.3** and **1.21.11**. Structures, bedrock and the seeds
+Minecraft picks work the same in both; biomes are worked out exactly the way each version does it. For a player the
+differences are small: 1.21.11 has no abandoned camps, and it lacks the two biomes 26.3 added (dappled forest and
+sulfur caves).
+
+- **The command-line app** reads notes as 26.3 unless told otherwise: add `-m 1.21.11` (or `--minecraft 1.21.11`)
+  to a command, or put a line `minecraft 1.21.11` into the notes file. The mod writes that line itself, as the first
+  line of its notes. If the option and the line disagree, the app stops and says so instead of guessing.
+  `seedfinder versions` lists the versions it knows.
+- **The mod** comes as one file per Minecraft version: `jriks-seed-finder-mod-<version>-mc26.3.jar` for 26.3 and
+  `jriks-seed-finder-mod-<version>-mc1.21.11.jar` for 1.21.11 (see [The Minecraft mod](#the-minecraft-mod)).
 
 ## Trying the command-line app
 
@@ -44,6 +59,7 @@ Minecraft version (**26.3**).
 ```
 java -jar seedfinder.jar find desert_pyramid:272,80 swamp_hut:256,-144 village:336,80 shipwreck:-128,32 ruined_portal:16,0 trial_chamber:0,224
 java -jar seedfinder.jar find --file my-structures.txt
+java -jar seedfinder.jar find --minecraft 1.21.11 --file my-old-world.txt
 java -jar seedfinder.jar full-seed 12345 --file my-bedrock.txt
 java -jar seedfinder.jar bedrock --seed 12345
 java -jar seedfinder.jar biomes --seed 12345
@@ -51,6 +67,7 @@ java -jar seedfinder.jar structure-seed 12345
 java -jar seedfinder.jar locate --seed 12345
 java -jar seedfinder.jar locate --seed "my world" --at 500,-1200 --radius 2000 villages pillager_outposts
 java -jar seedfinder.jar structures
+java -jar seedfinder.jar versions
 java -jar seedfinder.jar --help
 ```
 
@@ -60,8 +77,8 @@ The first example uses structure positions of seed 12345 and finds exactly that.
 
 1. **Collect about 6 structures of mixed types.** At least one of them has to be a desert pyramid, igloo, jungle
    temple, swamp hut, pillager outpost, shipwreck, ocean ruin, trail ruin, trial chamber or village, because only
-   those let the search start. A ruined portal, abandoned camp, trial chamber or ancient city then rules out
-   look-alike seeds. Several structures of the same kind help much less than a mix.
+   those let the search start. A ruined portal, abandoned camp (26.3 only), trial chamber or ancient city then rules
+   out look-alike seeds. Several structures of the same kind help much less than a mix.
 2. **Note where each one starts.** The finder needs the chunk where the structure starts, written as block
    coordinates of any block in that chunk. `/locate` prints exactly that spot. Without `/locate`: desert pyramids,
    jungle temples and swamp huts start in the chunk of their north-west corner (lowest x and z); a desert pyramid's
@@ -125,6 +142,9 @@ depends on the whole seed. With bedrock notes, the finder checks every one of th
    `0` for y=-60, `1` for -61, `2` for -62, `3` for -63, `4` for -64. F3 shows the height of the block you look at
    ("Targeted Block"). Write one row of 16 digits per z, from north to south, each row from west to east, below a line
    with the x and z of the north-west column (the corner with the lowest x and z). Use `?` for columns you skipped.
+   In a 1.21.11 world, also write `?` for a column where you mined tuff, a raw iron block or deepslate iron ore at
+   y=-60 (part of an iron ore vein): 1.21.11 never rolls for bedrock where such a block lies. It is very rare (once
+   in about 1,600 chunks when measured).
 
    ```
    # my-bedrock.txt
@@ -167,9 +187,10 @@ bedrock, so the answer may be two structure seeds; the hashed seed, structures, 
 them apart. Nether chunks made by Minecraft 1.17 or older have other bedrock: the finder leaves such a chunk out and
 says which one.
 
-**Biomes.** The overworld's biomes also depend on the whole seed, and Minecraft 26.3 picks them in a way the finder
-now repeats exactly (checked against the game on millions of spots and on whole generated chunks). Biomes are the
-easiest notes to take: stand somewhere, press F3, and write down the biome it shows with your position:
+**Biomes.** The overworld's biomes also depend on the whole seed, and the finder repeats exactly how Minecraft picks
+them, in 26.3 and in 1.21.11, which does the arithmetic a little differently (checked against each game on millions
+of spots and on whole generated chunks). Biomes are the easiest notes to take: stand somewhere, press F3, and write
+down the biome it shows with your position:
 
 ```
 biome dark_forest 120 64 -35
@@ -193,9 +214,10 @@ candidates, place by place:
 - Large-biome and amplified worlds are recognized (they are tried after normal ones); a line `preset large_biomes`
   in the notes says it outright.
 
-Chunks made by an older Minecraft version, or changed by data packs, mods or `/fillbiome`, have other biomes; then
-no seed fits, and the finder says so rather than guessing. The mod notes the exact biome of every 4 x 4 x 4 block
-cell the game stored (F3 shows a blend of the cells around a block), as `biome-grid` lines in its notes file.
+Chunks made by an older Minecraft version (also land made by 1.21.11 in a world now played in 26.3), or changed by
+data packs, mods or `/fillbiome`, have other biomes; then no seed fits, and the finder says so rather than guessing.
+The mod notes the exact biome of every 4 x 4 x 4 block cell the game stored (F3 shows a blend of the cells around a
+block), as `biome-grid` lines in its notes file.
 `seedfinder biomes --seed <seed>` prints the biomes the finder expects for a seed you know, in that format.
 
 **Try it on your own world:** create a world, use `/locate structure` for about six structures of different
@@ -210,10 +232,17 @@ biome there allows it. The finder does not check biomes yet, so some spots will 
 ## The Minecraft mod
 
 The mod does the same as the command-line app, inside the game: it notes what you come across and searches by
-itself. It needs Minecraft **26.3** with **Fabric Loader** (0.19.5 or newer) and **Fabric API**.
+itself. It works with Minecraft **26.3** and **1.21.11**, with **Fabric Loader** (0.19.5 or newer) and **Fabric API**
+for that Minecraft version. Each Minecraft version has its own mod file; pick the one whose name ends in your
+version:
 
-1. Install Fabric for Minecraft 26.3 (see [fabricmc.net](https://fabricmc.net/use/)), and put Fabric API and
-   `jriks-seed-finder-mod-….jar` (from the
+| Your Minecraft | Mod file |
+|---|---|
+| 26.3 | `jriks-seed-finder-mod-<version>-mc26.3.jar` |
+| 1.21.11 | `jriks-seed-finder-mod-<version>-mc1.21.11.jar` |
+
+1. Install Fabric for your Minecraft version (see [fabricmc.net](https://fabricmc.net/use/)), and put Fabric API and
+   the mod file for that version (from the
    [latest release](https://github.com/jriiik/Jriks-minecraft-seed-finder/releases/latest), under "Assets") into
    your `mods` folder.
 2. In Options → Controls → Key Binds, give **Open Seed Finder** a key (it has none at first, so it can't clash with
@@ -229,10 +258,10 @@ itself. It needs Minecraft **26.3** with **Fabric Loader** (0.19.5 or newer) and
      when you are about 4,500 blocks from every area noted (up to four areas, plus one far enough away for
      large-biome worlds). One area proves a seed Minecraft picked itself or a text seed; a second area proves any
      seed. In a world whose biomes come from a data pack or mod, biomes are not used;
-   - recognizes **villages, pillager outposts, trial chambers, ancient cities, trail ruins, camps, desert pyramids,
-     jungle temples, swamp huts, igloos, shipwrecks, ocean ruins and ruined portals** you come near, from their
-     blocks, and notes the chunk where each one starts (see below). Ruined portals in the nether are only noted after
-     you switch **Ruined portals in the nether** on, which you should only do if the world's nether was made by
+   - recognizes **villages, pillager outposts, trial chambers, ancient cities, trail ruins, camps (26.3 only), desert
+     pyramids, jungle temples, swamp huts, igloos, shipwrecks, ocean ruins and ruined portals** you come near, from
+     their blocks, and notes the chunk where each one starts (see below). Ruined portals in the nether are only noted
+     after you switch **Ruined portals in the nether** on, which you should only do if the world's nether was made by
      Minecraft 1.18.2 or newer: in nether chunks made by 1.16 to 1.18.1 they sit on another grid;
    - notes the answer when you use `/locate structure ...` (if you are allowed to use it);
    - notes structures you mark: stand in the chunk where a structure starts and press **Add a structure here**;
@@ -252,11 +281,11 @@ doesn't sit on a chunk corner is thrown away. A structure is only noted when at 
 there, 70% of its built blocks (not just ground), and 70% of its built blocks other than the most common one (so a
 roof of wool stairs on grass doesn't count as a camp tent). Tested against worlds made by the game's own code (204
 structures, with trees, ores and other decoration): it never named a wrong chunk, and every build of the project
-checks 24 more in a real game. Some structures are not recognized, which only means they don't count: a village
-whose centre was overbuilt by its own farm streets or a sand patch, a rare zombie village centre, or anything
-players have taken apart. Underground structures (trial chambers, ancient cities, trail ruins) can only be seen
-where the server sends the real underground blocks; servers that hide them (anti-xray) simply mean they are not
-found.
+checks more in a real game (24 in 26.3, 20 in 1.21.11, which has no camps). Some structures are not recognized,
+which only means they don't count: a village whose centre was overbuilt by its own farm streets or a sand patch, a
+rare zombie village centre, or anything players have taken apart. Underground structures (trial chambers, ancient
+cities, trail ruins) can only be seen where the server sends the real underground blocks; servers that hide them
+(anti-xray) simply mean they are not found.
 
 Desert pyramids, jungle temples, swamp huts, igloos, shipwrecks, ocean ruins and ruined portals are each one fixed
 piece, which the game puts on the corner of the start chunk and turns (ruined portals are also mirrored). The mod
@@ -290,7 +319,8 @@ Each world has its own notes, told apart by the server address (or save name) an
 network's lobby and game world, or a world that was reset, never mix.
 
 The notes are saved in `config/jriksseedfinder/` inside your Minecraft folder: a `.txt` file per world that the
-command-line app reads too (`seedfinder find --file <that file>`).
+command-line app reads too (`seedfinder find --file <that file>`). Its first line, such as `minecraft 1.21.11`, tells
+the app which Minecraft version the world is from; **Copy notes** on the mod's screen copies the same text.
 
 **What the mod does not do:** it adds no chat commands (so nothing can clash with a server's own commands or plugins,
 such as `/locate`), sends nothing to the server, and doesn't change the game's code. It only looks at what the game
@@ -313,19 +343,19 @@ above), and it collects nothing until you switch it on for a world.
 |---|---|
 | `engine/` | The seed-finding logic and the per-version world generation data. Plain Java, no Minecraft code. |
 | `cli/` | The `seedfinder` command-line app. |
-| `mod/` | The Fabric client mod. It contains the engine and adds the in-game part. |
-| `tools/oracle/` | Generates the version data and the test answers from the official Minecraft server, which it downloads when run (never committed). |
+| `mod/` | The Fabric client mod. It contains the engine and adds the in-game part. Its code (`mod/src`) is shared; `mod/versions/<version>` holds the few lines that differ for each Minecraft version and builds that version's mod file. |
+| `tools/oracle/` | Generates the version data and the test answers from the official Minecraft server, which it downloads when run (never committed). Versions whose game code differs have their own copy in `tools/oracle/<version>/`. |
 | `docs/` | The [roadmap](docs/ROADMAP.md). |
 
 **Testing against the real game.** `tools/oracle` runs Minecraft's own world generation code for a list of
 test seeds and records the results. The engine's tests then require our code to give exactly the same answers.
-For 26.3 that covers every structure type, 10 seeds, negative coordinates and positions far from spawn, the random
-number generators used for blocks, the seeds Minecraft picks by itself, the bedrock of real chunks generated
-by the game (overworld and nether, 184,320 blocks), and the overworld's biomes: the noises and climate values bit
-for bit, the biome search including its ties, every cell of whole generated chunks, and the F3 zoom, for the
-normal, large-biome and amplified presets. The in-game test also compares the biomes the real client receives
-with the finder's (6,400 cells) and with F3. The finder's tests feed it structure positions recorded from
-the game and require it to find the right seed.
+For each version (26.3 and 1.21.11) that covers every structure type, 10 seeds, negative coordinates and positions
+far from spawn, the random number generators used for blocks, the seeds Minecraft picks by itself, the bedrock of
+real chunks generated by the game (overworld and nether, 184,320 blocks), and the overworld's biomes: the noises and
+climate values bit for bit, the biome search including its ties, every cell of whole generated chunks, and the F3
+zoom, for the normal, large-biome and amplified presets. The in-game test, run in both versions, also compares the biomes the real
+client receives with the finder's (6,400 cells) and with F3. The finder's tests feed it structure positions recorded
+from the game and require it to find the right seed.
 
 ## Building from source
 
@@ -333,21 +363,28 @@ Needs Java 25 (the mod's tools require it; the command-line app it builds still 
 `gradlew.bat` instead of `./gradlew`.
 
 ```
-./gradlew build                  # compile and run all tests, including the mod's "sends nothing" check
+./gradlew build                  # compile and run all tests, including each mod file's "sends nothing" check
 ./gradlew :cli:fatJar            # the runnable jar: cli/build/libs/seedfinder.jar
-                                 # the mod: mod/build/libs/jriks-seed-finder-mod-<version>.jar
-xvfb-run -a ./gradlew :mod:runProductionClientGameTest    # starts real Minecraft and tests the mod in it (Linux)
+./gradlew :mod-1.21.11:build     # only one Minecraft version's mod file (and its tests)
+xvfb-run -a ./gradlew :mod-26.3:runProductionClientGameTest     # starts real Minecraft 26.3 and tests the mod in it
+xvfb-run -a ./gradlew :mod-1.21.11:runProductionClientGameTest  # the same in Minecraft 1.21.11 (both Linux only)
 ```
 
-When a release is published on GitHub, the "Release files" workflow builds both files from the release's tag,
-labelled with its version (a tag `v1.01` gives 1.01), runs all tests and the in-game test, and only then attaches
-`jriks-seed-finder-mod-<version>.jar` and `seedfinder.jar` to the release, about 10 minutes later. If a test fails,
-nothing is attached; the failed run is listed under Actions.
+The mod files end up in `mod/versions/26.3/build/libs/jriks-seed-finder-mod-<version>-mc26.3.jar` and
+`mod/versions/1.21.11/build/libs/jriks-seed-finder-mod-<version>-mc1.21.11.jar`.
 
-To add or refresh a Minecraft version (needs the Java version that Minecraft version needs, Java 25 for 26.x):
+When a release is published on GitHub, the "Release files" workflow builds the files from the release's tag,
+labelled with its version (a tag `v1.01` gives 1.01), runs all tests and, for each Minecraft version, the in-game
+test with that version's mod file, and only then attaches `seedfinder.jar`,
+`jriks-seed-finder-mod-<version>-mc26.3.jar` and `jriks-seed-finder-mod-<version>-mc1.21.11.jar` to the release. If a
+test fails, nothing is attached; the failed run is listed under Actions.
+
+To add or refresh a Minecraft version (needs Java 25). Versions whose game code comes with scrambled names, like
+1.21.11, first get it with Mojang's own names through Fabric Loom, so they take about 10 minutes instead of 2:
 
 ```
 tools/oracle/run-oracle.sh 26.3
+tools/oracle/run-oracle.sh 1.21.11
 ```
 
 ## License
