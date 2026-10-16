@@ -373,7 +373,11 @@ once per version from one shared source.
   the in-game test). Start pieces are read in both versions' data formats. 1.21.11's game code has scrambled
   (obfuscated) names: the mod is written with Mojang's names and its jar is turned into Fabric's names, which that
   game runs with. The no-network guard reads the same name tables to turn them back, so it checks exactly the jar
-  that ships; a name it can't turn back fails the build. A test fails if a project names another Minecraft version
+  that ships; a name it can't turn back fails the build. A review showed that rules by name miss game functions that
+  send by themselves (the chat box's input, closing a container) and Java's networking and reflection. So the guard
+  now also bans Java's networking, reflection, other programs and native code outright, and every game, Fabric or
+  library function the jar uses must be on a reviewed list per version (about 250 each), checked against the game's
+  code; a new one fails the build until it is checked. A test fails if a project names another Minecraft version
   than it is built for.
 - *Tests and releases:* every build runs the in-game test for both versions (in 1.21.11 Fabric API's older test
   harness needs its packet synchronizer switched off). A release gets `seedfinder.jar` and one mod file per version,

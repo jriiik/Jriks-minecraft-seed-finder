@@ -328,8 +328,13 @@ the app which Minecraft version the world is from; **Copy notes** on the mod's s
 
 **What the mod does not do:** it adds no chat commands (so nothing can clash with a server's own commands or plugins,
 such as `/locate`), sends nothing to the server, and doesn't change the game's code. It only looks at what the game
-has already received, and only in worlds where you switched it on. Every build checks this automatically: a test
-fails if the mod's code could send anything or register a command.
+has already received, and only in worlds where you switched it on. Every build checks the mod file of each Minecraft
+version automatically. A test fails if the mod's code refers to the game's connection, packets or command system,
+to Fabric's networking, command or message-sending features, to changing the game's code, or to Java's networking,
+reflection, other programs or native code. And because some ordinary game functions send something by themselves
+(the chat box sends commands, closing a container tells the server), every function of the game, of Fabric and of
+the libraries the game comes with that the mod uses must be on a list that was checked against the game's code;
+anything new fails the build until it has been checked too.
 
 ## Ground rules
 
