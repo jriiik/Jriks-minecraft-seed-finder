@@ -43,6 +43,22 @@ class StatusTextTest {
     private static final SeedCheck.Bedrock NONE = bedrock(0, 0);
 
     @Test
+    void theRecognizedStructuresNameCampsOnlyWhereTheVersionHasThem() {
+        for (MinecraftVersion version : MinecraftVersion.values()) {
+            WorldSession session = new WorldSession(SERVER, version);
+            session.setCollecting(true);
+            List<String> lines = StatusText.lines(session, new SearchRunner(version.data()));
+            String recognized = lines.stream().filter(line -> line.startsWith("Villages, outposts,")).findFirst()
+                .orElseThrow(() -> new AssertionError(lines.toString()));
+            boolean camps = version.data().structureSet("abandoned_camp").isPresent();
+            assertEquals(camps, recognized.contains("camps"), version + ": " + recognized);
+            assertTrue(recognized.contains("ocean ruins and ruined portals are recognized when you come near."), recognized);
+        }
+        assertTrue(StatusText.recognizedTypes(MinecraftVersion.V26_3.data()).contains("camps"));
+        assertFalse(StatusText.recognizedTypes(MinecraftVersion.V1_21_11.data()).contains("camps"));
+    }
+
+    @Test
     void whatFitsTheSeed() {
         assertEquals("the overworld bedrock seen fits it", StatusText.agreeing(check(0, 0, bedrock(1024, 0), NONE)));
         assertEquals("the overworld bedrock seen fits it", StatusText.agreeing(check(0, 0, bedrock(1024, 0), bedrock(2048, 7))));
@@ -73,7 +89,7 @@ class StatusTextTest {
     @Test
     void aTypedSeedOnAServerIsShownOnlyAsTheNotesAllow() {
         SearchRunner runner = new SearchRunner(DATA);
-        WorldSession session = new WorldSession(SERVER);
+        WorldSession session = new WorldSession(SERVER, MinecraftVersion.V26_3);
         session.setCollecting(true);
         session.setHashedSeed(Seeds.hashedSeed(12345L));
         session.setTypedSeedSearch(new TypedSeedSearch.Outcome(OptionalLong.of(12345L), 0));
@@ -119,7 +135,7 @@ class StatusTextTest {
     @Test
     void aSeedProvedByTheStructureSearchComesFirst() {
         SearchRunner runner = new SearchRunner(DATA);
-        WorldSession session = new WorldSession(SERVER);
+        WorldSession session = new WorldSession(SERVER, MinecraftVersion.V26_3);
         session.setCollecting(true);
         session.setHashedSeed(Seeds.hashedSeed(12345L));
         session.setTypedSeedSearch(new TypedSeedSearch.Outcome(OptionalLong.of(12345L), 0));
@@ -136,7 +152,7 @@ class StatusTextTest {
     @Test
     void aSeedFoundFromTheNetherNamesTheStructureThatDoesntFit() {
         SearchRunner runner = new SearchRunner(DATA);
-        WorldSession session = new WorldSession(SERVER);
+        WorldSession session = new WorldSession(SERVER, MinecraftVersion.V26_3);
         session.setCollecting(true);
         session.setHashedSeed(Seeds.hashedSeed(12345L));
         // a village noted a chunk off, and one nether chunk's floor and roof

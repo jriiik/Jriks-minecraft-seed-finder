@@ -1,0 +1,4 @@
+classTweaker	v1	named
+# The hashed seed the server sends at login (BiomeManager.obfuscateSeed); the mod only reads it. Written with
+# Minecraft's own names; the build turns them into the intermediary names this obfuscated version runs with.
+accessible	field	net/minecraft/world/level/biome/BiomeManager	biomeZoomSeed	J

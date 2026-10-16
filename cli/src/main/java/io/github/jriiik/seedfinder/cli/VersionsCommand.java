@@ -18,5 +18,8 @@ final class VersionsCommand implements Runnable {
         for (MinecraftVersion version : MinecraftVersion.values()) {
             out.println("  " + version.displayName() + (version == MinecraftVersion.latest() ? "  (newest)" : ""));
         }
+        out.println();
+        out.println("Notes name their version with a line like 'minecraft " + MinecraftVersion.values()[0].displayName()
+            + "' (the mod writes it); without one they are read as " + MinecraftVersion.latest().displayName() + ". --minecraft picks it too.");
     }
 }

@@ -16,10 +16,10 @@
     "accessWidener": "jriksseedfinder.classtweaker",
     "depends": {
         "fabricloader": ">=0.19.5",
-        "minecraft": "~26.3",
-        "java": ">=25",
+        "minecraft": "${minecraft}",
+        "java": "${java}",
         "fabric-api-base": "*",
-        "fabric-key-mapping-api-v1": "*",
+        "${keyModule}": "*",
         "fabric-lifecycle-events-v1": "*",
         "fabric-rendering-v1": "*",
         "fabric-message-api-v1": "*"

@@ -2,8 +2,11 @@
 
 ## Decisions so far
 
-- **Minecraft Java Edition only**, starting with the newest version (26.3). Bedrock generates worlds completely
-  differently and would be a separate project.
+- **Minecraft Java Edition only**, starting with the newest version (26.3); 1.21.11 is supported too (Phase 7).
+  Bedrock generates worlds completely differently and would be a separate project.
+- **One engine and one command-line app for every supported version, and a mod file per Minecraft version.** Where
+  versions differ, the version decides (never a guess from the data), each version is checked bit for bit against
+  its own game, and notes say which version they are from (a `minecraft <version>` line).
 - **Java** for everything (the engine, the CLI and later the mod).
 - **Written from scratch**, so we fully understand and control every part.
 - **CLI first**, then a Fabric client mod that collects observations automatically.
@@ -37,7 +40,8 @@
 | 4 | CLI polish: a `verify` command, saving results | 🔜 |
 | 5 | Fabric client mod: notes structures and bedrock while you explore, recognizes 13 structure types by itself, shows progress, turned on per server | ✅ |
 | 6 | The structure seed from nether bedrock alone; the full seed from biomes (engine, CLI and mod) | ✅ |
-| 7 | Extras: more data sources (End pillars), older versions | 🔜 |
+| 7 | Minecraft 1.21.11 next to 26.3: oracle, engine (its biomes bit for bit), command-line app, a mod file per version, tests and releases for both | ✅ |
+| 8 | Extras: more data sources (End pillars), more versions | 🔜 |
 
 ### Phase 2: how the structure seed search works
 
@@ -144,11 +148,12 @@ Typical searches take well under a second. Villages-only searches need more stru
 - **Structures recognized from blocks** (villages, pillager outposts, trial chambers, ancient cities, trail ruins,
   abandoned camps). These are built from pieces, and the game puts one point of the first piece exactly on the
   north-west corner of the start chunk, turned by a random multiple of 90 degrees around that point. The mod reads
-  the blueprints of all first pieces from the running game (220 of them), keeps the blocks that are sure to be
-  there, and searches loaded chunks for a few rare blocks of each (a bell for villages, reinforced deepslate for
-  ancient cities). A placement is only accepted when its reference point lands on a chunk corner, the chunk is one
-  the structure can start in at all, and at least 70% of the blueprint and 70% of its built blocks match. Matches
-  are grouped per placement region; a region whose matches disagree reports nothing.
+  the blueprints of all first pieces from the running game (220 of them in 26.3; 40 in 1.21.11, which has no
+  camps), keeps the blocks that are sure to be there, and searches loaded chunks for a few rare blocks of each (a
+  bell for villages, reinforced deepslate for ancient cities). A placement is only accepted when its reference point
+  lands on a chunk corner, the chunk is one the structure can start in at all, and at least 70% of the blueprint and
+  70% of its built blocks match. Matches are grouped per placement region; a region whose matches disagree reports
+  nothing.
 - **Rigid structures recognized from blocks** (desert pyramids, jungle temples, swamp huts, igloos, shipwrecks,
   ocean ruins, ruined portals, also in the nether). Each is one fixed piece: the game puts a code-built piece's box
   corner, or a template's origin, exactly on the start chunk's north-west corner, and turns templates about a fixed
@@ -263,10 +268,11 @@ One loaded nether chunk (floor and roof) takes about half a second. What we lear
 (temperature, vegetation, continentalness, erosion, a depth value and ridges), then takes the biome of the closest
 entry in a list of 7,594. The oracle exports the climate functions, noises and the list; the engine (`biome/`)
 repeats it all with the game's float arithmetic and builds the list's search tree exactly as the game does (it
-decides ties). Checked against the game: noise and climate values bit for bit, a long series of lookups including
-ties, every cell of whole generated chunks, and the F3 zoom, for the normal, large-biome and amplified presets; and
-in a real game, the 6,400 cells the client received in an area. Checking one candidate seed takes about 54 µs (the
-noises are made only when needed), so all 65,536 take about 3.5 s on one thread.
+decides ties). (1.21.11 does the same in double arithmetic with a differently shaped tree; see Phase 7.) Checked
+against the game: noise and climate values bit for bit, a long series of lookups including ties, every cell of
+whole generated chunks, and the F3 zoom, for the normal, large-biome and amplified presets; and in a real game, the
+6,400 cells the client received in an area. Checking one candidate seed takes about 54 µs (the noises are made only
+when needed), so all 65,536 take about 3.5 s on one thread.
 
 When do biomes prove a seed? A wrong seed matches one cell's biome about 5% of the time, but nearby cells are alike
 in every world (the chance that a second cell 256 blocks away also matches is 2.5 times higher than by chance; at
@@ -313,6 +319,77 @@ only the nether search decides that (a chunk is left out only when a search of i
 finds nothing), also in `full-seed`; and nether notes rule a seed out only when it gets at least 3 blocks wrong, so
 one or two misread blocks never throw out the right seed (seeds a single surface leaves are close to each other).
 
+### Phase 7: Minecraft 1.21.11 next to 26.3
+
+**Decision.** Support 1.21.11 as well as 26.3, with the same guarantees: every part checked bit for bit against
+that version's own game, and a wrong answer counts far more than a miss. 26.3 keeps giving the same answers (two
+deliberate exceptions are named below). One engine and one command-line app serve both versions; the mod is built
+once per version from one shared source.
+
+**What is the same, and what differs.** The oracle ran both games, and their outputs were compared.
+
+- *The same:* where structures go (the 19 sets of 1.21.11 the finder uses; 26.3 adds abandoned camps; strongholds,
+  the twentieth set, follow the biomes, so 27 of the oracle's 384 strongholds sit elsewhere; the finder doesn't use
+  strongholds), the random number
+  generators, how seeds come about (the `nextLong()` shortcut, text seeds, the hashed seed), the bedrock rules and
+  the bedrock of real chunks, how rigid structures are placed, and the F3 biome zoom. A test fails if the data the
+  two versions share ever differs, so tests whose data is equal in both (the bedrock false-fit rates, the structure
+  search's estimate) run on 26.3 only; every test that compares with the game runs for both.
+- *Biomes are computed differently:*
+  - 26.3 has two biomes 1.21.11 lacks: dappled forest (92 entries of the biome list that are plains in 1.21.11) and
+    sulfur caves (one entry more).
+  - 1.21.11 computes the six climate values in double arithmetic (its density functions, each noise as two stacks
+    of octaves); 26.3 compiles the same functions to float arithmetic. The noises take their random numbers the same
+    way in both; only the arithmetic differs. Each version's oracle exports the climate in its own data format, and
+    the engine has an evaluator for each, picked by the version.
+  - The biome search tree has 6 children per node in 1.21.11 and 19 in 26.3. The tree's shape decides ties: with 19
+    on 1.21.11 about 1 cell in 5,000 got the wrong biome, with float instead of double about 2 in a million. The
+    fixtures catch both: the search fixture the tree, the noise and climate fixtures (compared bit for bit) the
+    arithmetic.
+  - Checked for each version: noises and climate values, the search with its ties, whole generated chunks and the
+    zoom, for the three presets; and 1,000,000 random cells per version against the real games, with no difference.
+    The biome proof's guard holds for 1.21.11 (wrong seeds that fit: 948, 1,025 and 922 for the three presets,
+    against estimates of 1,845, 2,042 and 1,783). Checking candidates costs the same in both versions.
+- *Bedrock as the mod reads it.* 1.21.11 rolls for bedrock only on the plain stone the terrain step left; where that
+  step put a block of an iron ore vein at y = -60 (tuff, a raw iron block, deepslate iron ore), the roll never ran.
+  26.3 rolls on any solid block. Measured: one such spot in 1,600 chunks. The engine can't predict veins, so such a
+  spot gives the right seed one wrong block: a miss, never a wrong seed, as a seed with wrong blocks is never
+  presented as found. The mod counts these three blocks, and lava in the overworld (a cave reaching the bedrock
+  layers fills with lava, and the roll skips fluids), as unknown in every version. That is the first deliberate
+  change for 26.3: slightly fewer known blocks (the in-game test still notes about 3,700). Lava in the nether still
+  counts as "not bedrock": there the terrain step only leaves netherrack in the bedrock layers. For hand-written
+  notes, the README says to mark such a column `?` (lava in any version, the vein blocks in 1.21.11): later
+  measurements found lava the terrain step left at a bedrock spot in both versions, about as rarely as the vein case.
+
+**How it is built.**
+
+- *Notes name their version* in a first line `minecraft <version>`, which the mod writes (the saved file and "Copy
+  notes"). Notes without it are read as 26.3, so older notes keep working. The command-line app takes the version
+  from that line or from `-m`/`--minecraft`, and stops when the two disagree; a structure the version doesn't have
+  (an abandoned camp in 1.21.11) is refused with a message naming the version that has it. Writing the line is the
+  second deliberate change for 26.3 (`bedrock` and `biomes` print it too, and `full-seed` names the version first).
+- *The mod:* one shared source (`mod/src`) and a small project per version (`mod/versions/<version>`) with the few
+  calls whose names changed (key binding, status line, opening a screen, the game's own data files, and one call of
+  the in-game test). Start pieces are read in both versions' data formats. 1.21.11's game code has scrambled
+  (obfuscated) names: the mod is written with Mojang's names and its jar is turned into Fabric's names, which that
+  game runs with. The no-network guard reads the same name tables to turn them back, so it checks exactly the jar
+  that ships; a name it can't turn back fails the build. A review showed that rules by name miss game functions that
+  send by themselves (the chat box's input, closing a container) and Java's networking and reflection. So the guard
+  now also bans Java's networking, reflection, other programs and native code outright, and every game, Fabric or
+  library function the jar uses must be on a reviewed list per version (about 250 each), checked against the game's
+  code; a new one fails the build until it is checked. A test fails if a project names another Minecraft version
+  than it is built for.
+- *Tests and releases:* every build runs the in-game test for both versions (in 1.21.11 Fabric API's older test
+  harness needs its packet synchronizer switched off). A release gets `seedfinder.jar` and one mod file per version,
+  attached only when all tests and every version's in-game test passed; each mod file is the one its version's
+  in-game test ran on.
+- *Known limit:* notes are kept per world, not per version. A world played in 1.21.11 and then in 26.3 keeps its
+  notes; biomes noted from chunks made by 1.21.11 can then miss in 26.3 (plains where 26.3 has dappled forest), a
+  miss, not a wrong answer. Structures and bedrock are the same in both versions and are unaffected. The other way
+  round (the same world opened with the 1.21.11 jar after the 26.3 jar, from a shared game folder), abandoned camps
+  the 26.3 jar noted are kept aside: saved again, so 26.3 still has them, but left out of 1.21.11's notes and
+  searches, which would refuse them.
+
 ## Things that can't work
 
 - **No data, no seed**: the finder needs observations.
@@ -325,15 +402,29 @@ one or two misread blocks never throw out the right seed (seeds a single surface
   know which version made the chunks you looked at. Nether bedrock in chunks made by 1.17 or older fits no seed (the
   search leaves such chunks out and names them); biomes in chunks made by older versions, next to them (the game
   blends their borders) or changed by `/fillbiome` or data packs make the biome check miss the seed rather than
-  find a wrong one. This includes structures the mod recognizes by itself: a
+  find a wrong one; a world made in 1.21.11 and played in 26.3 keeps 1.21.11's biomes in its old land (its
+  structures and bedrock are the same in both). This includes structures the mod recognizes by itself: a
   village from an older version can look the same but follow older placement rules, and then no seed fits. Remove
   structures in old parts of an upgraded world on the mod's screen. The client can't tell old chunks from new ones,
   so the mod can't do this by itself.
 
 ## Keeping up with new Minecraft versions
 
-Mojang releases a new version roughly every three months. For each one:
+Mojang releases a new version roughly every three months. Adding a version, new or older, takes these steps (1.21.11
+was added this way):
 
-1. Run `tools/oracle/run-oracle.sh <version>`. It writes the version data and test fixtures.
-2. Add the version to `MinecraftVersion`.
-3. Run the tests. If world generation code changed (not just data), update the engine until they pass.
+1. **Oracle.** Run `tools/oracle/run-oracle.sh <version>`. It writes the version data and test fixtures. If the
+   game code the oracle calls has changed, the version gets its own copy of the oracle in `tools/oracle/<version>/`,
+   which the script then uses; all copies must record the same facts, so a change to one goes into the others.
+   Versions whose game code has scrambled (obfuscated) names, like 1.21.11, are first renamed with Fabric Loom; the
+   script sees that and does it by itself.
+2. **Engine.** Add the version to `MinecraftVersion`. The code then doesn't compile until `OverworldBiomes` says how
+   the version computes its climate (which evaluator) and how many children its biome search tree has. Every test
+   that compares with the game runs for the new version by itself. Compare the new data with the other versions'
+   to see what changed; if world generation code changed (not just data), add or change an evaluator until the
+   tests pass, and check that the measured estimates (such as the biome proof's guard) still hold.
+3. **Mod.** Add a project `mod/versions/<version>`: its build file (that version's Minecraft, Fabric API, Java and
+   Loom variant), its `GameVersion` and `GameTestVersion` classes for the calls whose names differ, its class
+   tweaker and its in-game test resources. List the version in `settings.gradle.kts`, `gradle/libs.versions.toml`
+   and the workflows (both matrices, and an upload step in `build.yml`).
+4. Run all tests and the in-game test of every version, then update the README and this roadmap.

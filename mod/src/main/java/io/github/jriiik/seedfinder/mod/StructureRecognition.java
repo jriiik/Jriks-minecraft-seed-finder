@@ -29,7 +29,6 @@ import net.minecraft.core.RegistryAccess;
 import net.minecraft.core.SectionPos;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.resources.Identifier;
-import net.minecraft.world.level.ChunkPos;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.state.BlockState;
@@ -39,7 +38,7 @@ import net.minecraft.world.level.chunk.status.ChunkStatus;
 
 /**
  * Recognizes structures from the blocks of loaded chunks and notes their start chunks: villages, pillager outposts,
- * trial chambers, ancient cities, trail ruins and camps by their start piece ({@link StartPieceRecognizer}), and
+ * trial chambers, ancient cities, trail ruins and (26.x) camps by their start piece ({@link StartPieceRecognizer}), and
  * desert pyramids, jungle temples, swamp huts, igloos, shipwrecks, ocean ruins and ruined portals as a whole
  * ({@link RigidRecognizer}, run chunk by chunk by a {@link RigidTracker}). Runs on the game's main thread in small
  * steps, so it never holds up a frame for long.
@@ -66,8 +65,12 @@ final class StructureRecognition {
 
     /** The blueprints, read once from the game's files in the background. */
     private static CompletableFuture<StartPieceRecognizer> recognizer;
+    /** The version data the blueprints were made for. */
+    private static VersionData recognizerData;
     /** The rigid-structure layouts, built once from the game's files and code in the background. */
     private static CompletableFuture<RigidLibrary.Library> rigidLibrary;
+    /** The version data the layouts were made for. */
+    private static VersionData rigidLibraryData;
     /**
      * A rigid-structure recognizer per dimension where rigid structures appear, made in the background with the
      * layouts (set before {@link #rigidLibrary} completes).
@@ -132,7 +135,8 @@ final class StructureRecognition {
     /** Starts reading the blueprints, once (call on the main thread). */
     static synchronized CompletableFuture<StartPieceRecognizer> recognizer(VersionData data) {
         if (recognizer == null) {
-            StartPieceLibrary.DataFiles files = StartPieceLibrary.vanilla(Minecraft.getInstance().getVanillaPackResources().fullResources());
+            StartPieceLibrary.DataFiles files = StartPieceLibrary.vanilla(GameVersion.vanillaData(Minecraft.getInstance()));
+            recognizerData = data;
             recognizer = CompletableFuture.supplyAsync(() -> {
                 StartPieceLibrary.Library library = StartPieceLibrary.load(data, files);
                 library.problems().forEach(problem -> SeedFinderClient.LOG.warn("Structure recognition: {}", problem));
@@ -151,7 +155,8 @@ final class StructureRecognition {
     /** Starts building the rigid-structure layouts, once (call on the main thread, in a world). */
     static synchronized CompletableFuture<RigidLibrary.Library> rigidLibrary(VersionData data, RegistryAccess registries) {
         if (rigidLibrary == null) {
-            StartPieceLibrary.DataFiles files = StartPieceLibrary.vanilla(Minecraft.getInstance().getVanillaPackResources().fullResources());
+            StartPieceLibrary.DataFiles files = StartPieceLibrary.vanilla(GameVersion.vanillaData(Minecraft.getInstance()));
+            rigidLibraryData = data;
             rigidLibrary = CompletableFuture.supplyAsync(() -> {
                 RigidLibrary.Library library = RigidLibrary.load(data, files, registries);
                 library.problems().forEach(problem -> SeedFinderClient.LOG.warn("Structure recognition: {}", problem));
@@ -187,12 +192,13 @@ final class StructureRecognition {
         if (done != null) {
             Set<String> loaded = new HashSet<>();
             done.pieces().forEach(piece -> loaded.add(piece.structureSet()));
-            StartPieceLibrary.SETS.stream().filter(set -> !loaded.contains(set)).forEach(missing::add);
+            StartPieceLibrary.setsOf(recognizerData).stream().filter(set -> !loaded.contains(set)).forEach(missing::add);
         }
         if (rigid != null) {
             Set<RigidKind> kinds = new HashSet<>();
             rigid.layouts().forEach(layout -> kinds.add(layout.kind()));
-            Arrays.stream(RigidKind.values()).filter(kind -> !kinds.contains(kind)).forEach(kind -> missing.add(kind.structureSet()));
+            Arrays.stream(RigidKind.values()).filter(kind -> rigidLibraryData.structureSet(kind.structureSet()).isPresent() && !kinds.contains(kind))
+                .forEach(kind -> missing.add(kind.structureSet()));
         }
         return missing;
     }
@@ -242,7 +248,7 @@ final class StructureRecognition {
         int maxY = level.getMaxY();
         text.append("; scan: ").append(recognizer.scan(view, chunkX - 3, chunkX + 3, chunkZ - 3, chunkZ + 3, minY, maxY, false));
         Map<Long, int[]> triggers = new HashMap<>();
-        List<RigidRecognizer.Candidate> own = recognizer.candidates(chunkX, chunkZ, (x, z) -> triggers.computeIfAbsent(ChunkPos.pack(x, z),
+        List<RigidRecognizer.Candidate> own = recognizer.candidates(chunkX, chunkZ, (x, z) -> triggers.computeIfAbsent(Chunks.key(x, z),
             key -> recognizer.triggersOf(view, x, z, minY, maxY)));
         for (RigidRecognizer.Candidate candidate : own) {
             RigidRecognizer.Detection d = recognizer.verify(candidate, view, false);
@@ -270,7 +276,7 @@ final class StructureRecognition {
     void chunkLoaded(ClientLevel level, LevelChunk chunk) {
         switchLevel(level);
         if (inStructureDimension()) {
-            chunksToScan.add(chunk.getPos().pack());
+            chunksToScan.add(Chunks.key(Chunks.x(chunk.getPos()), Chunks.z(chunk.getPos())));
         }
     }
 
@@ -331,7 +337,7 @@ final class StructureRecognition {
             for (int dx = -radius; dx <= radius; dx++) {
                 for (int dz = -radius; dz <= radius; dz++) {
                     if (level.getChunkSource().getChunk(centerX + dx, centerZ + dz, ChunkStatus.FULL, false) != null) {
-                        chunksToScan.add(ChunkPos.pack(centerX + dx, centerZ + dz));
+                        chunksToScan.add(Chunks.key(centerX + dx, centerZ + dz));
                     }
                 }
             }
@@ -371,7 +377,7 @@ final class StructureRecognition {
             } else if (!chunksToScan.isEmpty()) {
                 long pos = chunksToScan.iterator().next();
                 chunksToScan.remove(pos);
-                scanning = level.getChunkSource().getChunk(ChunkPos.getX(pos), ChunkPos.getZ(pos), ChunkStatus.FULL, false);
+                scanning = level.getChunkSource().getChunk(Chunks.keyX(pos), Chunks.keyZ(pos), ChunkStatus.FULL, false);
                 scanSection = 0;
                 scanBlock = 0;
                 foundCount = 0;
@@ -461,7 +467,7 @@ final class StructureRecognition {
             return;
         }
         if (tracker != null) {
-            tracker.chunkScanned(scanning.getPos().x(), scanning.getPos().z(), Arrays.copyOf(found, foundCount));
+            tracker.chunkScanned(Chunks.x(scanning.getPos()), Chunks.z(scanning.getPos()), Arrays.copyOf(found, foundCount));
         }
         scanning = null;
     }
@@ -535,7 +541,7 @@ final class StructureRecognition {
             if (level.isOutsideBuildHeight(y)) {
                 return null;
             }
-            if (chunk == null || chunk.getPos().x() != x >> 4 || chunk.getPos().z() != z >> 4) {
+            if (chunk == null || Chunks.x(chunk.getPos()) != x >> 4 || Chunks.z(chunk.getPos()) != z >> 4) {
                 chunk = level.getChunkSource().getChunk(x >> 4, z >> 4, ChunkStatus.FULL, false);
                 if (chunk == null) {
                     return null;

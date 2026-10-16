@@ -728,4 +728,224 @@ class SeedFinderCliTest {
         assertTrue(result.out().contains("so all of them are kept"), result.out());
         assertFalse(result.out().contains("it is "), "no likely seed of either may be named: " + result.out());
     }
+
+    // ------------------------------------------------------------------------------------- Minecraft 1.21.11 worlds
+
+    @Test
+    void versionsListsEverySupportedVersion() {
+        Result result = run("versions");
+        assertEquals(0, result.exitCode(), result.err());
+        assertTrue(result.out().contains("  1.21.11\n"), result.out());
+        assertTrue(result.out().contains("  26.3  (newest)\n"), result.out());
+        assertTrue(result.out().contains("'minecraft 1.21.11'"), result.out());
+    }
+
+    /** The lines of an output from its first line that starts with the given text. */
+    private static List<String> from(String out, String start) {
+        return out.lines().dropWhile(line -> !line.startsWith(start)).toList();
+    }
+
+    @Test
+    void structuresLocateAndBedrockWorkFor1_21_11() {
+        Result structures = run("structures", "--minecraft", "1.21.11");
+        assertEquals(0, structures.exitCode(), structures.err());
+        assertTrue(structures.out().contains("Structure types in Minecraft 1.21.11"), structures.out());
+        assertTrue(structures.out().contains("villages"), structures.out());
+        assertFalse(structures.out().contains("abandoned_camp"), "abandoned camps are new in 26.x: " + structures.out());
+
+        // Structures shared by both versions are placed the same way.
+        Result locate = run("locate", "--seed", "12345", "-m", "1.21.11");
+        assertEquals(0, locate.exitCode(), locate.err());
+        assertTrue(locate.out().startsWith("Minecraft 1.21.11, seed 12345, overworld"), locate.out());
+        assertFalse(locate.out().contains("abandoned_camp"), locate.out());
+        List<String> newer = from(run("locate", "--seed", "12345", "villages", "desert_pyramids").out(), "  Structure");
+        assertEquals(newer, from(run("locate", "--seed", "12345", "-m", "1.21.11", "villages", "desert_pyramids").out(), "  Structure"));
+        Result camps = run("locate", "--seed", "12345", "-m", "1.21.11", "abandoned_camp");
+        assertEquals(2, camps.exitCode());
+        assertTrue(camps.err().contains("Minecraft 1.21.11 has no abandoned_camp (only Minecraft 26.3 has them)"), camps.err());
+        // An unknown name points to the list of the version asked for.
+        Result unknown = run("locate", "--seed", "12345", "-m", "1.21.11", "desert_pyramid");
+        assertEquals(2, unknown.exitCode());
+        assertTrue(unknown.err().contains("Unknown structure 'desert_pyramid'. Run 'seedfinder structures --minecraft 1.21.11' to see the names."),
+            unknown.err());
+        assertTrue(run("locate", "--seed", "12345", "desert_pyramid").err().contains("Run 'seedfinder structures' to see the names."));
+        assertEquals(0, run("locate", "--seed", "12345", "-m", "1.21.11", "--dimension", "nether").exitCode());
+
+        // The bedrock is the same too, and the printed notes name their version.
+        Result bedrock = run("bedrock", "--seed", "12345", "--minecraft", "1.21.11");
+        assertEquals(0, bedrock.exitCode(), bedrock.err());
+        assertTrue(bedrock.out().contains("(Minecraft 1.21.11)"), bedrock.out());
+        assertTrue(bedrock.out().contains("\nminecraft 1.21.11\nbedrock-heights 0 0\n"), bedrock.out());
+        assertEquals(from(run("bedrock", "--seed", "12345").out(), "bedrock-heights"), from(bedrock.out(), "bedrock-heights"));
+        assertTrue(run("bedrock", "--seed", "12345").out().contains("\nminecraft 26.3\nbedrock-heights 0 0\n"));
+    }
+
+    @Test
+    void biomesOf1_21_11GiveTheFullSeedWithTheirVersionLine(@org.junit.jupiter.api.io.TempDir java.nio.file.Path folder) throws java.io.IOException {
+        Result biomes = run("biomes", "--seed", "12345", "--at", "-96,-96", "--size", "48", "--minecraft", "1.21.11");
+        assertEquals(0, biomes.exitCode(), biomes.err());
+        assertTrue(biomes.out().contains("(Minecraft 1.21.11, normal preset)"), biomes.out());
+        assertTrue(biomes.out().contains("\nminecraft 1.21.11\n"), biomes.out());
+        java.nio.file.Path file = folder.resolve("notes.txt");
+        java.nio.file.Files.writeString(file, String.join("\n", EXAMPLE).replace(':', ' ').replace(',', ' ') + "\n\n" + biomes.out());
+
+        // The notes' own line picks the version, without --minecraft.
+        Result result = run(find("--file", file.toString()));
+        assertEquals(0, result.exitCode(), result.out() + result.err());
+        assertTrue(result.out().contains("Minecraft 1.21.11, 6 structures:"), result.out());
+        assertTrue(result.out().contains("Found the full seed: 12345\n"), result.out());
+
+        Result fullSeed = run("full-seed", "12345", "--threads", "2", "--file", file.toString());
+        assertEquals(0, fullSeed.exitCode(), fullSeed.out() + fullSeed.err());
+        assertTrue(fullSeed.out().startsWith("Minecraft 1.21.11.\n"), fullSeed.out());
+        assertTrue(fullSeed.out().contains("Found the full seed: 12345\n"), fullSeed.out());
+
+        // --minecraft that agrees is fine; one that contradicts the notes is refused with the reason.
+        assertEquals(0, run(find("--file", file.toString(), "--minecraft", "1.21.11")).exitCode());
+        Result contradiction = run(find("--file", file.toString(), "--minecraft", "26.3"));
+        assertEquals(2, contradiction.exitCode());
+        assertTrue(contradiction.err().contains("The notes say they are from Minecraft 1.21.11 (their 'minecraft 1.21.11' line), but --minecraft"
+            + " says 26.3."), contradiction.err());
+        assertEquals(2, run("full-seed", "12345", "--file", file.toString(), "-m", "26.3").exitCode());
+        assertEquals(2, run("typed-seed", "--file", file.toString(), "-m", "26.3").exitCode());
+    }
+
+    @Test
+    void notesWithoutAVersionLineTakeTheOption(@org.junit.jupiter.api.io.TempDir java.nio.file.Path folder) throws java.io.IOException {
+        Result result = run(find(java.util.stream.Stream.concat(java.util.stream.Stream.of("-m", "1.21.11"), java.util.Arrays.stream(EXAMPLE))
+            .toArray(String[]::new)));
+        assertEquals(0, result.exitCode(), result.err());
+        assertTrue(result.out().contains("Minecraft 1.21.11, 6 structures:"), result.out());
+        assertTrue(result.out().contains("Found the structure seed: 12345\n"), result.out());
+
+        // A version line among the command-line structures counts as well.
+        result = run(find(java.util.stream.Stream.concat(java.util.Arrays.stream(EXAMPLE), java.util.stream.Stream.of("minecraft 1.21.11"))
+            .toArray(String[]::new)));
+        assertEquals(0, result.exitCode(), result.err());
+        assertTrue(result.out().contains("Minecraft 1.21.11, 6 structures:"), result.out());
+    }
+
+    @Test
+    void badVersionLinesAreReportedWithTheirLine(@org.junit.jupiter.api.io.TempDir java.nio.file.Path folder) throws java.io.IOException {
+        java.nio.file.Path file = folder.resolve("notes.txt");
+        java.nio.file.Files.writeString(file, "village 336 80\nminecraft 1.20.1\n");
+        Result unknown = run(find("--file", file.toString()));
+        assertEquals(2, unknown.exitCode());
+        assertTrue(unknown.err().contains("line 2 of " + file + ": Minecraft 1.20.1 is not supported (supported: 1.21.11, 26.3)."), unknown.err());
+        assertFalse(unknown.err().contains("igloo:48,208"), "not a structure line: " + unknown.err());
+        // also written with a colon
+        java.nio.file.Files.writeString(file, "minecraft: 1.20.1\nvillage 336 80\n");
+        unknown = run(find("--file", file.toString()));
+        assertEquals(2, unknown.exitCode());
+        assertTrue(unknown.err().contains("line 1 of " + file + ": Minecraft 1.20.1 is not supported (supported: 1.21.11, 26.3)."), unknown.err());
+        assertFalse(unknown.err().contains("igloo:48,208"), "not a structure line: " + unknown.err());
+        // a version line with more in it is a mistake in the version line
+        java.nio.file.Files.writeString(file, "minecraft 1.21.11 world\nvillage 336 80\n");
+        Result more = run(find("--file", file.toString()));
+        assertEquals(2, more.exitCode());
+        assertTrue(more.err().contains("line 1 of " + file + ": this looks like the line that names the Minecraft version, but it must be only"
+            + " 'minecraft' and the version, like 'minecraft 26.3' (put anything else after a #)."), more.err());
+        assertFalse(more.err().contains("igloo:48,208") || more.err().contains("whole number"), more.err());
+        // a structure name starting with "minecraft:" still gets the hint
+        Result structure = run(find("minecraft:iglo:48,208"));
+        assertEquals(2, structure.exitCode());
+        assertTrue(structure.err().contains("igloo:48,208"), structure.err());
+
+        java.nio.file.Files.writeString(file, "minecraft 1.21.11\nvillage 336 80\nminecraft 26.3\n");
+        Result twice = run("full-seed", "12345", "--file", file.toString());
+        assertEquals(2, twice.exitCode());
+        assertTrue(twice.err().contains("line 3 of " + file + ": this line says Minecraft 26.3, but an earlier line says 1.21.11"), twice.err());
+
+        // A 1.21.11 world has no abandoned camps.
+        java.nio.file.Files.writeString(file, "minecraft 1.21.11\nabandoned_camp 80 144\n");
+        Result camp = run(find("--file", file.toString()));
+        assertEquals(2, camp.exitCode());
+        assertTrue(camp.err().contains("line 2 of " + file + ": Minecraft 1.21.11 has no structure 'abandoned_camp' (only Minecraft 26.3 has it)."
+            + " If the world is from Minecraft 26.3, the notes' 'minecraft' line (or --minecraft) must say 26.3; if it is from Minecraft 1.21.11,"
+            + " leave this line out."), camp.err());
+        assertFalse(camp.err().contains("igloo:48,208"), "the line is written right: " + camp.err());
+        Result argument = run("find", "abandoned_camp:80,144", "-m", "1.21.11");
+        assertEquals(2, argument.exitCode());
+        assertTrue(argument.err().contains("If the world is from Minecraft 26.3"), argument.err());
+        assertFalse(argument.err().contains("igloo:48,208"), argument.err());
+        // A badly written line still gets the format hint.
+        java.nio.file.Files.writeString(file, "minecraft 1.21.11\nabandoned_camp 80\n");
+        Result badly = run(find("--file", file.toString()));
+        assertEquals(2, badly.exitCode());
+        assertTrue(badly.err().contains("igloo:48,208") && !badly.err().contains("If the world is from"), badly.err());
+        assertTrue(run(find("abandoned_camp:80,144", "village:336,80")).out().contains("Minecraft 26.3"), "26.3 has them");
+    }
+
+    private static final String ASSUMED_VERSION = "Your notes name no Minecraft version, so they were read as Minecraft 26.3, and biomes differ"
+        + " between versions.\nIf the world is from Minecraft 1.21.11, add a line 'minecraft 1.21.11' to the notes (or use --minecraft 1.21.11).\n";
+
+    /**
+     * Notes without a version line are read as 26.3. With --minecraft, the commands find prints for the same file carry
+     * it; and when biomes of another version's world don't fit, the output says the version was assumed.
+     */
+    @Test
+    void theVersionIsCarriedIntoPrintedCommandsAndNamedWhenBiomesDontFit(@org.junit.jupiter.api.io.TempDir java.nio.file.Path folder)
+        throws java.io.IOException {
+        // Seed 9 has dappled forest here in 26.3, where 1.21.11 has plains.
+        Result grid = run("biomes", "--seed", "9", "--at", "160,16", "--size", "24", "--minecraft", "1.21.11");
+        assertEquals(0, grid.exitCode(), grid.err());
+        assertFalse(run("biomes", "--seed", "9", "--at", "160,16", "--size", "24").out().contains("a=plains b=river c=cold_ocean d=beach\n"));
+        List<String> biomes = new java.util.ArrayList<>(List.of("preset normal"));
+        grid.out().lines().filter(line -> !line.startsWith("minecraft ")).forEach(biomes::add);
+        assertTrue(biomes.contains("biome-grid 160 64 16 a=plains b=river c=cold_ocean d=beach"), biomes.toString());
+        java.nio.file.Path hashed = folder.resolve("hashed.txt");
+        List<String> withHashedSeed = new java.util.ArrayList<>(List.of("hashed-seed " + io.github.jriiik.seedfinder.Seeds.hashedSeed(9L)));
+        withHashedSeed.addAll(biomes);
+        java.nio.file.Files.write(hashed, withHashedSeed);
+
+        Result find = run(find("-m", "1.21.11", "--file", hashed.toString()));
+        assertEquals(1, find.exitCode(), find.err());
+        assertTrue(find.out().contains("seedfinder typed-seed --file " + hashed + " --minecraft 1.21.11\n"), find.out());
+        assertTrue(run(find("--file", hashed.toString())).out().contains("seedfinder typed-seed --file " + hashed + "\n"), "26.3 needs no option");
+        // Run as printed, the notes are read as 1.21.11 and confirm the seed.
+        Result typed = run("typed-seed", "--threads", "2", "--file", hashed.toString(), "--minecraft", "1.21.11");
+        assertEquals(0, typed.exitCode(), typed.out() + typed.err());
+        assertTrue(typed.out().startsWith("Minecraft 1.21.11.\n"), typed.out());
+        assertTrue(typed.out().contains("Found the world seed: 9\n") && typed.out().contains("The notes confirm it: "), typed.out());
+        assertFalse(typed.out().contains(ASSUMED_VERSION), typed.out());
+        // Read as 26.3, the biomes don't fit, and the output says why.
+        typed = run("typed-seed", "--threads", "2", "--file", hashed.toString());
+        assertEquals(1, typed.exitCode(), typed.out() + typed.err());
+        assertTrue(typed.out().startsWith("Minecraft 26.3.\n"), typed.out());
+        assertTrue(typed.out().contains("the notes don't fit that seed (the biome notes don't fit)"), typed.out());
+        assertTrue(typed.out().contains(ASSUMED_VERSION), typed.out());
+        // full-seed finds the seed from the hashed seed, and says why the biomes don't fit it.
+        Result full = run("full-seed", "9", "--threads", "2", "--file", hashed.toString());
+        assertTrue(full.out().contains("Found the full seed: 9\n"), full.out());
+        assertTrue(full.out().contains("But your biome notes don't fit it (noted in the wrong place, or from chunks made by an older Minecraft"
+            + " version?).\n" + ASSUMED_VERSION), full.out());
+
+        // Biomes alone: no seed fits them as 26.3, which is no proof that the structure seed is wrong.
+        java.nio.file.Path plain = folder.resolve("biomes.txt");
+        java.nio.file.Files.write(plain, biomes);
+        full = run("full-seed", "9", "--threads", "2", "--file", plain.toString());
+        assertEquals(1, full.exitCode(), full.out() + full.err());
+        assertTrue(full.out().contains("fits your biome notes under the normal world preset.\n" + ASSUMED_VERSION), full.out());
+        assertTrue(full.out().contains("If the biomes are right and the world is from Minecraft 26.3,\nthe structure seed is wrong."), full.out());
+        full = run("full-seed", "9", "--threads", "2", "--file", plain.toString(), "-m", "1.21.11");
+        assertEquals(0, full.exitCode(), full.out() + full.err());
+        assertTrue(full.out().contains("Found the full seed: 9\n"), full.out());
+        assertFalse(full.out().contains("read as Minecraft"), full.out());
+        // A file that names its version gets no hint (and the 26.3 check without the hint is unchanged).
+        java.nio.file.Files.write(plain, java.util.stream.Stream.concat(java.util.stream.Stream.of("minecraft 26.3"), biomes.stream()).toList());
+        full = run("full-seed", "9", "--threads", "2", "--file", plain.toString());
+        assertEquals(1, full.exitCode(), full.out() + full.err());
+        assertFalse(full.out().contains("read as Minecraft"), full.out());
+        assertTrue(full.out().contains("leave those out. If the biomes are right, the structure seed is wrong.\n"), full.out());
+    }
+
+    @Test
+    void typedSeedReadsA1_21_11NotesFile(@org.junit.jupiter.api.io.TempDir java.nio.file.Path folder) throws java.io.IOException {
+        java.nio.file.Path notes = notes12345(folder, List.of("minecraft 1.21.11", "village 336 80", "desert_pyramid 272 80", "swamp_hut 256 -144",
+            "shipwreck -128 32", "ruined_portal 16 0", "trial_chamber 0 224"));
+        Result result = typedSeed(notes);
+        assertEquals(0, result.exitCode(), result.out() + result.err());
+        assertTrue(result.out().contains("Found the world seed: 12345\n"), result.out());
+        assertTrue(result.out().contains("The notes confirm it: "), result.out());
+    }
 }

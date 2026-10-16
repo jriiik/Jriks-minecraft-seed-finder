@@ -19,6 +19,8 @@ import java.util.Set;
 import java.util.TreeSet;
 import java.util.function.Function;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.MethodSource;
 
 /**
  * The rigid-structure recognizer on made-up layouts. The real layouts are built from the game's files by the mod at
@@ -1065,20 +1067,21 @@ class RigidRecognizerTest {
         assertNull(RigidBlocks.canonical(null));
     }
 
-    @Test
-    void theRulesComeFromTheVersionDataPerDimension() {
-        RigidRecognizer overworld = RigidRecognizer.create(List.of(), MinecraftVersion.V26_3.data(), "minecraft:overworld");
+    @ParameterizedTest
+    @MethodSource("io.github.jriiik.seedfinder.Fixtures#versions")
+    void theRulesComeFromTheVersionDataPerDimension(MinecraftVersion version) {
+        RigidRecognizer overworld = RigidRecognizer.create(List.of(), version.data(), "minecraft:overworld");
         assertEquals(Set.of(RigidKind.values()), overworld.kinds());
         assertEquals(new RigidRecognizer.Rules(32, 8, overworld.rules(RigidKind.DESERT_PYRAMID).biomes()), overworld.rules(RigidKind.DESERT_PYRAMID));
         assertEquals(Set.of("minecraft:desert"), overworld.rules(RigidKind.DESERT_PYRAMID).biomes());
         assertEquals(24, overworld.rules(RigidKind.SHIPWRECK).spacing());
         assertTrue(overworld.rules(RigidKind.SHIPWRECK).biomes().contains("minecraft:beach"));
         assertTrue(overworld.rules(RigidKind.OCEAN_RUIN).biomes().containsAll(Set.of("minecraft:warm_ocean", "minecraft:frozen_ocean")));
-        RigidRecognizer nether = RigidRecognizer.create(List.of(), MinecraftVersion.V26_3.data(), "minecraft:the_nether");
+        RigidRecognizer nether = RigidRecognizer.create(List.of(), version.data(), "minecraft:the_nether");
         assertEquals(Set.of(RigidKind.RUINED_PORTAL), nether.kinds());
         assertEquals(40, nether.rules(RigidKind.RUINED_PORTAL).spacing());
         assertEquals(15, nether.rules(RigidKind.RUINED_PORTAL).separation());
         assertTrue(nether.rules(RigidKind.RUINED_PORTAL).biomes().contains("minecraft:nether_wastes"));
-        assertEquals(Set.of(), RigidRecognizer.create(List.of(), MinecraftVersion.V26_3.data(), "minecraft:the_end").kinds());
+        assertEquals(Set.of(), RigidRecognizer.create(List.of(), version.data(), "minecraft:the_end").kinds());
     }
 }

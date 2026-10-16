@@ -6,16 +6,25 @@ import com.google.gson.JsonArray;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 import io.github.jriiik.seedfinder.Fixtures;
+import io.github.jriiik.seedfinder.version.MinecraftVersion;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedClass;
+import org.junit.jupiter.params.provider.MethodSource;
 
-/** Compares our seeding formulas with values recorded from Minecraft 26.3 itself. */
+/** Compares our seeding formulas with values recorded from each supported Minecraft version itself. */
+@ParameterizedClass
+@MethodSource("io.github.jriiik.seedfinder.Fixtures#versions")
 class WorldgenSeedsTest {
 
-    private static final JsonObject RNG = Fixtures.load("26.3", "rng.json");
+    private final JsonObject rng;
+
+    WorldgenSeedsTest(MinecraftVersion version) {
+        rng = Fixtures.load(version, "rng.json");
+    }
 
     @Test
     void largeFeatureWithSaltMatchesTheGame() {
-        JsonArray rows = RNG.getAsJsonArray("large_feature_with_salt");
+        JsonArray rows = rng.getAsJsonArray("large_feature_with_salt");
         assertEquals(200, rows.size());
         for (JsonElement element : rows) {
             JsonObject row = element.getAsJsonObject();
@@ -26,7 +35,7 @@ class WorldgenSeedsTest {
 
     @Test
     void largeFeatureMatchesTheGame() {
-        for (JsonElement element : RNG.getAsJsonArray("large_feature")) {
+        for (JsonElement element : rng.getAsJsonArray("large_feature")) {
             JsonObject row = element.getAsJsonObject();
             long seed = WorldgenSeeds.largeFeature(seed(row), row.get("x").getAsInt(), row.get("z").getAsInt());
             assertSamples(row, new JavaRandom(seed));
@@ -35,7 +44,7 @@ class WorldgenSeedsTest {
 
     @Test
     void decorationAndFeatureSeedsMatchTheGame() {
-        for (JsonElement element : RNG.getAsJsonArray("decoration")) {
+        for (JsonElement element : rng.getAsJsonArray("decoration")) {
             JsonObject row = element.getAsJsonObject();
             long decorationSeed = WorldgenSeeds.decoration(seed(row), row.get("x").getAsInt(), row.get("z").getAsInt());
             assertEquals(Long.parseLong(row.get("decoration_seed").getAsString()), decorationSeed, row.toString());

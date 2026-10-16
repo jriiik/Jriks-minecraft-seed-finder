@@ -34,9 +34,15 @@ import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.BooleanSupplier;
 import java.util.function.IntConsumer;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.MethodSource;
 
 class NetherBedrockSearchTest {
 
+    /**
+     * One version is enough for the search itself: every supported version has the same bedrock rules
+     * ({@code VersionDataTest} checks that), and each version's real chunks are checked below.
+     */
     private static final VersionData DATA = MinecraftVersion.V26_3.data();
     private static final NetherBedrockSearch SEARCH = new NetherBedrockSearch(DATA);
     private static final BedrockDimension NETHER = DATA.bedrock().get(NetherBedrockSearch.NETHER);
@@ -215,9 +221,12 @@ class NetherBedrockSearchTest {
     // ------------------------------------------------------------------------------------------------ whole searches
 
     /** Chunks made by the game itself (fixture from the oracle): one chunk's floor and roof give the structure seed. */
-    @Test
-    void realChunksFromTheGameGiveTheirStructureSeed() {
-        JsonObject seeds = Fixtures.load("26.3", "bedrock.json").getAsJsonObject("seeds");
+    @ParameterizedTest
+    @MethodSource("io.github.jriiik.seedfinder.Fixtures#versions")
+    void realChunksFromTheGameGiveTheirStructureSeed(MinecraftVersion version) {
+        NetherBedrockSearch search = new NetherBedrockSearch(version.data());
+        BedrockDimension nether = version.data().bedrock().get(NetherBedrockSearch.NETHER);
+        JsonObject seeds = Fixtures.load(version, "bedrock.json").getAsJsonObject("seeds");
         int index = 0;
         for (Map.Entry<String, JsonElement> seedEntry : seeds.entrySet()) {
             long worldSeed = Long.parseLong(seedEntry.getKey());
@@ -235,11 +244,11 @@ class NetherBedrockSearchTest {
                 for (int dz = 0; dz < 16; dz++) {
                     int bits = Integer.parseInt(rows[dz], 16);
                     for (int dx = 0; dx < 16; dx++) {
-                        blocks.add(new BedrockObservation(NETHER, minX + dx, y, minZ + dz, (bits >> dx & 1) != 0));
+                        blocks.add(new BedrockObservation(nether, minX + dx, y, minZ + dz, (bits >> dx & 1) != 0));
                     }
                 }
             }
-            NetherBedrockSearch.Outcome outcome = SEARCH.search(blocks, THREADS, NEVER, QUIET);
+            NetherBedrockSearch.Outcome outcome = search.search(blocks, THREADS, NEVER, QUIET);
             String what = "seed " + worldSeed + " chunk " + name;
             assertTrue(outcome.plan().problems().isEmpty(), what);
             assertEquals(1024, outcome.plan().floorBlocks(), what);

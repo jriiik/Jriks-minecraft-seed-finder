@@ -5,6 +5,7 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.github.jriiik.seedfinder.finder.TypedSeedSearch;
+import io.github.jriiik.seedfinder.version.MinecraftVersion;
 import java.util.List;
 import java.util.OptionalLong;
 import java.util.concurrent.BlockingQueue;
@@ -24,7 +25,7 @@ class TypedSeedRunnerTest {
     private final List<WorldSession> saved = new CopyOnWriteArrayList<>();
 
     private static WorldSession collecting() {
-        WorldSession session = new WorldSession(WORLD);
+        WorldSession session = new WorldSession(WORLD, MinecraftVersion.V26_3);
         session.setCollecting(true);
         session.setHashedSeed(42L);
         return session;
@@ -103,7 +104,7 @@ class TypedSeedRunnerTest {
         TypedSeedRunner runner = new TypedSeedRunner(mainThread::add, saved::add, (hashedSeed, from, threads, stop, progress) -> {
             throw new AssertionError("must not run");
         });
-        WorldSession session = new WorldSession(WORLD);
+        WorldSession session = new WorldSession(WORLD, MinecraftVersion.V26_3);
         session.setHashedSeed(42L);
         runner.tick(session);
         assertFalse(runner.runningFor(session));

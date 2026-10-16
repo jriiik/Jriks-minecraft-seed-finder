@@ -1,6 +1,8 @@
 package io.github.jriiik.seedfinder.cli;
 
+import io.github.jriiik.seedfinder.finder.ObservationParser;
 import io.github.jriiik.seedfinder.finder.ObservationReader;
+import io.github.jriiik.seedfinder.version.MinecraftVersion;
 import io.github.jriiik.seedfinder.version.VersionData;
 import java.io.IOException;
 import java.nio.ByteBuffer;
@@ -12,6 +14,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Optional;
 import java.util.regex.Pattern;
 import picocli.CommandLine;
 
@@ -25,8 +28,12 @@ record ObservationInput(Path file, List<String> lines, int fromFile) {
 
     /** Lines that belong to bedrock notes, for which the structure hint would not help. */
     private static final Pattern BEDROCK_LINE = Pattern.compile("(?i)\\s*((not[- ]|no[- ])?bedrock.*|[0-9?bB.,;\\s-]+)");
-    /** Biome, preset and hashed-seed lines: not structures either. */
-    private static final Pattern OTHER_NOTE = Pattern.compile("(?i)\\s*(biome|(world[- ])?preset|hashed[- ]seed).*");
+    /**
+     * Biome, preset, hashed-seed and Minecraft version lines ("minecraft 26.3", "minecraft: 1.20.1"): not structures
+     * either. The version starts with a digit, unlike a structure name such as "minecraft:igloo".
+     */
+    private static final Pattern OTHER_NOTE = Pattern.compile(
+        "(?i)\\s*(biome|(world[- ])?preset|hashed[- ]seed|minecraft([- ]version)?[\\s:=]+\\d).*");
     /** A row of a biome grid (letters of its legend). */
     private static final Pattern GRID_ROW = Pattern.compile("[A-Za-z?\\s]+");
 
@@ -80,16 +87,73 @@ record ObservationInput(Path file, List<String> lines, int fromFile) {
         return lines.stream().allMatch(String::isBlank);
     }
 
+    /** The Minecraft version the notes name in a 'minecraft &lt;version&gt;' line, if any. */
+    Optional<MinecraftVersion> minecraftVersion(CommandLine commandLine) {
+        try {
+            return ObservationReader.minecraftVersion(lines);
+        } catch (ObservationReader.LineException e) {
+            throw problem(commandLine, e);
+        }
+    }
+
+    /** Whether the file's own lines (not the command-line arguments) name a Minecraft version. */
+    boolean fileNamesVersion() {
+        try {
+            return ObservationReader.minecraftVersion(lines.subList(0, fromFile)).isPresent();
+        } catch (ObservationReader.LineException e) {
+            return false;
+        }
+    }
+
     ObservationReader.Observations read(CommandLine commandLine, VersionData data) {
         try {
             return ObservationReader.read(data, lines);
         } catch (ObservationReader.LineException e) {
-            int i = e.lineIndex();
-            String line = lines.get(i);
-            String where = i < fromFile ? "line " + (i + 1) + " of " + file : "'" + line + "'";
-            String hint = BEDROCK_LINE.matcher(line).matches() || OTHER_NOTE.matcher(line).matches() || isGridRow(i) ? ""
-                : ". Write each structure as its name and the block x and z of its start chunk, like igloo:48,208";
-            throw new CommandLine.ParameterException(commandLine, where + ": " + e.getMessage() + hint + ".");
+            throw problem(commandLine, e, data);
         }
+    }
+
+    /** The mistake with where it is: the line of the file or the argument. */
+    private CommandLine.ParameterException problem(CommandLine commandLine, ObservationReader.LineException e) {
+        return problem(commandLine, e, null);
+    }
+
+    /**
+     * The mistake with where it is, and a hint: how to write a structure, or, for a structure written right that only
+     * another Minecraft version has, that the notes are read as {@code data}'s version.
+     */
+    private CommandLine.ParameterException problem(CommandLine commandLine, ObservationReader.LineException e, VersionData data) {
+        int i = e.lineIndex();
+        String line = lines.get(i);
+        String where = i < fromFile ? "line " + (i + 1) + " of " + file : "'" + line + "'";
+        List<String> others = data == null ? List.of() : versionsWithStructure(data, line);
+        String hint;
+        if (!others.isEmpty()) {
+            hint = ". If the world is from Minecraft " + String.join(" or ", others) + ", the notes' 'minecraft' line (or --minecraft) must say "
+                + others.get(0) + "; if it is from Minecraft " + data.version() + ", leave this line out";
+        } else if (BEDROCK_LINE.matcher(line).matches() || OTHER_NOTE.matcher(line).matches() || isGridRow(i)) {
+            hint = "";
+        } else {
+            hint = ". Write each structure as its name and the block x and z of its start chunk, like igloo:48,208";
+        }
+        return new CommandLine.ParameterException(commandLine, where + ": " + e.getMessage() + hint + ".");
+    }
+
+    /** The other Minecraft versions in which the line is a structure written right (a structure only they have). */
+    private static List<String> versionsWithStructure(VersionData data, String line) {
+        List<String> others = new ArrayList<>();
+        for (MinecraftVersion other : MinecraftVersion.values()) {
+            if (other.displayName().equals(data.version())) {
+                continue;
+            }
+            try {
+                if (ObservationParser.parseLine(other.data(), line).isPresent()) {
+                    others.add(other.displayName());
+                }
+            } catch (IllegalArgumentException notAStructureThere) {
+                // not a structure line in that version either
+            }
+        }
+        return others;
     }
 }

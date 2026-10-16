@@ -49,14 +49,14 @@ public final class OverworldBiomes {
     }
 
     private static final Map<String, OverworldBiomes> LOADED = new ConcurrentHashMap<>();
-    private static final Map<String, BiomeParameters> PARAMETERS = new ConcurrentHashMap<>();
+    private static final Map<MinecraftVersion, BiomeParameters> PARAMETERS = new ConcurrentHashMap<>();
 
-    private final ClimateFunctions functions;
+    private final ClimateEvaluator functions;
     private final BiomeParameters parameters;
     private final int minQuartY;
     private final int maxQuartY;
 
-    private OverworldBiomes(ClimateFunctions functions, BiomeParameters parameters, int minY, int height) {
+    private OverworldBiomes(ClimateEvaluator functions, BiomeParameters parameters, int minY, int height) {
         this.functions = functions;
         this.parameters = parameters;
         this.minQuartY = Math.floorDiv(minY, 4);
@@ -65,23 +65,46 @@ public final class OverworldBiomes {
 
     /** The overworld biomes of a version and preset. */
     public static OverworldBiomes of(MinecraftVersion version, Preset preset) {
-        return LOADED.computeIfAbsent(version.displayName() + " " + preset.id(), key -> load(version.displayName(), preset));
+        return LOADED.computeIfAbsent(version.displayName() + " " + preset.id(), key -> load(version, preset));
     }
 
-    private static OverworldBiomes load(String version, Preset preset) {
-        JsonObject climate = VersionDataLoader.readBundled(version, "climate.json");
+    private static OverworldBiomes load(MinecraftVersion version, Preset preset) {
+        JsonObject climate = VersionDataLoader.readBundled(version.displayName(), "climate.json");
         JsonObject router = climate.getAsJsonObject("presets").getAsJsonObject(preset.id());
         if (router == null) {
-            throw new IllegalStateException("No climate data for " + preset.id() + " in " + version);
+            throw new IllegalStateException("No climate data for " + preset.id() + " in " + version.displayName());
         }
-        ClimateFunctions functions = ClimateFunctions.parse(router, climate.getAsJsonObject("density_functions"), climate.getAsJsonObject("noises"));
-        BiomeParameters parameters = PARAMETERS.computeIfAbsent(version,
-            v -> BiomeParameters.parse(VersionDataLoader.readBundled(v, "biome_parameters.json").getAsJsonObject("overworld")));
+        ClimateEvaluator functions = climate(version, router, climate.getAsJsonObject("density_functions"), climate.getAsJsonObject("noises"));
+        BiomeParameters parameters = PARAMETERS.computeIfAbsent(version, v -> BiomeParameters.parse(
+            VersionDataLoader.readBundled(v.displayName(), "biome_parameters.json").getAsJsonObject("overworld"), treeChildrenPerNode(v)));
         JsonObject overworld = climate.getAsJsonObject("overworld");
         return new OverworldBiomes(functions, parameters, overworld.get("min_y").getAsInt(), overworld.get("height").getAsInt());
     }
 
-    ClimateFunctions functions() {
+    /**
+     * How a version computes its climate, as its game code does: 1.21.x evaluates the density functions in double
+     * arithmetic (and exports them in the classic data format), 26.x compiles them to samplers that compute in float.
+     * Chosen by the version, never guessed from the data: each parser rejects the other format.
+     */
+    private static ClimateEvaluator climate(MinecraftVersion version, JsonObject router, JsonObject functions, JsonObject noises) {
+        return switch (version) {
+            case V1_21_11 -> ClassicClimateFunctions.parse(router, functions, noises);
+            case V26_3 -> ClimateFunctions.parse(router, functions, noises);
+        };
+    }
+
+    /**
+     * The most children a node of the version's biome search tree has ({@code Climate.RTree.CHILDREN_PER_NODE}). The
+     * tree's shape decides ties, so it must be the game's.
+     */
+    static int treeChildrenPerNode(MinecraftVersion version) {
+        return switch (version) {
+            case V1_21_11 -> 6;
+            case V26_3 -> 19;
+        };
+    }
+
+    ClimateEvaluator functions() {
         return functions;
     }
 
@@ -110,7 +133,7 @@ public final class OverworldBiomes {
      */
     public final class Sampler {
 
-        private final ClimateFunctions.State state = functions.newState();
+        private final ClimateEvaluator.State state = functions.newState();
         private final long[] target = new long[BiomeTree.DIMENSIONS];
         private boolean seeded;
 
@@ -124,12 +147,20 @@ public final class OverworldBiomes {
             return this;
         }
 
-        /** One climate value (see {@link ClimateFunctions#TEMPERATURE} ...) at a block position, as a float. */
+        /** One climate value (see {@link ClimateEvaluator#TEMPERATURE} ...) at a block position, as a float. */
         float climate(int function, int blockX, int blockY, int blockZ) {
             if (!seeded) {
                 throw new IllegalStateException("no seed set");
             }
-            return functions.sample(state, function, blockX, blockY, blockZ);
+            return state.climate(function, blockX, blockY, blockZ);
+        }
+
+        /** One climate value exactly as the game's density function computes it (for checking against the game). */
+        double exactClimate(int function, int blockX, int blockY, int blockZ) {
+            if (!seeded) {
+                throw new IllegalStateException("no seed set");
+            }
+            return state.exact(function, blockX, blockY, blockZ);
         }
 
         /** The climate point of a quart: the six values x 10000 (rounded towards zero, as the game does), then 0. */
@@ -137,7 +168,7 @@ public final class OverworldBiomes {
             int x = quartX << 2;
             int y = quartY << 2;
             int z = quartZ << 2;
-            for (int f = 0; f < ClimateFunctions.FIELDS.length; f++) {
+            for (int f = 0; f < ClimateEvaluator.FIELDS.length; f++) {
                 target[f] = (long) (climate(f, x, y, z) * 10000.0F);
             }
             target[6] = 0;

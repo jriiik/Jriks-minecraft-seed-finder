@@ -175,4 +175,72 @@ class ObservationReaderTest {
             new BiomeObservation("minecraft:plains", 112, 64, -48, true)), read.biomes());
         assertEquals(io.github.jriiik.seedfinder.biome.OverworldBiomes.Preset.LARGE_BIOMES, read.preset().orElseThrow());
     }
+
+    @Test
+    void theVersionLineNamesTheMinecraftVersion() {
+        VersionData old = MinecraftVersion.V1_21_11.data();
+        List<String> notes = List.of(ObservationReader.versionLine(MinecraftVersion.V1_21_11), "village 336 80", "biome forest 1 64 2");
+        assertEquals("minecraft 1.21.11", notes.get(0));
+        assertEquals(java.util.Optional.of(MinecraftVersion.V1_21_11), ObservationReader.minecraftVersion(notes));
+        ObservationReader.Observations read = ObservationReader.read(old, notes);
+        assertEquals(java.util.Optional.of(MinecraftVersion.V1_21_11), read.minecraft());
+        assertEquals(1, read.structures().size());
+        assertEquals(1, read.biomes().size());
+        // other ways to write it, anywhere in the notes
+        for (String line : List.of("Minecraft 1.21.11", "minecraft: 1.21.11", "Minecraft version: 1.21.11", "minecraft 1.21.11   # my world")) {
+            assertEquals(java.util.Optional.of(MinecraftVersion.V1_21_11), ObservationReader.minecraftVersion(List.of("igloo 48 208", line)), line);
+        }
+        // notes without the line are for the newest version; the same line twice is fine
+        assertTrue(ObservationReader.minecraftVersion(List.of("village 336 80")).isEmpty());
+        assertTrue(read("village 336 80").minecraft().isEmpty());
+        assertEquals(java.util.Optional.of(MinecraftVersion.V26_3), read("minecraft 26.3", "minecraft 26.3").minecraft());
+        // structure lines that start with "minecraft:" are still structures
+        assertEquals(2, read("minecraft:igloo 48 208", "The nearest minecraft:village is at [336, ~, 80] (12 blocks away)").structures().size());
+        assertTrue(ObservationReader.minecraftVersion(List.of("minecraft:igloo 48 208")).isEmpty());
+    }
+
+    @Test
+    void unknownOrConflictingVersionsAreRejected() {
+        ObservationReader.LineException unknown = assertThrows(ObservationReader.LineException.class,
+            () -> ObservationReader.minecraftVersion(List.of("village 336 80", "minecraft 1.20.1")));
+        assertEquals(1, unknown.lineIndex());
+        assertTrue(unknown.getMessage().contains("1.21.11, 26.3"), unknown.getMessage());
+        assertEquals(1, assertThrows(ObservationReader.LineException.class, () -> read("village 336 80", "minecraft 1.20.1")).lineIndex());
+
+        ObservationReader.LineException twice = assertThrows(ObservationReader.LineException.class,
+            () -> ObservationReader.minecraftVersion(List.of("minecraft 1.21.11", "", "minecraft 26.3")));
+        assertEquals(2, twice.lineIndex());
+        assertTrue(twice.getMessage().contains("earlier line says 1.21.11"), twice.getMessage());
+        assertEquals(2, assertThrows(ObservationReader.LineException.class,
+            () -> ObservationReader.read(MinecraftVersion.V1_21_11.data(), List.of("minecraft 1.21.11", "", "minecraft 26.3"))).lineIndex());
+
+        // notes are only read with the data of the version they name
+        ObservationReader.LineException other = assertThrows(ObservationReader.LineException.class, () -> read("igloo 48 208", "minecraft 1.21.11"));
+        assertEquals(1, other.lineIndex());
+        assertTrue(other.getMessage().contains("from Minecraft 1.21.11, but are being read as Minecraft 26.3"), other.getMessage());
+
+        // a line that starts like the version line but says more is a mistake in that line (not a structure)
+        for (String line : List.of("minecraft 1.21.11 world", "Minecraft version: 26.3, normal", "minecraft: 1.21.11 (my world)")) {
+            ObservationReader.LineException more = assertThrows(ObservationReader.LineException.class,
+                () -> ObservationReader.minecraftVersion(List.of("igloo 48 208", line)), line);
+            assertEquals(1, more.lineIndex());
+            assertTrue(more.getMessage().contains("the line that names the Minecraft version") && more.getMessage().contains("'minecraft 26.3'"),
+                more.getMessage());
+            ObservationReader.LineException read = assertThrows(ObservationReader.LineException.class, () -> read("igloo 48 208", line), line);
+            assertEquals(1, read.lineIndex());
+            assertEquals(more.getMessage(), read.getMessage());
+        }
+    }
+
+    @Test
+    void structuresOfAnotherVersionAreNamed() {
+        VersionData old = MinecraftVersion.V1_21_11.data();
+        ObservationReader.LineException camp = assertThrows(ObservationReader.LineException.class,
+            () -> ObservationReader.read(old, List.of("minecraft 1.21.11", "abandoned_camp 80 144")));
+        assertEquals(1, camp.lineIndex());
+        assertEquals("Minecraft 1.21.11 has no structure 'abandoned_camp' (only Minecraft 26.3 has it)", camp.getMessage());
+        assertEquals(1, read("abandoned_camp 80 144").structures().size());
+        assertEquals("unknown structure 'castle'", assertThrows(ObservationReader.LineException.class,
+            () -> ObservationReader.read(old, List.of("castle 1 2"))).getMessage());
+    }
 }

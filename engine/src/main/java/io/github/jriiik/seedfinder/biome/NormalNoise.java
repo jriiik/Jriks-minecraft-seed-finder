@@ -1,8 +1,6 @@
 package io.github.jriiik.seedfinder.biome;
 
-import io.github.jriiik.seedfinder.rng.RandomSupport;
 import io.github.jriiik.seedfinder.rng.XoroshiroPositionalFactory;
-import io.github.jriiik.seedfinder.rng.XoroshiroRandom;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
@@ -14,9 +12,7 @@ import java.util.List;
  */
 final class NormalNoise {
 
-    /** The second layer of each octave is sampled slightly faster, so the two do not line up. */
-    private static final double SECOND_LAYER_FREQUENCY = 1.0181268882175227;
-
+    /** Two layers per octave: the first stack's, then the second's (see {@link NoiseGenerators}). */
     private final PerlinNoise[] layers;
     private final double[] frequencies;
     private final float[] amplitudes;
@@ -37,13 +33,12 @@ final class NormalNoise {
     }
 
     /**
-     * How one noise is built, worked out once: its octaves with the hashes of their names, their frequencies and
-     * their weights. Only the generators depend on the world seed.
+     * How one noise is built, worked out once: where its octaves' generators come from, their frequencies and their
+     * weights. Only the generators depend on the world seed.
      */
     static final class Recipe {
 
-        private final RandomSupport.Seed128 idHash;
-        private final RandomSupport.Seed128[] octaveHashes;
+        private final NoiseGenerators generators;
         private final double[] frequencies;
         private final float[] amplitudes;
 
@@ -56,7 +51,6 @@ final class NormalNoise {
             if (amplitudeModifiers.length != 0 && amplitudeModifiers.length != octaveCount) {
                 throw new IllegalArgumentException(id + ": " + amplitudeModifiers.length + " amplitude modifiers for " + octaveCount + " octaves");
             }
-            this.idHash = RandomSupport.seedFromHashOf(id);
             // NormalNoise.buildOctaves
             double frequency = Math.pow(2.0, baseOctave);
             double amplitude = baseAmplitude;
@@ -82,15 +76,14 @@ final class NormalNoise {
             }
             double inputDeviation = Math.sqrt(variance);
             double normalization = inputDeviation == 0.0 ? 0.0 : targetAmplitude * 0.3333333333333333 / (inputDeviation * Math.sqrt(2.0));
-            this.octaveHashes = new RandomSupport.Seed128[octaves.size()];
+            this.generators = new NoiseGenerators(id, octaves.stream().mapToInt(octave -> (int) octave[0]).toArray());
             this.frequencies = new double[octaves.size() * 2];
             this.amplitudes = new float[octaves.size() * 2];
             for (int i = 0; i < octaves.size(); i++) {
                 double[] octave = octaves.get(i);
-                octaveHashes[i] = RandomSupport.seedFromHashOf("octave_" + (int) octave[0]);
                 float weight = (float) (normalization * octave[2]);
                 frequencies[2 * i] = octave[1];
-                frequencies[2 * i + 1] = octave[1] * SECOND_LAYER_FREQUENCY;
+                frequencies[2 * i + 1] = octave[1] * NoiseGenerators.SECOND_STACK_FREQUENCY;
                 amplitudes[2 * i] = weight;
                 amplitudes[2 * i + 1] = weight;
             }
@@ -98,13 +91,11 @@ final class NormalNoise {
 
         /** The noise of the world whose generators come from {@code world} ({@code RandomState}'s root factory). */
         NormalNoise create(XoroshiroPositionalFactory world) {
-            XoroshiroRandom random = world.fromHash(idHash);
-            XoroshiroPositionalFactory first = random.forkPositional();
-            XoroshiroPositionalFactory second = random.forkPositional();
+            PerlinNoise[][] stacks = generators.stacks(world);
             PerlinNoise[] layers = new PerlinNoise[frequencies.length];
-            for (int i = 0; i < octaveHashes.length; i++) {
-                layers[2 * i] = new PerlinNoise(first.fromHash(octaveHashes[i]));
-                layers[2 * i + 1] = new PerlinNoise(second.fromHash(octaveHashes[i]));
+            for (int i = 0; i < stacks[0].length; i++) {
+                layers[2 * i] = stacks[0][i];
+                layers[2 * i + 1] = stacks[1][i];
             }
             return new NormalNoise(layers, frequencies, amplitudes);
         }

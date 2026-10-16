@@ -54,6 +54,11 @@ final class StartPieceLibrary {
      */
     static final List<String> SETS = List.of("villages", "pillager_outposts", "trial_chambers", "ancient_cities", "trail_ruins", "abandoned_camp");
 
+    /** The sets of {@link #SETS} that this Minecraft version has (abandoned camps came with 26.x). */
+    static List<String> setsOf(VersionData data) {
+        return SETS.stream().filter(set -> data.structureSet(set).isPresent()).toList();
+    }
+
     /** Smaller blueprints would match by chance too easily. */
     private static final int MIN_BLOCKS = 20;
     private static final int MIN_BUILT_BLOCKS = 5;
@@ -108,7 +113,7 @@ final class StartPieceLibrary {
     static Library load(VersionData data, DataFiles files) {
         StartPieceLibrary library = new StartPieceLibrary(data, files);
         List<StartPiece> pieces = new ArrayList<>();
-        for (String id : SETS) {
+        for (String id : setsOf(data)) {
             try {
                 library.addSet(id, pieces);
             } catch (IOException | RuntimeException e) {
@@ -312,7 +317,9 @@ final class StartPieceLibrary {
                     return state -> false;
                 }
                 JsonElement blockState = test.get("block_state");
-                Block block = block(blockState != null && blockState.isJsonObject() ? string(blockState.getAsJsonObject(), "id") : string(test, "block_state"));
+                // A block state is written {"id", "properties"} by 26.x and {"Name", "Properties"} by older versions.
+                JsonObject written = blockState != null && blockState.isJsonObject() ? blockState.getAsJsonObject() : null;
+                Block block = block(written != null ? string(written, written.has("id") ? "id" : "Name") : string(test, "block_state"));
                 return state -> state.is(block);
             }
             case "minecraft:tag_match" -> {
@@ -369,7 +376,9 @@ final class StartPieceLibrary {
         for (int i = 0; i < palette.size(); i++) {
             CompoundTag entry = palette.getCompoundOrEmpty(i);
             states[i] = NbtUtils.readBlockState(BuiltInRegistries.BLOCK, entry);
-            orientations[i] = entry.getCompoundOrEmpty("properties").getStringOr("orientation", "");
+            // Templates of 26.x write "properties", older ones "Properties" (as each version's NbtUtils reads them).
+            orientations[i] = entry.getCompoundOrEmpty("properties").getStringOr("orientation",
+                entry.getCompoundOrEmpty("Properties").getStringOr("orientation", ""));
         }
         List<Placed> blocks = new ArrayList<>();
         List<Jigsaw> jigsaws = new ArrayList<>();

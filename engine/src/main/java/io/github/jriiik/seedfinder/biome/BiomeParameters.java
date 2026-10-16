@@ -24,7 +24,7 @@ public final class BiomeParameters {
     private final int[][] entriesOfBiome;
     private final BiomeTree tree;
 
-    BiomeParameters(List<String> biomes, int[] entryBiome, long[][] entryMin, long[][] entryMax) {
+    BiomeParameters(List<String> biomes, int[] entryBiome, long[][] entryMin, long[][] entryMax, int treeChildrenPerNode) {
         this.biomes = Collections.unmodifiableList(new ArrayList<>(biomes));
         for (int i = 0; i < biomes.size(); i++) {
             biomeIndexes.put(biomes.get(i), i);
@@ -38,11 +38,15 @@ public final class BiomeParameters {
             byBiome.get(entryBiome[entry]).add(entry);
         }
         this.entriesOfBiome = byBiome.stream().map(list -> list.stream().mapToInt(Integer::intValue).toArray()).toArray(int[][]::new);
-        this.tree = new BiomeTree(entryMin, entryMax);
+        this.tree = new BiomeTree(entryMin, entryMax, treeChildrenPerNode);
     }
 
-    /** Reads the oracle's export ({@code biome_parameters.json}, one dimension's part). */
-    static BiomeParameters parse(JsonObject json) {
+    /**
+     * Reads the oracle's export ({@code biome_parameters.json}, one dimension's part).
+     *
+     * @param treeChildrenPerNode how many children a node of the version's search tree has
+     */
+    static BiomeParameters parse(JsonObject json, int treeChildrenPerNode) {
         List<String> biomes = new ArrayList<>();
         json.getAsJsonArray("biomes").forEach(biome -> biomes.add(biome.getAsString()));
         String[] names = {"temperature", "humidity", "continentalness", "erosion", "depth", "weirdness"};
@@ -77,7 +81,7 @@ public final class BiomeParameters {
             entryMax[index][6] = offset;
             index++;
         }
-        return new BiomeParameters(biomes, entryBiome, entryMin, entryMax);
+        return new BiomeParameters(biomes, entryBiome, entryMin, entryMax, treeChildrenPerNode);
     }
 
     /** The biome ids, like {@code minecraft:plains}; a biome's position here is its index. */

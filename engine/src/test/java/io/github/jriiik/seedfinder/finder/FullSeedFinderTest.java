@@ -150,7 +150,11 @@ class FullSeedFinderTest {
         }
     }
 
-    /** Guards the estimate the report relies on: it must not be lower than reality (and not wildly higher). */
+    /**
+     * Guards the estimate the report relies on: it must not be lower than reality (and not wildly higher). One
+     * version is enough: the overworld bedrock is made the same way in every supported version ({@code VersionDataTest}
+     * checks the rules are equal, {@code BedrockPatternTest} each version's real chunks).
+     */
     @Test
     void theFalseFitEstimateMatchesReality() {
         SplittableRandom random = new SplittableRandom(2027);

@@ -64,11 +64,17 @@ final class TypedSeedCommand implements Callable<Integer> {
     public Integer call() {
         CommandLine commandLine = spec.commandLine();
         PrintWriter out = commandLine.getOut();
-        MinecraftVersion minecraft = version.resolve(commandLine);
+        Optional<ObservationInput> input = input(commandLine);
+        MinecraftVersion minecraft = input.isPresent() ? version.resolve(commandLine, input.get()) : version.resolve(commandLine);
         VersionData data = minecraft.data();
-        Optional<ObservationReader.Observations> notes = notes(commandLine, data);
+        Optional<ObservationReader.Observations> notes = notes(commandLine, input, data);
         long hashedSeed = notes.isPresent() ? notes.get().hashedSeed().getAsLong() : parsedHashedSeed(commandLine);
         int threadCount = Threads.resolve(commandLine, threads);
+        // The hashed seed is the same in every version; the notes it is checked against are read as this one.
+        boolean versionAssumed = notes.isPresent() && version.assumed(notes.get());
+        if (notes.isPresent()) {
+            out.printf("Minecraft %s.%n", data.version());
+        }
 
         long estimate = Math.round((1L << 32) / (SEEDS_PER_SECOND_PER_THREAD * threadCount));
         out.printf(Locale.ROOT, "Checking the 4,294,967,296 seeds that can be typed against hashed seed %d on %d thread%s. That takes about %s "
@@ -146,6 +152,9 @@ final class TypedSeedCommand implements Callable<Integer> {
                 }
                 out.println("Either the server sends a made-up hashed seed, or " + String.join(" and ", otherwise)
                     + ". Bedrock notes from the overworld would tell which.");
+                if (contradicted.biomes().misfit() && versionAssumed) {
+                    VersionOption.assumedVersionHint(minecraft).forEach(out::println);
+                }
                 if (contradicted.nether().mismatches() > 0) {
                     out.println("Nether bedrock that doesn't fit:");
                     contradicted.nether().examples().forEach(observation -> out.println("  " + FullSeedReport.mistake(observation)));
@@ -178,6 +187,9 @@ final class TypedSeedCommand implements Callable<Integer> {
             if (confirmed.biomes().misfit()) {
                 out.println("The biome notes don't fit it: they may come from chunks made by an older Minecraft version, or the server changes"
                     + " biomes (or they were noted wrong).");
+                if (versionAssumed) {
+                    VersionOption.assumedVersionHint(minecraft).forEach(out::println);
+                }
             }
             if (confirmed.nether().mismatches() > 0) {
                 boolean one = confirmed.nether().mismatches() == 1;
@@ -190,16 +202,21 @@ final class TypedSeedCommand implements Callable<Integer> {
         return 0;
     }
 
-    private Optional<ObservationReader.Observations> notes(CommandLine commandLine, VersionData data) {
+    /** The notes file, if the hashed seed comes from one. */
+    private Optional<ObservationInput> input(CommandLine commandLine) {
         if ((hashedSeedText == null) == (file == null)) {
             throw new CommandLine.ParameterException(commandLine, hashedSeedText == null
                 ? "Give the hashed seed, or a notes file with a 'hashed-seed' line (--file), for example: seedfinder typed-seed 293737985876514017"
                 : "Give the hashed seed or a notes file (--file), not both");
         }
-        if (file == null) {
+        return file == null ? Optional.empty() : Optional.of(ObservationInput.of(commandLine, file, List.of()));
+    }
+
+    private Optional<ObservationReader.Observations> notes(CommandLine commandLine, Optional<ObservationInput> input, VersionData data) {
+        if (input.isEmpty()) {
             return Optional.empty();
         }
-        ObservationReader.Observations read = ObservationInput.of(commandLine, file, List.of()).read(commandLine, data);
+        ObservationReader.Observations read = input.get().read(commandLine, data);
         if (read.hashedSeed().isEmpty()) {
             throw new CommandLine.ParameterException(commandLine, file + " has no 'hashed-seed' line");
         }

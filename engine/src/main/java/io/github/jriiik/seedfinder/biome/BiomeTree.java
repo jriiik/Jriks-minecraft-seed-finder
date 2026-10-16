@@ -12,7 +12,6 @@ import java.util.List;
  */
 final class BiomeTree {
 
-    private static final int CHILDREN_PER_NODE = 19;
     static final int DIMENSIONS = 7;
 
     private final Node root;
@@ -20,14 +19,19 @@ final class BiomeTree {
     private final Node[] leaves;
 
     /**
-     * @param min, max per entry, the 7 bounds (6 climate parameters and the offset, as a point), in the list's order
+     * @param min, max        per entry, the 7 bounds (6 climate parameters and the offset, as a point), in the list's order
+     * @param childrenPerNode the most children a node of the game's tree has (its {@code CHILDREN_PER_NODE}, which
+     *                        differs between versions)
      */
-    BiomeTree(long[][] min, long[][] max) {
+    BiomeTree(long[][] min, long[][] max, int childrenPerNode) {
+        if (childrenPerNode < 2) {
+            throw new IllegalArgumentException("a tree node needs at least 2 children, not " + childrenPerNode);
+        }
         List<Node> leafList = new ArrayList<>();
         for (int i = 0; i < min.length; i++) {
             leafList.add(new Node(min[i], max[i], i));
         }
-        root = build(leafList);
+        root = build(leafList, childrenPerNode);
         this.leaves = new Node[min.length];
         collect(root, this.leaves);
     }
@@ -64,11 +68,11 @@ final class BiomeTree {
         return distance;
     }
 
-    private static Node build(List<Node> children) {
+    private static Node build(List<Node> children, int childrenPerNode) {
         if (children.size() == 1) {
             return children.get(0);
         }
-        if (children.size() <= CHILDREN_PER_NODE) {
+        if (children.size() <= childrenPerNode) {
             children.sort(Comparator.comparingLong(node -> {
                 long magnitude = 0;
                 for (int d = 0; d < DIMENSIONS; d++) {
@@ -83,7 +87,7 @@ final class BiomeTree {
         List<Node> minBuckets = null;
         for (int d = 0; d < DIMENSIONS; d++) {
             children.sort(order(d, false));
-            List<Node> buckets = bucketize(children);
+            List<Node> buckets = bucketize(children, childrenPerNode);
             long cost = 0;
             for (Node bucket : buckets) {
                 for (int k = 0; k < DIMENSIONS; k++) {
@@ -99,7 +103,7 @@ final class BiomeTree {
         minBuckets.sort(order(minDimension, true));
         List<Node> subtrees = new ArrayList<>();
         for (Node bucket : minBuckets) {
-            subtrees.add(build(new ArrayList<>(Arrays.asList(bucket.children))));
+            subtrees.add(build(new ArrayList<>(Arrays.asList(bucket.children)), childrenPerNode));
         }
         return new Node(subtrees);
     }
@@ -115,10 +119,10 @@ final class BiomeTree {
         return comparator;
     }
 
-    private static List<Node> bucketize(List<Node> nodes) {
+    private static List<Node> bucketize(List<Node> nodes, int childrenPerNode) {
         List<Node> buckets = new ArrayList<>();
         List<Node> children = new ArrayList<>();
-        int expected = (int) Math.pow(CHILDREN_PER_NODE, Math.floor(Math.log(nodes.size() - 0.01) / Math.log(CHILDREN_PER_NODE)));
+        int expected = (int) Math.pow(childrenPerNode, Math.floor(Math.log(nodes.size() - 0.01) / Math.log(childrenPerNode)));
         for (Node node : nodes) {
             children.add(node);
             if (children.size() >= expected) {

@@ -10,9 +10,11 @@ import io.github.jriiik.seedfinder.Seeds;
 import io.github.jriiik.seedfinder.biome.OverworldBiomes;
 import io.github.jriiik.seedfinder.finder.BiomeEvidence;
 import io.github.jriiik.seedfinder.finder.BiomeText;
+import io.github.jriiik.seedfinder.finder.ObservationReader;
 import io.github.jriiik.seedfinder.finder.SeedCheck;
 import io.github.jriiik.seedfinder.finder.TypedSeedSearch;
 import io.github.jriiik.seedfinder.finder.WorldSeedSearch;
+import io.github.jriiik.seedfinder.version.MinecraftVersion;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
@@ -29,7 +31,8 @@ import java.util.OptionalLong;
  * the hashed seed, and the latest search result. Changed only on the game's main thread.
  *
  * <p>It is saved in the config folder as JSON (the mod's own memory) and as a notes file in the format the
- * command-line app reads ({@code seedfinder find --file <notes file>}).
+ * command-line app reads ({@code seedfinder find --file <notes file>}). The notes file starts with the Minecraft version
+ * the game runs ({@code minecraft 26.3}), so the app reads it with that version's data.
  */
 final class WorldSession {
 
@@ -80,6 +83,8 @@ final class WorldSession {
     private static final Gson GSON = new GsonBuilder().setPrettyPrinting().disableHtmlEscaping().create();
 
     private final String world;
+    /** The Minecraft version the game runs. */
+    private final MinecraftVersion minecraft;
     private boolean collecting;
     private boolean showStatus = true;
     /**
@@ -90,6 +95,12 @@ final class WorldSession {
     private boolean netherPortals;
     private OptionalLong hashedSeed = OptionalLong.empty();
     private final List<NotedStructure> structures = new ArrayList<>();
+    /**
+     * Structures saved for this world by the mod for another Minecraft version whose set the running version doesn't
+     * have (abandoned camps noted with 26.3, read with 1.21.11): kept and saved again, so that version still has them,
+     * but left out of the notes and the searches here, which would refuse them.
+     */
+    private final List<NotedStructure> otherVersions = new ArrayList<>();
     /**
      * Structures automatic recognition must not note again: removed by the player, or recognized starts that
      * contradicted another note in the same placement region.
@@ -134,8 +145,14 @@ final class WorldSession {
     private int resultVersion = -1;
     private String resultError;
 
-    WorldSession(String world) {
+    WorldSession(String world, MinecraftVersion minecraft) {
         this.world = world;
+        this.minecraft = minecraft;
+    }
+
+    /** The Minecraft version the world is played with (the one this mod jar is for). */
+    MinecraftVersion minecraft() {
+        return minecraft;
     }
 
     /** How many pieces of the typed-seed search are done (where it continues). */
@@ -567,6 +584,7 @@ final class WorldSession {
      */
     void clearAll() {
         structures.clear();
+        otherVersions.clear();
         disagreements.clear();
         typedSeedCheck = null;
         bedrock.clear();
@@ -612,9 +630,13 @@ final class WorldSession {
         return lines;
     }
 
-    /** Everything as a notes file the command-line app can read. */
+    /**
+     * Everything as a notes file, first the line that names the Minecraft version: what the mod's own searches read
+     * (with that version's data), what "Copy notes" copies and what the command-line app reads.
+     */
     List<String> notesLines() {
         List<String> lines = new ArrayList<>();
+        lines.add(ObservationReader.versionLine(minecraft));
         lines.add("# Jrik's Seed Finder notes for " + world);
         lines.add("# Written by the mod. The command-line app reads this file too: seedfinder find --file <this file>");
         hashedSeed.ifPresent(value -> {
@@ -626,6 +648,13 @@ final class WorldSession {
         for (NotedStructure structure : structures) {
             lines.add("# " + structure.source());
             lines.add(structure.set() + " " + structure.x() + " " + structure.z());
+        }
+        if (!otherVersions.isEmpty()) {
+            lines.add("# Noted while the world was played with another Minecraft version; Minecraft " + minecraft.displayName()
+                + " doesn't have these, so they are left out:");
+            for (NotedStructure structure : otherVersions) {
+                lines.add("# " + structure.set() + " " + structure.x() + " " + structure.z());
+            }
         }
         for (ScannedChunk chunk : bedrock) {
             lines.add("");
@@ -696,7 +725,9 @@ final class WorldSession {
         json.addProperty("typed_seed_layout", TypedSeedSearch.LAYOUT);
         json.addProperty("typed_seed_pieces", typedSeedPieces);
         typedSeed.ifPresent(value -> json.addProperty("typed_seed", Long.toString(value)));
-        json.add("structures", structuresJson(structures));
+        List<NotedStructure> allStructures = new ArrayList<>(structures);
+        allStructures.addAll(otherVersions);
+        json.add("structures", structuresJson(allStructures));
         json.add("removed_structures", structuresJson(removed));
         JsonArray bedrockArray = new JsonArray();
         for (ScannedChunk chunk : bedrock) {
@@ -792,20 +823,20 @@ final class WorldSession {
      * Loads what was saved for this world, or starts empty (collecting switched off). Notes saved by earlier versions
      * of the mod under the address alone are picked up when their hashed seed is the same (or wasn't known).
      */
-    static WorldSession load(Path folder, String world, String identity, long hashedSeed) {
+    static WorldSession load(Path folder, String world, String identity, long hashedSeed, MinecraftVersion minecraft) {
         if (!Files.isRegularFile(folder.resolve(fileName(world) + ".json")) && Files.isRegularFile(folder.resolve(fileName(identity) + ".json"))) {
-            WorldSession earlier = load(folder, identity);
+            WorldSession earlier = load(folder, identity, minecraft);
             if (earlier.hashedSeed.isEmpty() || earlier.hashedSeed.getAsLong() == hashedSeed) {
-                WorldSession moved = load(folder, identity, world);
+                WorldSession moved = load(folder, identity, world, minecraft);
                 moved.version++;
                 return moved;
             }
         }
-        return load(folder, world);
+        return load(folder, world, minecraft);
     }
 
-    static WorldSession load(Path folder, String world) {
-        return load(folder, world, world);
+    static WorldSession load(Path folder, String world, MinecraftVersion minecraft) {
+        return load(folder, world, world, minecraft);
     }
 
     /**
@@ -861,8 +892,8 @@ final class WorldSession {
     }
 
     /** Reads the notes saved under {@code savedAs} into a session for {@code world}. */
-    private static WorldSession load(Path folder, String savedAs, String world) {
-        WorldSession session = new WorldSession(world);
+    private static WorldSession load(Path folder, String savedAs, String world, MinecraftVersion minecraft) {
+        WorldSession session = new WorldSession(world, minecraft);
         Path file = folder.resolve(fileName(savedAs) + ".json");
         if (!Files.isRegularFile(file)) {
             return session;
@@ -876,7 +907,15 @@ final class WorldSession {
                 session.hashedSeed = OptionalLong.of(Long.parseLong(json.get("hashed_seed").getAsString()));
             }
             readTypedSeedSearch(json, session);
-            readStructures(json, "structures", session.structures);
+            List<NotedStructure> saved = new ArrayList<>();
+            readStructures(json, "structures", saved);
+            for (NotedStructure structure : saved) {
+                (minecraft.data().findStructureSet(structure.set()).isPresent() ? session.structures : session.otherVersions).add(structure);
+            }
+            if (!session.otherVersions.isEmpty()) {
+                SeedFinderClient.LOG.info("Minecraft {} doesn't have {} of the structures noted for {} (noted with another Minecraft version):"
+                    + " kept, but left out of the search", minecraft.displayName(), session.otherVersions.size(), world);
+            }
             readStructures(json, "removed_structures", session.removed);
             for (JsonElement element : json.getAsJsonArray("bedrock")) {
                 JsonObject c = element.getAsJsonObject();
@@ -897,7 +936,7 @@ final class WorldSession {
             readBiomes(json, session);
         } catch (IOException | RuntimeException e) {
             SeedFinderClient.LOG.warn("Could not read {}, starting over for this world", file, e);
-            return new WorldSession(world);
+            return new WorldSession(world, minecraft);
         }
         session.version = 1;
         session.savedVersion = 1;

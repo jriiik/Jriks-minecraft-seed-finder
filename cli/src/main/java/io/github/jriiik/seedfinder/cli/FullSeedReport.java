@@ -44,11 +44,13 @@ final class FullSeedReport {
     /**
      * Biome notes to check, with the world presets to try (only the one given by a 'preset' line, if any).
      *
-     * @return null when there are no biome notes
+     * @param version        the Minecraft version the notes were read as
+     * @param versionAssumed whether that version was taken only because nothing names one (see {@link VersionOption#assumed})
      */
-    record Biomes(BiomeEvidence evidence, List<OverworldBiomes.Preset> presets) {
+    record Biomes(BiomeEvidence evidence, List<OverworldBiomes.Preset> presets, MinecraftVersion version, boolean versionAssumed) {
 
-        static Biomes of(PrintWriter out, ObservationReader.Observations read, MinecraftVersion version) {
+        /** @return null when there are no biome notes */
+        static Biomes of(PrintWriter out, ObservationReader.Observations read, MinecraftVersion version, boolean versionAssumed) {
             if (read.biomes().isEmpty()) {
                 return null;
             }
@@ -57,11 +59,25 @@ final class FullSeedReport {
             if (evidence.isEmpty()) {
                 return null;
             }
-            return new Biomes(evidence, read.preset().map(List::of).orElse(BiomeEvidence.PRESET_ORDER));
+            return new Biomes(evidence, read.preset().map(List::of).orElse(BiomeEvidence.PRESET_ORDER), version, versionAssumed);
         }
 
         boolean fitsUnderAnyPreset(long worldSeed) {
             return presets.stream().anyMatch(preset -> evidence.fits(worldSeed, preset));
+        }
+
+        /**
+         * When the biome notes don't fit a seed (or rule seeds out) and the version was only assumed: says so, since
+         * biomes of another version's world don't fit the right seed.
+         */
+        void hintVersion(PrintWriter out) {
+            hintVersion(out, "");
+        }
+
+        void hintVersion(PrintWriter out, String indent) {
+            if (versionAssumed) {
+                VersionOption.assumedVersionHint(version).forEach(line -> out.println(indent + line));
+            }
         }
     }
 
@@ -159,6 +175,7 @@ final class FullSeedReport {
                 if (bedrockReport != null && bedrockReport.single().isPresent() && !decision.fitting().contains(bedrockReport.single().getAsLong())) {
                     out.println("The seed that fits the bedrock doesn't fit the biome notes: the notes disagree (notes from two worlds, or chunks");
                     out.println("changed or made by an older Minecraft version on one side?), so neither is certain.");
+                    biomes.hintVersion(out);
                     return Outcome.NOTHING;
                 }
             }
@@ -176,6 +193,7 @@ final class FullSeedReport {
     private static void warnIfBiomesDontFit(PrintWriter out, Biomes biomes, long worldSeed) {
         if (biomes != null && !biomes.fitsUnderAnyPreset(worldSeed)) {
             out.println("But your biome notes don't fit it (noted in the wrong place, or from chunks made by an older Minecraft version?).");
+            biomes.hintVersion(out);
         }
     }
 
@@ -276,8 +294,15 @@ final class FullSeedReport {
         if (decision.fitting().isEmpty()) {
             out.println("No world seed with " + (structureSeeds.size() == 1 ? "this structure seed" : "these structure seeds")
                 + " fits your biome notes under " + presets + ".");
+            biomes.hintVersion(out);
             out.println("Check the biome names and positions. Chunks made by an older Minecraft version, or changed by data packs, mods or");
-            out.println("/fillbiome, have other biomes; leave those out. If the biomes are right, the structure seed is wrong.");
+            if (biomes.versionAssumed()) {
+                out.println("/fillbiome, have other biomes; leave those out. If the biomes are right and the world is from Minecraft "
+                    + biomes.version().displayName() + ",");
+                out.println("the structure seed is wrong.");
+            } else {
+                out.println("/fillbiome, have other biomes; leave those out. If the biomes are right, the structure seed is wrong.");
+            }
             return nothing;
         }
         String preset = decision.preset().map(p -> p == OverworldBiomes.Preset.NORMAL ? ""
@@ -292,6 +317,7 @@ final class FullSeedReport {
                     seed, preset, wrong.size(), other.get());
                 out.println("The notes disagree (notes from two worlds, or chunks changed or made by an older Minecraft version on one");
                 out.println("side?), so neither is certain. Check the notes you doubt.");
+                biomes.hintVersion(out);
                 return nothing;
             }
             out.println("Found the full seed: " + seed + preset);
@@ -367,6 +393,9 @@ final class FullSeedReport {
             out.println("  If the seed was typed as text (like \"My World\") or as a short number, it is " + text.getAsLong() + ".");
         } else if (allText.isPresent()) {
             out.println("  Not one typed as text or a short number: your biome notes rule that out too.");
+        }
+        if (random.length < allRandom.length || text.isEmpty() && allText.isPresent()) {
+            biomes.hintVersion(out, "  ");
         }
         if (random.length == 0 && text.isEmpty() && (allRandom.length > 0 || allText.isPresent())) {
             out.println("  So the seed was typed as a long number. The biomes of a second place far away, or the bedrock floor of one");

@@ -83,6 +83,7 @@ final class SearchRunner {
 
     private void start(WorldSession session) {
         int version = session.version();
+        // The notes as saved, with their version line: the engine checks it names the version of the data read with.
         List<String> lines = session.notesLines();
         OptionalLong typedSeed = session.typedSeed();
         boolean genuine = session.hashedSeedIsGenuine();

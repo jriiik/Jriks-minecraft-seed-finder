@@ -6,6 +6,7 @@ import io.github.jriiik.seedfinder.finder.FullSeedFinder;
 import io.github.jriiik.seedfinder.finder.NetherBedrockSearch;
 import io.github.jriiik.seedfinder.finder.SeedCheck;
 import io.github.jriiik.seedfinder.finder.WorldSeedSearch;
+import io.github.jriiik.seedfinder.version.VersionData;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
@@ -17,6 +18,13 @@ import java.util.stream.Collectors;
 final class StatusText {
 
     private StatusText() {
+    }
+
+    /** The structures recognized from blocks in a Minecraft version, as the player reads them (camps only from 26.x). */
+    static String recognizedTypes(VersionData data) {
+        return "villages, outposts, trial chambers, ancient cities, trail ruins, "
+            + (data.structureSet("abandoned_camp").isPresent() ? "camps, " : "")
+            + "desert pyramids, jungle temples, swamp huts, igloos, shipwrecks, ocean ruins and ruined portals";
     }
 
     static List<String> lines(WorldSession session, SearchRunner runner) {
@@ -78,10 +86,10 @@ final class StatusText {
             return lines;
         }
         if (result == null) {
+            String types = recognizedTypes(session.minecraft().data());
             lines.add(structures.isEmpty()
-                ? "Villages, outposts, trial chambers, ancient cities, trail ruins, camps, desert pyramids, jungle temples, swamp huts,"
-                    + " igloos, shipwrecks, ocean ruins and ruined portals are recognized when you come near. Other structures you can add"
-                    + " yourself (\"Add a structure here\"). Answers to /locate (if you may use it) are noted too."
+                ? Character.toUpperCase(types.charAt(0)) + types.substring(1) + " are recognized when you come near. Other"
+                    + " structures you can add yourself (\"Add a structure here\"). Answers to /locate (if you may use it) are noted too."
                 : "About to search...");
             return lines;
         }

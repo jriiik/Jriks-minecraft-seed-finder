@@ -1,8 +1,10 @@
 package io.github.jriiik.seedfinder.finder;
 
 import io.github.jriiik.seedfinder.structure.StructureSet;
+import io.github.jriiik.seedfinder.version.MinecraftVersion;
 import io.github.jriiik.seedfinder.version.VersionData;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.List;
 import java.util.Optional;
 import java.util.regex.Matcher;
@@ -66,9 +68,20 @@ public final class ObservationParser {
     }
 
     private static StructureObservation observation(VersionData data, String name, int x, int z) {
-        StructureSet set = data.findStructureSet(name).orElseThrow(() ->
-            new IllegalArgumentException("unknown structure '" + name + "'"));
+        StructureSet set = data.findStructureSet(name).orElseThrow(() -> new IllegalArgumentException(unknown(data, name)));
         return StructureObservation.atBlock(set, x, z);
+    }
+
+    /** Names the versions that have a structure the notes' version lacks (like abandoned camps, new in 26.x). */
+    private static String unknown(VersionData data, String name) {
+        List<String> others = Arrays.stream(MinecraftVersion.values())
+            .filter(version -> !version.displayName().equals(data.version()) && version.data().findStructureSet(name).isPresent())
+            .map(MinecraftVersion::displayName)
+            .toList();
+        if (others.isEmpty()) {
+            return "unknown structure '" + name + "'";
+        }
+        return "Minecraft " + data.version() + " has no structure '" + name + "' (only Minecraft " + String.join(", ", others) + " has it)";
     }
 
     private static int parseInt(String token) {

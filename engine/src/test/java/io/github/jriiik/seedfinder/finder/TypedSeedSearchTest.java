@@ -9,6 +9,7 @@ import com.google.gson.JsonArray;
 import com.google.gson.JsonElement;
 import io.github.jriiik.seedfinder.Fixtures;
 import io.github.jriiik.seedfinder.Seeds;
+import io.github.jriiik.seedfinder.version.MinecraftVersion;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Comparator;
@@ -23,6 +24,8 @@ import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.BooleanSupplier;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.MethodSource;
 
 class TypedSeedSearchTest {
 
@@ -53,9 +56,10 @@ class TypedSeedSearchTest {
         assertEquals(Integer.MAX_VALUE, ranges.get(ranges.size() - 1)[1]);
     }
 
-    @Test
-    void findsTheTypedSeedsWhoseHashedSeedWasRecordedFromTheGame() {
-        JsonArray rows = Fixtures.load("26.3", "random_seeds.json").getAsJsonArray("hashed_seed");
+    @ParameterizedTest
+    @MethodSource("io.github.jriiik.seedfinder.Fixtures#versions")
+    void findsTheTypedSeedsWhoseHashedSeedWasRecordedFromTheGame(MinecraftVersion version) {
+        JsonArray rows = Fixtures.load(version, "random_seeds.json").getAsJsonArray("hashed_seed");
         int checked = 0;
         for (JsonElement row : rows) {
             long worldSeed = Long.parseLong(row.getAsJsonArray().get(0).getAsString());

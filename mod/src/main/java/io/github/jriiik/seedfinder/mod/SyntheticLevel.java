@@ -5,6 +5,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.function.Predicate;
 import net.minecraft.core.BlockPos;
+import net.minecraft.core.Direction;
 import net.minecraft.core.Holder;
 import net.minecraft.core.RegistryAccess;
 import net.minecraft.core.particles.ParticleOptions;
@@ -270,6 +271,11 @@ final class SyntheticLevel implements WorldGenLevel {
     @Override
     public Holder<Biome> getUncachedNoiseBiome(int quartX, int quartY, int quartZ) {
         throw unsupported("getUncachedNoiseBiome");
+    }
+
+    // Part of the level interface before 26.x (so no @Override: newer versions don't have it).
+    public float getShade(Direction direction, boolean shade) {
+        throw unsupported("getShade");
     }
 
     @Override

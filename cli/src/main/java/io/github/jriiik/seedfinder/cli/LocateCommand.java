@@ -5,6 +5,7 @@ import io.github.jriiik.seedfinder.structure.RandomSpreadPlacement;
 import io.github.jriiik.seedfinder.structure.StructureCandidate;
 import io.github.jriiik.seedfinder.structure.StructureLocator;
 import io.github.jriiik.seedfinder.structure.StructureSet;
+import io.github.jriiik.seedfinder.version.MinecraftVersion;
 import io.github.jriiik.seedfinder.version.VersionData;
 import java.io.PrintWriter;
 import java.util.ArrayList;
@@ -179,8 +180,17 @@ final class LocateCommand implements Runnable {
         }
         List<StructureSet> chosen = new ArrayList<>();
         for (String name : structureNames) {
-            StructureSet set = data.structureSet(name.trim().toLowerCase(java.util.Locale.ROOT)).orElseThrow(() ->
-                new CommandLine.ParameterException(commandLine, "Unknown structure '" + name + "'. Run 'seedfinder structures' to see the names."));
+            String id = name.trim().toLowerCase(java.util.Locale.ROOT);
+            StructureSet set = data.structureSet(id).orElseThrow(() -> {
+                String others = java.util.Arrays.stream(MinecraftVersion.values())
+                    .filter(other -> !other.displayName().equals(data.version()) && other.data().structureSet(id).isPresent())
+                    .map(MinecraftVersion::displayName).collect(Collectors.joining(", "));
+                return new CommandLine.ParameterException(commandLine, others.isEmpty()
+                    ? "Unknown structure '" + name + "'. Run 'seedfinder structures" + (data.version().equals(MinecraftVersion.latest().displayName())
+                        ? "" : " --minecraft " + data.version()) + "' to see the names."
+                    : "Minecraft " + data.version() + " has no " + name + " (only Minecraft " + others + " has them). Run 'seedfinder structures --minecraft "
+                        + data.version() + "' to see the names.");
+            });
             if (!StructureLocator.canLocate(set)) {
                 throw new CommandLine.ParameterException(commandLine, set.shortId() + " depend on biomes, which the finder can't calculate yet.");
             }

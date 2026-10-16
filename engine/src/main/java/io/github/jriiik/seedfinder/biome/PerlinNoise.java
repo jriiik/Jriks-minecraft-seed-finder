@@ -4,7 +4,8 @@ import io.github.jriiik.seedfinder.rng.XoroshiroRandom;
 
 /**
  * One layer of Minecraft's gradient noise (26.x {@code GradientNoise} + {@code PerlinNoise}): a shuffled table of
- * 256 entries and a random offset, sampled with float arithmetic exactly as the game does it.
+ * 256 entries and a random offset, sampled with float arithmetic exactly as the game does it. 1.21.x makes the same
+ * layer from the same random numbers ({@code ImprovedNoise}) but samples it in double arithmetic: {@link #sampleDouble}.
  */
 final class PerlinNoise {
 
@@ -75,6 +76,48 @@ final class PerlinNoise {
         return lerp(alphaZ, near, far);
     }
 
+    /**
+     * The layer at a point already wrapped by the caller, in double arithmetic as 1.21.x {@code ImprovedNoise.noise}
+     * computes it (with no y scale).
+     */
+    double sampleDouble(double x, double y, double z) {
+        double shiftedX = x + offsetX;
+        double shiftedY = y + offsetY;
+        double shiftedZ = z + offsetZ;
+        int floorX = floor(shiftedX);
+        int floorY = floor(shiftedY);
+        int floorZ = floor(shiftedZ);
+        double relativeX = shiftedX - floorX;
+        double relativeY = shiftedY - floorY;
+        double relativeZ = shiftedZ - floorZ;
+        int x0 = permute(floorX);
+        int x1 = permute(floorX + 1);
+        int xy00 = permute(x0 + floorY);
+        int xy01 = permute(x0 + floorY + 1);
+        int xy10 = permute(x1 + floorY);
+        int xy11 = permute(x1 + floorY + 1);
+        double d000 = gradDot(permute(xy00 + floorZ), relativeX, relativeY, relativeZ);
+        double d100 = gradDot(permute(xy10 + floorZ), relativeX - 1.0, relativeY, relativeZ);
+        double d010 = gradDot(permute(xy01 + floorZ), relativeX, relativeY - 1.0, relativeZ);
+        double d110 = gradDot(permute(xy11 + floorZ), relativeX - 1.0, relativeY - 1.0, relativeZ);
+        double d001 = gradDot(permute(xy00 + floorZ + 1), relativeX, relativeY, relativeZ - 1.0);
+        double d101 = gradDot(permute(xy10 + floorZ + 1), relativeX - 1.0, relativeY, relativeZ - 1.0);
+        double d011 = gradDot(permute(xy01 + floorZ + 1), relativeX, relativeY - 1.0, relativeZ - 1.0);
+        double d111 = gradDot(permute(xy11 + floorZ + 1), relativeX - 1.0, relativeY - 1.0, relativeZ - 1.0);
+        double alphaX = smoothstep(relativeX);
+        double alphaY = smoothstep(relativeY);
+        double alphaZ = smoothstep(relativeZ);
+        double near = lerp(alphaY, lerp(alphaX, d000, d100), lerp(alphaX, d010, d110));
+        double far = lerp(alphaY, lerp(alphaX, d001, d101), lerp(alphaX, d011, d111));
+        return lerp(alphaZ, near, far);
+    }
+
+    /** {@code Mth.floor}: the int cast, one lower for negative fractions. */
+    private static int floor(double x) {
+        int truncated = (int) x;
+        return x < truncated ? truncated - 1 : truncated;
+    }
+
     private int permute(int x) {
         return permutations[x & 0xFF] & 0xFF;
     }
@@ -84,11 +127,24 @@ final class PerlinNoise {
         return GRADIENT[g] * x + GRADIENT[g + 1] * y + GRADIENT[g + 2] * z;
     }
 
+    private static double gradDot(int hash, double x, double y, double z) {
+        int g = (hash & 15) * 3;
+        return GRADIENT[g] * x + GRADIENT[g + 1] * y + GRADIENT[g + 2] * z;
+    }
+
     static float smoothstep(float x) {
         return x * x * x * (x * (x * 6.0F - 15.0F) + 10.0F);
     }
 
+    static double smoothstep(double x) {
+        return x * x * x * (x * (x * 6.0 - 15.0) + 10.0);
+    }
+
     static float lerp(float alpha, float from, float to) {
+        return from + alpha * (to - from);
+    }
+
+    static double lerp(double alpha, double from, double to) {
         return from + alpha * (to - from);
     }
 }

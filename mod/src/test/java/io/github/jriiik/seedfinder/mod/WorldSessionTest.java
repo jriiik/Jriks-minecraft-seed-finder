@@ -2,6 +2,7 @@ package io.github.jriiik.seedfinder.mod;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.github.jriiik.seedfinder.Seeds;
@@ -24,6 +25,7 @@ import org.junit.jupiter.api.io.TempDir;
 class WorldSessionTest {
 
     private static final String WORLD = WorldIdentity.key("server:example.net", 42L);
+    private static final MinecraftVersion MC = MinecraftVersion.V26_3;
     private static final int VILLAGES = 34;
 
     private static WorldSession.NotedStructure recognized(int chunkX, int chunkZ) {
@@ -32,13 +34,13 @@ class WorldSessionTest {
 
     @Test
     void aRemovedStructureIsNotNotedAgainEvenAfterLoading(@TempDir Path folder) throws IOException {
-        WorldSession session = new WorldSession(WORLD);
+        WorldSession session = new WorldSession(WORLD, MC);
         assertEquals(WorldSession.Offer.ADDED, session.addRecognized(recognized(3, 4), VILLAGES));
         assertEquals(WorldSession.Offer.KNOWN, session.addRecognized(recognized(3, 4), VILLAGES));
         session.removeStructure(session.structures().get(0));
         assertEquals(WorldSession.Offer.LEFT_OUT, session.addRecognized(recognized(3, 4), VILLAGES));
         session.save(folder);
-        WorldSession loaded = WorldSession.load(folder, WORLD);
+        WorldSession loaded = WorldSession.load(folder, WORLD, MC);
         assertEquals(WorldSession.Offer.LEFT_OUT, loaded.addRecognized(recognized(3, 4), VILLAGES));
         assertEquals(List.of(), loaded.structures());
         // "Remove all notes" keeps it left out: noting it again could be wrong, leaving it out only misses it.
@@ -48,18 +50,18 @@ class WorldSessionTest {
 
     @Test
     void ruinedPortalsInTheNetherAreOnlyNotedWhenThePlayerSwitchesThemOn(@TempDir Path folder) throws IOException {
-        WorldSession session = new WorldSession(WORLD);
+        WorldSession session = new WorldSession(WORLD, MC);
         assertFalse(session.netherPortals());
         session.save(folder);
-        assertFalse(WorldSession.load(folder, WORLD).netherPortals());
+        assertFalse(WorldSession.load(folder, WORLD, MC).netherPortals());
         session.setNetherPortals(true);
         session.save(folder);
-        assertTrue(WorldSession.load(folder, WORLD).netherPortals());
+        assertTrue(WorldSession.load(folder, WORLD, MC).netherPortals());
     }
 
     @Test
     void aStructurePlacedByCommandIsLeftOutAlsoWhenCollectingWasOff(@TempDir Path folder) throws IOException {
-        WorldSession session = new WorldSession(WORLD);
+        WorldSession session = new WorldSession(WORLD, MC);
         // Collecting is off: the spot is remembered for this session only, and nothing changes in the notes.
         int version = session.version();
         session.placed("villages", 3 * 16 + 5, 4 * 16 + 9);
@@ -68,13 +70,13 @@ class WorldSessionTest {
         assertFalse(session.wasPlaced("villages", 4, 4));
         assertFalse(session.wasPlaced("pillager_outposts", 3, 4));
         session.save(folder);
-        assertFalse(WorldSession.load(folder, WORLD).wasPlaced("villages", 3, 4), "not saved while collecting is off");
+        assertFalse(WorldSession.load(folder, WORLD, MC).wasPlaced("villages", 3, 4), "not saved while collecting is off");
 
         // Switched on: left out for good, saved, and kept by "Remove all notes".
         session.setCollecting(true);
         assertEquals(WorldSession.Offer.LEFT_OUT, session.addRecognized(recognized(3, 4), VILLAGES));
         session.save(folder);
-        WorldSession loaded = WorldSession.load(folder, WORLD);
+        WorldSession loaded = WorldSession.load(folder, WORLD, MC);
         assertTrue(loaded.wasPlaced("villages", 3, 4));
         loaded.clearAll();
         assertEquals(WorldSession.Offer.LEFT_OUT, loaded.addRecognized(recognized(3, 4), VILLAGES));
@@ -92,7 +94,7 @@ class WorldSessionTest {
 
     @Test
     void twoRecognizedStartsInOneRegionAreBothLeftOut() {
-        WorldSession session = new WorldSession(WORLD);
+        WorldSession session = new WorldSession(WORLD, MC);
         assertEquals(WorldSession.Offer.ADDED, session.addRecognized(recognized(3, 4), VILLAGES));
         // Chunks 3 and 20 are in the same region (0) of 34 x 34 chunks; 40 is in the next one.
         assertEquals(WorldSession.Offer.LEFT_OUT, session.addRecognized(recognized(20, 4), VILLAGES));
@@ -106,7 +108,7 @@ class WorldSessionTest {
 
     @Test
     void aNoteFromLocateOrThePlayerIsKeptAndTheDisagreementShown() {
-        WorldSession session = new WorldSession(WORLD);
+        WorldSession session = new WorldSession(WORLD, MC);
         session.addStructure(new WorldSession.NotedStructure("villages", 50, 70, "from /locate"));
         assertEquals(WorldSession.Offer.DISAGREES, session.addRecognized(recognized(20, 4), VILLAGES));
         assertEquals(1, session.structures().size());
@@ -124,7 +126,7 @@ class WorldSessionTest {
 
     @Test
     void removingANoteThatIsAlreadyGoneDoesNothing() {
-        WorldSession session = new WorldSession(WORLD);
+        WorldSession session = new WorldSession(WORLD, MC);
         session.addRecognized(recognized(3, 4), VILLAGES);
         WorldSession.NotedStructure noted = session.structures().get(0);
         session.removeStructure(noted);
@@ -142,7 +144,7 @@ class WorldSessionTest {
             {"world": "server:example.net", "collecting": true, "show_status": true, "hashed_seed": "42",
              "structures": [{"set": "villages", "x": 48, "z": 64, "source": "from /locate"}], "bedrock": []}
             """, StandardCharsets.UTF_8);
-        WorldSession same = WorldSession.load(folder, WorldIdentity.key(identity, 42L), identity, 42L);
+        WorldSession same = WorldSession.load(folder, WorldIdentity.key(identity, 42L), identity, 42L, MC);
         assertTrue(same.collecting());
         assertEquals(1, same.structures().size());
         assertEquals(OptionalLong.of(42L), same.hashedSeed());
@@ -150,40 +152,102 @@ class WorldSessionTest {
         assertTrue(same.needsSaving(), "saved again under the new key");
 
         // Another world behind the same address (another hashed seed) starts with its own, empty notes.
-        WorldSession other = WorldSession.load(folder, WorldIdentity.key(identity, 7L), identity, 7L);
+        WorldSession other = WorldSession.load(folder, WorldIdentity.key(identity, 7L), identity, 7L, MC);
         assertEquals(List.of(), other.structures());
         assertTrue(!other.collecting());
     }
 
     @Test
     void aDistrustedStartIsTakenBackAlsoFromAnEarlierSessionAndNotNotedAgain(@TempDir Path folder) throws IOException {
-        WorldSession session = new WorldSession(WORLD);
+        WorldSession session = new WorldSession(WORLD, MC);
         assertEquals(WorldSession.Offer.ADDED, session.addRecognized(recognized(3, 4), VILLAGES));
         session.addStructure(new WorldSession.NotedStructure("pillager_outposts", 48, 64, "from /locate"));
         session.save(folder);
 
         // The next day: the old note is seen again (KNOWN), then a contradicting match turns up in its region.
-        WorldSession later = WorldSession.load(folder, WORLD);
+        WorldSession later = WorldSession.load(folder, WORLD, MC);
         assertEquals(WorldSession.Offer.KNOWN, later.addRecognized(recognized(3, 4), VILLAGES));
         later.distrust("villages", 48, 64);
         later.distrust("villages", 20 * 16, 4 * 16);
         assertEquals(List.of("pillager_outposts"), later.structures().stream().map(WorldSession.NotedStructure::set).toList());
         later.save(folder);
-        WorldSession third = WorldSession.load(folder, WORLD);
+        WorldSession third = WorldSession.load(folder, WORLD, MC);
         assertEquals(WorldSession.Offer.LEFT_OUT, third.addRecognized(recognized(3, 4), VILLAGES));
         assertEquals(WorldSession.Offer.LEFT_OUT, third.addRecognized(recognized(20, 4), VILLAGES));
     }
 
+    /**
+     * The notes file (and "Copy notes") names the Minecraft version first, so the command-line app reads it with that
+     * version's data; the mod's own searches read the same lines, and the engine checks the version line.
+     */
+    @Test
+    void theNotesFileStartsWithTheMinecraftVersion(@TempDir Path folder) throws IOException {
+        for (MinecraftVersion minecraft : MinecraftVersion.values()) {
+            WorldSession session = new WorldSession(WORLD, minecraft);
+            session.setHashedSeed(42L);
+            session.addStructure(new WorldSession.NotedStructure("villages", 50, 70, "from /locate"));
+            List<String> notes = session.notesLines();
+            assertEquals("minecraft " + minecraft.displayName(), notes.getFirst());
+            assertTrue(notes.contains("hashed-seed 42") && notes.contains("villages 50 70"), notes.toString());
+            assertEquals(java.util.Optional.of(minecraft), ObservationReader.minecraftVersion(notes));
+            ObservationReader.Observations read = ObservationReader.read(minecraft.data(), notes);
+            assertEquals(java.util.Optional.of(minecraft), read.minecraft());
+            assertEquals(OptionalLong.of(42L), read.hashedSeed());
+            assertEquals(1, read.structures().size());
+            for (MinecraftVersion other : MinecraftVersion.values()) {
+                if (other != minecraft) {
+                    // never read with another version's data
+                    assertEquals(0, assertThrows(ObservationReader.LineException.class, () -> ObservationReader.read(other.data(), notes)).lineIndex());
+                }
+            }
+            session.save(folder);
+            assertEquals(notes, Files.readAllLines(folder.resolve(WorldSession.fileName(WORLD) + ".txt"), StandardCharsets.UTF_8));
+            assertEquals(notes, WorldSession.load(folder, WORLD, minecraft).notesLines());
+        }
+    }
+
+    /**
+     * The same world opened with both mod jars (a shared game folder): an abandoned camp the 26.3 jar noted must not
+     * break the 1.21.11 jar's searches, which would refuse it; it is kept aside and is back under 26.3.
+     */
+    @Test
+    void structuresAnotherVersionNotedAreKeptAsideNotSearched(@TempDir Path folder) throws IOException {
+        WorldSession newer = new WorldSession(WORLD, MinecraftVersion.V26_3);
+        newer.addStructure(new WorldSession.NotedStructure("abandoned_camp", 2752, 2752, StructureRecognition.SOURCE));
+        newer.addStructure(new WorldSession.NotedStructure("villages", 50, 70, "from /locate"));
+        newer.save(folder);
+
+        WorldSession older = WorldSession.load(folder, WORLD, MinecraftVersion.V1_21_11);
+        assertEquals(List.of(new WorldSession.NotedStructure("villages", 50, 70, "from /locate")), older.structures());
+        assertEquals(List.of("villages 50 70"), older.structureLines());
+        List<String> notes = older.notesLines();
+        assertTrue(notes.contains("# abandoned_camp 2752 2752") && !notes.contains("abandoned_camp 2752 2752"), notes.toString());
+        ObservationReader.Observations read = ObservationReader.read(MinecraftVersion.V1_21_11.data(), notes);
+        assertEquals(1, read.structures().size());
+        older.addStructure(new WorldSession.NotedStructure("villages", 900, 900, "from /locate"));
+        older.save(folder);
+        assertEquals(notes.size() + 2, Files.readAllLines(folder.resolve(WorldSession.fileName(WORLD) + ".txt"), StandardCharsets.UTF_8).size());
+
+        // Back in 26.3 the camp is a note again, and nothing was lost.
+        WorldSession again = WorldSession.load(folder, WORLD, MinecraftVersion.V26_3);
+        assertEquals(List.of("villages 50 70", "villages 900 900", "abandoned_camp 2752 2752"), again.structureLines());
+        assertEquals(3, ObservationReader.read(MinecraftVersion.V26_3.data(), again.notesLines()).structures().size());
+        // "Remove all notes" removes it too.
+        older.clearAll();
+        older.save(folder);
+        assertEquals(List.of(), WorldSession.load(folder, WORLD, MinecraftVersion.V26_3).structures());
+    }
+
     @Test
     void theTypedSeedSearchIsSavedAndContinuedLater(@TempDir Path folder) throws IOException {
-        WorldSession session = new WorldSession(WORLD);
+        WorldSession session = new WorldSession(WORLD, MC);
         session.setHashedSeed(Seeds.hashedSeed(12345L));
         int version = session.version();
         session.setTypedSeedSearch(new TypedSeedSearch.Outcome(OptionalLong.empty(), 37));
         assertEquals(version, session.version(), "progress alone doesn't count as new notes (no new search)");
         assertTrue(session.needsSaving());
         session.save(folder);
-        WorldSession later = WorldSession.load(folder, WORLD);
+        WorldSession later = WorldSession.load(folder, WORLD, MC);
         assertEquals(37, later.typedSeedPieces());
         assertFalse(later.typedSeedSearchDone());
 
@@ -192,7 +256,7 @@ class WorldSessionTest {
         assertEquals(OptionalLong.empty(), later.worldSeed(), "not presented before the notes are checked");
         assertTrue(later.notesLines().contains("# The hashed seed is the one of the typed seed 12345 (not checked against these notes yet)."));
         later.save(folder);
-        assertEquals(OptionalLong.of(12345L), WorldSession.load(folder, WORLD).typedSeed());
+        assertEquals(OptionalLong.of(12345L), WorldSession.load(folder, WORLD, MC).typedSeed());
 
         // "Remove all notes" keeps it: it depends only on the hashed seed, which is part of these notes' key.
         later.clearAll();
@@ -203,7 +267,7 @@ class WorldSessionTest {
     @Test
     void theTypedSeedIsTheWorldSeedUnlessTheNotesContradictIt() {
         VersionData data = MinecraftVersion.V26_3.data();
-        WorldSession session = new WorldSession(WORLD);
+        WorldSession session = new WorldSession(WORLD, MC);
         session.setHashedSeed(Seeds.hashedSeed(12345L));
         session.setTypedSeedSearch(new TypedSeedSearch.Outcome(OptionalLong.of(12345L), 0));
 
@@ -239,12 +303,12 @@ class WorldSessionTest {
 
     @Test
     void removeAllNotesKeepsTheTypedSeedAcrossSaving(@TempDir Path folder) throws IOException {
-        WorldSession session = new WorldSession(WORLD);
+        WorldSession session = new WorldSession(WORLD, MC);
         session.setHashedSeed(Seeds.hashedSeed(12345L));
         session.setTypedSeedSearch(new TypedSeedSearch.Outcome(OptionalLong.of(12345L), 3));
         session.clearAll();
         session.save(folder);
-        WorldSession loaded = WorldSession.load(folder, WORLD);
+        WorldSession loaded = WorldSession.load(folder, WORLD, MC);
         assertEquals(OptionalLong.of(12345L), loaded.typedSeed());
         assertEquals(OptionalLong.of(Seeds.hashedSeed(12345L)), loaded.hashedSeed());
     }
@@ -253,7 +317,7 @@ class WorldSessionTest {
     void inASinglePlayerWorldTheTypedSeedIsTheWorldSeedEvenWhenNotesDisagree() {
         // The game itself makes the hashed seed there, so disagreeing notes are the ones that are wrong.
         VersionData data = MinecraftVersion.V26_3.data();
-        WorldSession session = new WorldSession(WorldIdentity.key("singleplayer:New World", Seeds.hashedSeed(12345L)));
+        WorldSession session = new WorldSession(WorldIdentity.key("singleplayer:New World", Seeds.hashedSeed(12345L)), MC);
         assertTrue(session.hashedSeedIsGenuine());
         session.setHashedSeed(Seeds.hashedSeed(12345L));
         session.setTypedSeedSearch(new TypedSeedSearch.Outcome(OptionalLong.of(12345L), 0));
@@ -261,12 +325,12 @@ class WorldSessionTest {
         List<StructureObservation> misfit = ObservationReader.read(data, List.of("village 352 80")).structures();
         session.setTypedSeedCheck(session.version(), SeedCheck.of(data, misfit, List.of(), 12345L));
         assertEquals(OptionalLong.of(12345L), session.worldSeed());
-        assertFalse(new WorldSession(WORLD).hashedSeedIsGenuine());
+        assertFalse(new WorldSession(WORLD, MC).hashedSeedIsGenuine());
     }
 
     @Test
     void aDoubtfulSavedTypedSeedSearchStartsOverButKeepsTheNotes(@TempDir Path folder) throws IOException {
-        WorldSession session = new WorldSession(WORLD);
+        WorldSession session = new WorldSession(WORLD, MC);
         session.setHashedSeed(Seeds.hashedSeed(12345L));
         session.addStructure(new WorldSession.NotedStructure("villages", 336, 80, "marked by the player"));
         session.setTypedSeedSearch(new TypedSeedSearch.Outcome(OptionalLong.of(12345L), 5));
@@ -277,20 +341,20 @@ class WorldSessionTest {
 
         // A typed seed whose hash isn't the hashed seed (edited or damaged).
         Files.writeString(file, saved.replace("\"typed_seed\": \"12345\"", "\"typed_seed\": \"12346\""), StandardCharsets.UTF_8);
-        WorldSession edited = WorldSession.load(folder, WORLD);
+        WorldSession edited = WorldSession.load(folder, WORLD, MC);
         assertEquals(OptionalLong.empty(), edited.typedSeed());
         assertEquals(0, edited.typedSeedPieces());
         assertEquals(1, edited.structures().size());
 
         // Progress that doesn't read.
         Files.writeString(file, saved.replace("\"typed_seed_pieces\": 5", "\"typed_seed_pieces\": \"lots\""), StandardCharsets.UTF_8);
-        WorldSession damaged = WorldSession.load(folder, WORLD);
+        WorldSession damaged = WorldSession.load(folder, WORLD, MC);
         assertEquals(0, damaged.typedSeedPieces());
         assertEquals(1, damaged.structures().size());
 
         // Progress saved for another layout of the pieces.
         Files.writeString(file, saved.replace("\"typed_seed_layout\": " + TypedSeedSearch.LAYOUT, "\"typed_seed_layout\": 0"), StandardCharsets.UTF_8);
-        assertEquals(0, WorldSession.load(folder, WORLD).typedSeedPieces());
+        assertEquals(0, WorldSession.load(folder, WORLD, MC).typedSeedPieces());
     }
 
     /** A chunk whose cells are all one biome at every height read, but plains in its north-west cell at y 64. */
@@ -308,7 +372,7 @@ class WorldSessionTest {
 
     @Test
     void biomesAreNotedInAFewAreasFarApart(@TempDir Path folder) throws IOException {
-        WorldSession session = new WorldSession(WORLD);
+        WorldSession session = new WorldSession(WORLD, MC);
         assertTrue(session.offerBiomes(biomeChunk(0, 0, "minecraft:forest")));
         assertFalse(session.offerBiomes(biomeChunk(0, 0, "minecraft:forest")));
         assertTrue(session.offerBiomes(biomeChunk(5, 5, "minecraft:forest")));
@@ -327,7 +391,7 @@ class WorldSessionTest {
         assertTrue(session.biomeChunks() <= 1 + WorldSession.MAX_BIOME_CHUNKS_PER_AREA + 1);
 
         session.save(folder);
-        WorldSession loaded = WorldSession.load(folder, WORLD);
+        WorldSession loaded = WorldSession.load(folder, WORLD, MC);
         assertEquals(session.biomes(), loaded.biomes());
         assertEquals(2, loaded.biomeAreas());
         assertFalse(loaded.wantsBiomes(100, 0));
@@ -342,13 +406,13 @@ class WorldSessionTest {
 
     @Test
     void aBiomeFromADataPackStopsBiomeNotes(@TempDir Path folder) throws IOException {
-        WorldSession session = new WorldSession(WORLD);
+        WorldSession session = new WorldSession(WORLD, MC);
         session.offerBiomes(biomeChunk(0, 0, "minecraft:forest"));
         session.foreignBiomeSeen("terralith:moonlight_grove");
         assertEquals(0, session.biomeChunks());
         assertFalse(session.wantsBiomes(1, 1));
         session.save(folder);
-        assertFalse(WorldSession.load(folder, WORLD).wantsBiomes(1, 1));
+        assertFalse(WorldSession.load(folder, WORLD, MC).wantsBiomes(1, 1));
         session.clearAll();
         assertTrue(session.wantsBiomes(1, 1));
     }
@@ -377,13 +441,13 @@ class WorldSessionTest {
 
     @Test
     void theAreasOfAWalkCountSeparately() {
-        WorldSession normal = new WorldSession(WORLD);
+        WorldSession normal = new WorldSession(WORLD, MC);
         walk(normal, 6000);
         assertEquals(2, normal.biomeAreas());
         assertEquals(2, evidence(normal).groups(io.github.jriiik.seedfinder.biome.OverworldBiomes.Preset.NORMAL).size());
 
         // a large-biome world needs areas 16,384 blocks apart: one more area is noted for that
-        WorldSession large = new WorldSession(WORLD);
+        WorldSession large = new WorldSession(WORLD, MC);
         walk(large, 18_000);
         assertEquals(WorldSession.MAX_BIOME_AREAS + 1, large.biomeAreas());
         assertEquals(2, evidence(large).groups(io.github.jriiik.seedfinder.biome.OverworldBiomes.Preset.LARGE_BIOMES).size());
@@ -398,7 +462,7 @@ class WorldSessionTest {
 
     @Test
     void netherChunksFoundUnusableMakeRoomForOthers(@TempDir Path folder) throws IOException {
-        WorldSession session = new WorldSession(WORLD);
+        WorldSession session = new WorldSession(WORLD, MC);
         for (int i = 0; i < WorldSession.MAX_BEDROCK_CHUNKS; i++) {
             assertTrue(session.offerBedrock(netherChunk(i, 0)));
         }
@@ -412,7 +476,7 @@ class WorldSessionTest {
         assertTrue(session.offerBedrock(netherChunk(7, 7)));
 
         session.save(folder);
-        WorldSession loaded = WorldSession.load(folder, WORLD);
+        WorldSession loaded = WorldSession.load(folder, WORLD, MC);
         assertEquals(2, loaded.leftOutBedrockChunks("minecraft:the_nether"));
         assertFalse(loaded.offerBedrock(netherChunk(1, 0)));
         loaded.clearAll();
@@ -421,7 +485,7 @@ class WorldSessionTest {
 
     @Test
     void manyChunksLeftOutKeepOnlyTheirSurroundingsFromBeingRead() {
-        WorldSession session = new WorldSession(WORLD);
+        WorldSession session = new WorldSession(WORLD, MC);
         // an old portal hub: every chunk around it is left out
         for (int round = 0; round < WorldSession.LEFT_OUT_BEFORE_SPACING / WorldSession.MAX_BEDROCK_CHUNKS; round++) {
             List<io.github.jriiik.seedfinder.world.ChunkPos> old = new java.util.ArrayList<>();

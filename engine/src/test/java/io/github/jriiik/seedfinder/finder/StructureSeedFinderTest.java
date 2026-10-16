@@ -20,6 +20,8 @@ import io.github.jriiik.seedfinder.world.ChunkPos;
 import java.util.ArrayList;
 import java.util.List;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.MethodSource;
 
 class StructureSeedFinderTest {
 
@@ -108,6 +110,18 @@ class StructureSeedFinderTest {
     }
 
     @Test
+    void suggestionsComeFromTheWorldsOwnVersion() {
+        // 1.21.11 has no abandoned camps, so they are never suggested there (the same temples, villages and shipwreck)
+        VersionData old = MinecraftVersion.V1_21_11.data();
+        List<StructureObservation> observations = templesVillagesAndAShipwreck(1L).stream()
+            .map(observation -> new StructureObservation(old.structureSet(observation.set().id()).orElseThrow(), observation.chunk()))
+            .toList();
+        SearchPlan plan = new StructureSeedFinder(old, observations).plan();
+        assertEquals(List.of("ruined_portals", "trial_chambers", "ancient_cities"), plan.suggestedStructures());
+        assertTrue(plan.warnings().stream().noneMatch(w -> w.contains("abandoned_camp")), plan.warnings().toString());
+    }
+
+    @Test
     void aDifferentStructureTypeTellsTwinsApart() {
         long worldSeed = 8091867987493326313L;
         List<StructureObservation> observations = new ArrayList<>(TWIN_EXAMPLE);
@@ -119,6 +133,8 @@ class StructureSeedFinderTest {
     void theWrongSeedEstimateMatchesReality() {
         // Run real searches for many random seeds and compare how many wrong structure seeds turned up on average
         // with the plan's estimate. The estimate only needs to be in the right ballpark (it guides the user).
+        // One version is enough: the structure sets used here are placed the same way in every supported version
+        // (VersionDataTest checks their placements are equal; abandoned camps, new in 26.x, are not used).
         java.util.Random random = new java.util.Random(7);
         int seeds = 120;
         long wrong = 0;
@@ -138,14 +154,15 @@ class StructureSeedFinderTest {
             "estimated " + estimatedAverage + " wrong seeds per search, saw " + actualAverage);
     }
 
-    @Test
-    void findsTheSeedFromPositionsRecordedFromTheRealGame() {
-        // Structure chunks Minecraft 26.3 itself picked for two seeds (tools/oracle), fed in as observations.
-        JsonObject sets = Fixtures.load("26.3", "placements.json").getAsJsonObject("sets");
+    @ParameterizedTest
+    @MethodSource("io.github.jriiik.seedfinder.Fixtures#versions")
+    void findsTheSeedFromPositionsRecordedFromTheRealGame(MinecraftVersion version) {
+        // Structure chunks each Minecraft version itself picked for two seeds (tools/oracle), fed in as observations.
+        JsonObject sets = Fixtures.load(version, "placements.json").getAsJsonObject("sets");
         for (long worldSeed : new long[] {12345L, -6984854390176336655L}) {
             List<StructureObservation> observations = new ArrayList<>();
             for (String set : List.of("minecraft:desert_pyramids", "minecraft:swamp_huts", "minecraft:villages", "minecraft:pillager_outposts")) {
-                StructureSet structureSet = DATA.structureSet(set).orElseThrow();
+                StructureSet structureSet = version.data().structureSet(set).orElseThrow();
                 JsonArray rows = sets.getAsJsonObject(set).getAsJsonObject("seeds").getAsJsonArray(Long.toString(worldSeed));
                 int taken = 0;
                 for (JsonElement element : rows) {
@@ -157,7 +174,7 @@ class StructureSeedFinderTest {
                     }
                 }
             }
-            StructureSeedFinder finder = finder(observations);
+            StructureSeedFinder finder = new StructureSeedFinder(version.data(), observations);
             assertTrue(finder.plan().canSearch(), finder.plan().problems().toString());
             List<Long> found = finder.search(THREADS, null);
             assertTrue(found.contains(Seeds.structureSeed(worldSeed)), "seed " + worldSeed + " not in " + found);

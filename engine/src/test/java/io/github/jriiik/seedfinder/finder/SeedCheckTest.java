@@ -22,9 +22,16 @@ import java.util.Comparator;
 import java.util.List;
 import java.util.Random;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.MethodSource;
 
 class SeedCheckTest {
 
+    /**
+     * 26.3 for most checks: bedrock and the shared structure sets are the same in every supported version
+     * ({@code VersionDataTest} checks that), so its measured bedrock rate holds for all. The structure rate, which
+     * depends on the kinds of structures noted, is measured for each version.
+     */
     private static final VersionData DATA = MinecraftVersion.V26_3.data();
     private static final BedrockDimension OVERWORLD = DATA.bedrockDimension("overworld").orElseThrow();
     private static final BedrockDimension NETHER = DATA.bedrockDimension("nether").orElseThrow();
@@ -64,12 +71,18 @@ class SeedCheckTest {
         return new StructureObservation(villages, new ChunkPos(spot.x() + 1, spot.z()));
     }
 
-    /** The 60 starts nearest to the middle of a world, of the kinds the mod notes by itself (biomes not checked). */
-    private static List<StructureObservation> manyNotes(long worldSeed) {
-        StructureLocator locator = new StructureLocator(DATA, worldSeed);
+    /**
+     * The 60 starts nearest to the middle of a world, of the kinds the mod notes by itself (biomes not checked);
+     * abandoned camps only where the version has them.
+     */
+    private static List<StructureObservation> manyNotes(VersionData data, long worldSeed) {
+        StructureLocator locator = new StructureLocator(data, worldSeed);
         List<StructureObservation> all = new ArrayList<>();
         for (String id : List.of("villages", "pillager_outposts", "trial_chambers", "ancient_cities", "trail_ruins", "abandoned_camp")) {
-            StructureSet set = DATA.structureSet(id).orElseThrow();
+            if (data.structureSet(id).isEmpty() && id.equals("abandoned_camp")) {
+                continue;
+            }
+            StructureSet set = data.structureSet(id).orElseThrow();
             for (StructureCandidate candidate : locator.candidates(set, -150, -150, 150, 150)) {
                 all.add(new StructureObservation(set, candidate.chunk()));
             }
@@ -225,18 +238,21 @@ class SeedCheckTest {
         assertEquals(SeedCheck.Verdict.UNCONFIRMED, linked.verdict(), "counted as independent they would wrongly confirm it");
     }
 
-    @Test
-    void aWrongSeedFittingAFewOfManyNotesByChanceIsNotConfirmed() {
+    @ParameterizedTest
+    @MethodSource("io.github.jriiik.seedfinder.Fixtures#versions")
+    void aWrongSeedFittingAFewOfManyNotesByChanceIsNotConfirmed(MinecraftVersion version) {
         // With 60 notes, a wrong seed often fits two of them by chance; it must not count as confirmed. Measured: random
-        // typed seeds against 60 notes of one world are confirmed at most about once in 1,000 times.
-        List<StructureObservation> notes = manyNotes(PICKED);
-        assertEquals(SeedCheck.Verdict.CONFIRMED, SeedCheck.of(DATA, notes, List.of(), PICKED).verdict());
+        // typed seeds against 60 notes of one world are confirmed at most about once in 1,000 times. For each version,
+        // since the kinds of notes differ (1.21.11 has no abandoned camps).
+        VersionData data = version.data();
+        List<StructureObservation> notes = manyNotes(data, PICKED);
+        assertEquals(SeedCheck.Verdict.CONFIRMED, SeedCheck.of(data, notes, List.of(), PICKED).verdict());
         Random random = new Random(20261013L);
         int trials = 5_000;
         int confirmed = 0;
         int someFit = 0;
         for (int i = 0; i < trials; i++) {
-            SeedCheck check = SeedCheck.of(DATA, notes, List.of(), random.nextInt());
+            SeedCheck check = SeedCheck.of(data, notes, List.of(), random.nextInt());
             confirmed += check.verdict() == SeedCheck.Verdict.CONFIRMED ? 1 : 0;
             someFit += check.fitting().size() >= 2 ? 1 : 0;
         }
@@ -244,7 +260,7 @@ class SeedCheckTest {
         assertTrue(confirmed <= trials / 1000, confirmed + " of " + trials + " wrong seeds confirmed");
 
         // The case the review found: the hashed seed of the typed seed 91, with the notes and bedrock of another world.
-        SeedCheck typed91 = SeedCheck.of(DATA, notes, bedrockOf(PICKED), 91L);
+        SeedCheck typed91 = SeedCheck.of(data, notes, bedrockOf(PICKED), 91L);
         assertEquals(SeedCheck.Verdict.CONTRADICTED, typed91.verdict());
     }
 

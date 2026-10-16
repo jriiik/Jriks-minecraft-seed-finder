@@ -81,7 +81,8 @@ final class FullSeedCommand implements Callable<Integer> {
     public Integer call() {
         CommandLine commandLine = spec.commandLine();
         PrintWriter out = commandLine.getOut();
-        MinecraftVersion minecraft = version.resolve(commandLine);
+        ObservationInput input = ObservationInput.of(commandLine, file, List.of());
+        MinecraftVersion minecraft = version.resolve(commandLine, input);
         VersionData data = minecraft.data();
         for (long seed : structureSeeds) {
             if (seed < 0 || seed > Seeds.STRUCTURE_SEED_MASK) {
@@ -93,7 +94,8 @@ final class FullSeedCommand implements Callable<Integer> {
         if (structureSeeds.size() > FullSeedFinder.MAX_STRUCTURE_SEEDS) {
             throw new CommandLine.ParameterException(commandLine, "Give at most " + FullSeedFinder.MAX_STRUCTURE_SEEDS + " structure seeds.");
         }
-        ObservationReader.Observations observations = ObservationInput.of(commandLine, file, List.of()).read(commandLine, data);
+        ObservationReader.Observations observations = input.read(commandLine, data);
+        out.printf("Minecraft %s.%n", data.version());
         if (!observations.structures().isEmpty()) {
             out.println("Note: the structures in the file are not used here; 'seedfinder find' works with them.");
         }
@@ -104,7 +106,7 @@ final class FullSeedCommand implements Callable<Integer> {
         }
         int threadCount = Threads.resolve(commandLine, threads);
         List<BedrockObservation> bedrock = withoutOldNetherChunks(out, data, observations.bedrock(), threadCount);
-        FullSeedReport.Biomes biomes = FullSeedReport.Biomes.of(out, observations, minecraft);
+        FullSeedReport.Biomes biomes = FullSeedReport.Biomes.of(out, observations, minecraft, version.assumed(observations));
         return FullSeedReport.run(out, data, structureSeeds, new BedrockEvidence(bedrock), biomes, observations.hashedSeed(), threadCount).named()
             ? 0 : 1;
     }
