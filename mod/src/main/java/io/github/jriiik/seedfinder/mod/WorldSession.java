@@ -10,6 +10,7 @@ import io.github.jriiik.seedfinder.Seeds;
 import io.github.jriiik.seedfinder.biome.OverworldBiomes;
 import io.github.jriiik.seedfinder.finder.BiomeEvidence;
 import io.github.jriiik.seedfinder.finder.BiomeText;
+import io.github.jriiik.seedfinder.finder.ObservationReader;
 import io.github.jriiik.seedfinder.finder.SeedCheck;
 import io.github.jriiik.seedfinder.finder.TypedSeedSearch;
 import io.github.jriiik.seedfinder.finder.WorldSeedSearch;
@@ -618,19 +619,12 @@ final class WorldSession {
     }
 
     /**
-     * Everything as a notes file the command-line app can read (and "Copy notes" copies): first the line that names the
-     * Minecraft version, then {@link #observationLines()}.
+     * Everything as a notes file, first the line that names the Minecraft version: what the mod's own searches read
+     * (with that version's data), what "Copy notes" copies and what the command-line app reads.
      */
     List<String> notesLines() {
         List<String> lines = new ArrayList<>();
-        lines.add("minecraft " + minecraft.displayName());
-        lines.addAll(observationLines());
-        return lines;
-    }
-
-    /** The notes without the version line: what the mod's own searches read (they use the running version's data). */
-    List<String> observationLines() {
-        List<String> lines = new ArrayList<>();
+        lines.add(ObservationReader.versionLine(minecraft));
         lines.add("# Jrik's Seed Finder notes for " + world);
         lines.add("# Written by the mod. The command-line app reads this file too: seedfinder find --file <this file>");
         hashedSeed.ifPresent(value -> {

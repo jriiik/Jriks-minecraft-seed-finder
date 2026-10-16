@@ -16,6 +16,7 @@ import io.github.jriiik.seedfinder.recognize.RigidKind;
 import io.github.jriiik.seedfinder.recognize.RigidRecognizer;
 import io.github.jriiik.seedfinder.recognize.StartPieceRecognizer;
 import io.github.jriiik.seedfinder.structure.RandomSpreadPlacement;
+import io.github.jriiik.seedfinder.structure.StructureLocator;
 import io.github.jriiik.seedfinder.structure.StructureSet;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -121,7 +122,7 @@ public class SeedFinderGameTest implements FabricClientGameTest {
         check(context.computeOnClient(client -> SeedFinderClient.session(client).bedrockChunks(NetherBedrockSearch.NETHER)) > 0,
             "nether bedrock was read in the nether");
         ObservationReader.Observations netherNotes = ObservationReader.read(SeedFinderClient.data(),
-            context.computeOnClient(client -> SeedFinderClient.session(client).observationLines()));
+            context.computeOnClient(client -> SeedFinderClient.session(client).notesLines()));
         NetherBedrockSearch.Finding nether = new NetherBedrockSearch(SeedFinderClient.data()).find(netherNotes.bedrock(), 2, () -> false,
             (search, pieces) -> { });
         check(nether.proven() && nether.structureSeeds().contains(Seeds.structureSeed(SEED)) && nether.unusableChunks().isEmpty(),
@@ -195,7 +196,8 @@ public class SeedFinderGameTest implements FabricClientGameTest {
         check(result.conflicting().isEmpty(), "no region had contradicting matches " + result.conflicting());
         check(result.sets().containsAll(StartPieceLibrary.setsOf(SeedFinderClient.data())), "the sweep had real starts of every type " + result.sets());
         check(result.real() >= 18 && result.found() >= result.real() * 0.85,
-            "the sweep recognized " + result.found() + " of " + result.real() + " real starts of the six types");
+            "the sweep recognized " + result.found() + " of " + result.real() + " real starts of the "
+                + StartPieceLibrary.setsOf(SeedFinderClient.data()).size() + " types");
 
         RigidLibrary.Library library = context.computeOnClient(client ->
             StructureRecognition.rigidLibrary(SeedFinderClient.data(), client.level.registryAccess()).getNow(null));
@@ -220,36 +222,41 @@ public class SeedFinderGameTest implements FabricClientGameTest {
 
     /**
      * A structure placed with /place sits on a chunk corner like a real start; the mod reads the command's answer
-     * and never notes it. (Chunk 172, 172 is one where camps can start, and no real camp is near it for seed 12345.)
-     * Abandoned camps came with 26.x: older versions skip this.
+     * and never notes it. An abandoned camp where the version has them (26.x), else a pillager outpost. Chunk 172, 172
+     * is one where both can start, in snowy plains, and no real start of either is near it for seed 12345.
      */
     static void ignoresPlacedStructures(ClientGameTestContext context, TestSingleplayerContext world) {
-        if (!StartPieceLibrary.setsOf(SeedFinderClient.data()).contains("abandoned_camp")) {
-            log("SKIP the /place camp check: Minecraft " + GameVersion.NAME + " has no abandoned camps");
-            return;
-        }
-        int x = 172 * 16;
-        int z = 172 * 16;
+        boolean camps = StartPieceLibrary.setsOf(SeedFinderClient.data()).contains("abandoned_camp");
+        String set = camps ? "abandoned_camp" : "pillager_outposts";
+        String structure = camps ? "minecraft:abandoned_camp_taiga" : "minecraft:pillager_outpost";
+        int chunk = 172;
+        StructureSet placement = SeedFinderClient.data().structureSet(set).orElseThrow();
+        RandomSpreadPlacement grid = (RandomSpreadPlacement) placement.placement();
+        check(Math.floorMod(chunk, grid.spacing()) < grid.spacing() - grid.separation()
+                && new StructureLocator(SeedFinderClient.data(), SEED).candidates(placement, chunk - 16, chunk - 16, chunk + 16, chunk + 16).isEmpty(),
+            "chunk " + chunk + ", " + chunk + " can hold a start of " + set + ", and no real one may start within 16 chunks of it");
+        int x = chunk * 16;
+        int z = chunk * 16;
         // /place needs the whole area loaded on the server. Afterwards the player leaves and comes back, so the
-        // chunks are sent again with the placed camp in them.
-        world.getServer().runCommand("forceload add " + (x - 64) + " " + (z - 64) + " " + (x + 64) + " " + (z + 64));
+        // chunks are sent again with the placed structure in them.
+        world.getServer().runCommand("forceload add " + (x - 96) + " " + (z - 96) + " " + (x + 96) + " " + (z + 96));
         world.getServer().runCommand("tp @a " + (x + 8) + " 160 " + (z + 8));
         context.waitTicks(100);
-        context.runOnClient(client -> client.getConnection().sendCommand("place structure minecraft:abandoned_camp_taiga " + x + " 100 " + z));
+        context.runOnClient(client -> client.getConnection().sendCommand("place structure " + structure + " " + x + " 100 " + z));
         context.waitTicks(40);
         world.getServer().runCommand("forceload remove all");
         world.getServer().runCommand("tp @a " + (x + 8 + 1000) + " 160 " + (z + 8));
         context.waitTicks(100);
         world.getServer().runCommand("tp @a " + (x + 8) + " 160 " + (z + 8));
-        RecognizedStarts.Start placed = new RecognizedStarts.Start("abandoned_camp", 172, 172);
+        RecognizedStarts.Start placed = new RecognizedStarts.Start(set, chunk, chunk);
         for (int wait = 0; wait < 20 * 60 && !context.computeOnClient(client -> SeedFinderClient.recognition().setAside().contains(placed)); wait += 20) {
             context.waitTicks(20);
         }
         check(context.computeOnClient(client -> SeedFinderClient.recognition().setAside().contains(placed)),
-            "the camp placed with /place looks like a start by its blocks, and is set aside");
+            "the " + structure + " placed with /place looks like a start by its blocks, and is set aside");
         context.waitTicks(40);
         check(context.computeOnClient(client -> SeedFinderClient.session(client).structures().stream()
-            .noneMatch(s -> s.set().equals("abandoned_camp") && Math.floorDiv(s.x(), 16) == 172 && Math.floorDiv(s.z(), 16) == 172)),
+            .noneMatch(s -> s.set().equals(set) && Math.floorDiv(s.x(), 16) == chunk && Math.floorDiv(s.z(), 16) == chunk)),
             "but it is not noted, because the mod read the /place answer");
     }
 
@@ -446,8 +453,11 @@ public class SeedFinderGameTest implements FabricClientGameTest {
             WorldSession session = context.computeOnClient(SeedFinderClient::session);
             check(session.bedrockChunks("minecraft:overworld") == WorldSession.MAX_BEDROCK_CHUNKS,
                 "bedrock of " + WorldSession.MAX_BEDROCK_CHUNKS + " overworld chunks was noted");
-            List<String> notes = context.computeOnClient(client -> SeedFinderClient.session(client).observationLines());
+            // The notes exactly as the player saves or copies them (with their version line), read by the engine.
+            List<String> notes = context.computeOnClient(client -> SeedFinderClient.session(client).notesLines());
             ObservationReader.Observations read = ObservationReader.read(SeedFinderClient.data(), notes);
+            check(read.minecraft().equals(java.util.Optional.of(SeedFinderClient.minecraftVersion())),
+                "the notes name Minecraft " + SeedFinderClient.minecraftVersion().displayName() + ", the version the game runs");
             BedrockEvidence bedrock = new BedrockEvidence(read.bedrock());
             check(bedrock.problems().isEmpty() && bedrock.fullSeedObservations().size() > 1000,
                 "the notes hold " + bedrock.fullSeedObservations().size() + " informative bedrock blocks");
@@ -460,7 +470,7 @@ public class SeedFinderGameTest implements FabricClientGameTest {
             checkBiomes(context, session, read, result);
 
             // Copy seed, Copy notes, and the saved notes the command-line app can read: they name the Minecraft version.
-            String versionLine = "minecraft " + GameVersion.NAME;
+            String versionLine = ObservationReader.versionLine(SeedFinderClient.minecraftVersion());
             context.getInput().pressKey(SeedFinderClient.openKey);
             context.waitForScreen(SeedFinderScreen.class);
             context.clickScreenButton("gui.jriksseedfinder.copy_seed");
@@ -478,6 +488,14 @@ public class SeedFinderGameTest implements FabricClientGameTest {
                 "the notes were saved in " + folder);
             List<String> saved = readLines(folder.resolve(base + ".txt"));
             check(saved.getFirst().equals(versionLine), "the saved notes file starts with '" + versionLine + "': " + saved.getFirst());
+            for (String which : List.of("copied", "saved")) {
+                // What the command-line app gets reads back with the engine, as notes of the version the game runs.
+                ObservationReader.Observations back = ObservationReader.read(SeedFinderClient.data(), which.equals("saved") ? saved : copied.lines().toList());
+                check(back.minecraft().equals(read.minecraft()) && back.hashedSeed().equals(read.hashedSeed())
+                        && back.bedrock().size() >= read.bedrock().size() && !back.biomes().isEmpty(),
+                    "the " + which + " notes read back with the engine: " + back.bedrock().size() + " bedrock notes, " + back.biomes().size()
+                        + " biome cells");
+            }
 
             recognizesStructures(context, world);
             recognizesRealStartsAround(context, world);

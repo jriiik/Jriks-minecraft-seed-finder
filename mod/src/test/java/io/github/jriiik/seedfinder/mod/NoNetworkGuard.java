@@ -65,7 +65,8 @@ final class NoNetworkGuard {
 
     /**
      * Minecraft's own names for the intermediary names of a remapped jar, read from Loom's mappings file (Tiny v2 with
-     * "intermediary" and "named" names); {@link #NONE} for a jar that uses Minecraft's own names already.
+     * "intermediary" and "named" names); {@link #NONE} for a jar that uses Minecraft's own names already. A class or
+     * member whose Minecraft name is empty makes the file unusable: that name could hide what it stands for.
      */
     record Names(Map<String, String> classes, Map<String, Set<String>> members) {
         static final Names NONE = new Names(Map.of(), Map.of());
@@ -80,16 +81,23 @@ final class NoNetworkGuard {
             }
             Map<String, String> classes = new HashMap<>();
             Map<String, Set<String>> members = new HashMap<>();
-            for (String line : lines.subList(1, lines.size())) {
-                String[] parts = line.split("\t", -1);
+            for (int i = 1; i < lines.size(); i++) {
+                String[] parts = lines.get(i).split("\t", -1);
                 if (parts[0].equals("c")) {
-                    classes.put(parts[1 + from], parts[1 + to]);
+                    classes.put(parts[1 + from], named(parts[1 + to], tiny, i));
                 } else if (parts.length > 3 + Math.max(from, to) && parts[0].isEmpty() && (parts[1].equals("m") || parts[1].equals("f"))) {
                     // Overriding methods share one intermediary name; all of their names count.
-                    members.computeIfAbsent(parts[3 + from], name -> new HashSet<>()).add(parts[3 + to]);
+                    members.computeIfAbsent(parts[3 + from], name -> new HashSet<>()).add(named(parts[3 + to], tiny, i));
                 }
             }
             return new Names(Map.copyOf(classes), Map.copyOf(members));
+        }
+
+        private static String named(String name, Path tiny, int index) throws IOException {
+            if (name.isEmpty()) {
+                throw new IOException("line " + (index + 1) + " of " + tiny + " has no Minecraft (named) name");
+            }
+            return name;
         }
 
         /** The text with every intermediary class name in it replaced by Minecraft's own (unknown ones are kept). */
@@ -113,10 +121,6 @@ final class NoNetworkGuard {
     }
 
     private NoNetworkGuard() {
-    }
-
-    static Result scanJar(String name, InputStream jar) throws IOException {
-        return scanJar(name, jar, Names.NONE);
     }
 
     static Result scanJar(String name, InputStream jar, Names names) throws IOException {

@@ -2,6 +2,7 @@ package io.github.jriiik.seedfinder.mod;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.github.jriiik.seedfinder.Seeds;
@@ -177,7 +178,7 @@ class WorldSessionTest {
 
     /**
      * The notes file (and "Copy notes") names the Minecraft version first, so the command-line app reads it with that
-     * version's data; the mod's own searches read the rest.
+     * version's data; the mod's own searches read the same lines, and the engine checks the version line.
      */
     @Test
     void theNotesFileStartsWithTheMinecraftVersion(@TempDir Path folder) throws IOException {
@@ -187,8 +188,18 @@ class WorldSessionTest {
             session.addStructure(new WorldSession.NotedStructure("villages", 50, 70, "from /locate"));
             List<String> notes = session.notesLines();
             assertEquals("minecraft " + minecraft.displayName(), notes.getFirst());
-            assertEquals(session.observationLines(), notes.subList(1, notes.size()));
             assertTrue(notes.contains("hashed-seed 42") && notes.contains("villages 50 70"), notes.toString());
+            assertEquals(java.util.Optional.of(minecraft), ObservationReader.minecraftVersion(notes));
+            ObservationReader.Observations read = ObservationReader.read(minecraft.data(), notes);
+            assertEquals(java.util.Optional.of(minecraft), read.minecraft());
+            assertEquals(OptionalLong.of(42L), read.hashedSeed());
+            assertEquals(1, read.structures().size());
+            for (MinecraftVersion other : MinecraftVersion.values()) {
+                if (other != minecraft) {
+                    // never read with another version's data
+                    assertEquals(0, assertThrows(ObservationReader.LineException.class, () -> ObservationReader.read(other.data(), notes)).lineIndex());
+                }
+            }
             session.save(folder);
             assertEquals(notes, Files.readAllLines(folder.resolve(WorldSession.fileName(WORLD) + ".txt"), StandardCharsets.UTF_8));
             assertEquals(notes, WorldSession.load(folder, WORLD, minecraft).notesLines());
@@ -355,7 +366,7 @@ class WorldSessionTest {
 
         // the notes file gives the same biomes to the command-line app
         VersionData data = MinecraftVersion.V26_3.data();
-        List<io.github.jriiik.seedfinder.finder.BiomeObservation> read = ObservationReader.read(data, loaded.observationLines()).biomes();
+        List<io.github.jriiik.seedfinder.finder.BiomeObservation> read = ObservationReader.read(data, loaded.notesLines()).biomes();
         assertEquals(loaded.biomeChunks() * 16 * BiomeScanner.HEIGHTS.length, read.size());
         assertTrue(read.contains(new io.github.jriiik.seedfinder.finder.BiomeObservation("minecraft:desert", far * 16 + 4, 64, 0, true)));
         assertTrue(read.contains(new io.github.jriiik.seedfinder.finder.BiomeObservation("minecraft:plains", far * 16, 64, 0, true)));
@@ -392,7 +403,7 @@ class WorldSessionTest {
 
     private static io.github.jriiik.seedfinder.finder.BiomeEvidence evidence(WorldSession session) {
         VersionData data = MinecraftVersion.V26_3.data();
-        return new io.github.jriiik.seedfinder.finder.BiomeEvidence(MinecraftVersion.V26_3, ObservationReader.read(data, session.observationLines()).biomes(),
+        return new io.github.jriiik.seedfinder.finder.BiomeEvidence(MinecraftVersion.V26_3, ObservationReader.read(data, session.notesLines()).biomes(),
             OptionalLong.empty());
     }
 

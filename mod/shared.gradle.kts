@@ -65,12 +65,14 @@ tasks.named<ProcessResources>("processResources") {
     filesMatching("fabric.mod.json") { expand(values) }
 }
 
-// The guard test reads the jar that ships (with the engine jar inside it). The tests run inside the build folder, so
-// the game's logger (on the test classpath) writes its logs there, not into the source tree.
+// The guard test reads the jar that ships (with the engine jar inside it); a test checks that GameVersion names the
+// Minecraft version this project builds for. The tests run inside the build folder, so the game's logger (on the test
+// classpath) writes its logs there, not into the source tree.
 tasks.named<Test>("test") {
     useJUnitPlatform()
     inputs.file(shippedJar).withPropertyName("modJar").withPathSensitivity(PathSensitivity.NONE)
     jvmArgumentProviders.add(ModJarArgument(shippedJar))
+    systemProperty("seedfinder.minecraftVersion", minecraftVersion)
     val testRunDir = layout.buildDirectory.dir("test-run")
     workingDir(testRunDir)
     doFirst { testRunDir.get().asFile.mkdirs() }

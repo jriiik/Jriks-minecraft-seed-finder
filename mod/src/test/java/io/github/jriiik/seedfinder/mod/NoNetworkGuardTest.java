@@ -2,6 +2,7 @@ package io.github.jriiik.seedfinder.mod;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.junit.jupiter.api.Assumptions.assumeTrue;
 
@@ -32,7 +33,8 @@ import org.junit.jupiter.api.io.TempDir;
  */
 class NoNetworkGuardTest {
 
-    private static Path modJar() {
+    /** The jar that ships for the Minecraft version this project builds. */
+    static Path modJar() {
         String path = System.getProperty("seedfinder.modJar");
         assertTrue(path != null && Files.isRegularFile(Path.of(path)), "mod jar not found: " + path);
         return Path.of(path);
@@ -98,6 +100,19 @@ class NoNetworkGuardTest {
             "c\tnet/minecraft/class_2797\tnet/minecraft/network/protocol/game/ServerboundChatCommandPacket",
             ""), StandardCharsets.UTF_8);
         return NoNetworkGuard.Names.read(tiny);
+    }
+
+    /** Mappings with an empty Minecraft name are refused: such a name could hide what a class or member stands for. */
+    @Test
+    void mappingsWithAnEmptyMinecraftNameAreRefused(@TempDir Path folder) throws IOException {
+        Path tiny = folder.resolve("mappings.tiny");
+        for (String lines : List.of(
+            "c\tnet/minecraft/class_634\t",
+            "c\tnet/minecraft/class_310\tnet/minecraft/client/Minecraft\n\tm\t()Lnet/minecraft/class_634;\tmethod_1562\t")) {
+            Files.writeString(tiny, "tiny\t2\t0\tintermediary\tnamed\n" + lines + "\n", StandardCharsets.UTF_8);
+            IOException refused = assertThrows(IOException.class, () -> NoNetworkGuard.Names.read(tiny), lines);
+            assertTrue(refused.getMessage().contains("has no Minecraft (named) name"), refused.getMessage());
+        }
     }
 
     /** A remapped jar's command sender reads class_310.method_1562 and so on; the guard must see through that. */

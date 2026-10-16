@@ -65,8 +65,12 @@ final class StructureRecognition {
 
     /** The blueprints, read once from the game's files in the background. */
     private static CompletableFuture<StartPieceRecognizer> recognizer;
+    /** The version data the blueprints were made for. */
+    private static VersionData recognizerData;
     /** The rigid-structure layouts, built once from the game's files and code in the background. */
     private static CompletableFuture<RigidLibrary.Library> rigidLibrary;
+    /** The version data the layouts were made for. */
+    private static VersionData rigidLibraryData;
     /**
      * A rigid-structure recognizer per dimension where rigid structures appear, made in the background with the
      * layouts (set before {@link #rigidLibrary} completes).
@@ -132,6 +136,7 @@ final class StructureRecognition {
     static synchronized CompletableFuture<StartPieceRecognizer> recognizer(VersionData data) {
         if (recognizer == null) {
             StartPieceLibrary.DataFiles files = StartPieceLibrary.vanilla(GameVersion.vanillaData(Minecraft.getInstance()));
+            recognizerData = data;
             recognizer = CompletableFuture.supplyAsync(() -> {
                 StartPieceLibrary.Library library = StartPieceLibrary.load(data, files);
                 library.problems().forEach(problem -> SeedFinderClient.LOG.warn("Structure recognition: {}", problem));
@@ -151,6 +156,7 @@ final class StructureRecognition {
     static synchronized CompletableFuture<RigidLibrary.Library> rigidLibrary(VersionData data, RegistryAccess registries) {
         if (rigidLibrary == null) {
             StartPieceLibrary.DataFiles files = StartPieceLibrary.vanilla(GameVersion.vanillaData(Minecraft.getInstance()));
+            rigidLibraryData = data;
             rigidLibrary = CompletableFuture.supplyAsync(() -> {
                 RigidLibrary.Library library = RigidLibrary.load(data, files, registries);
                 library.problems().forEach(problem -> SeedFinderClient.LOG.warn("Structure recognition: {}", problem));
@@ -186,12 +192,13 @@ final class StructureRecognition {
         if (done != null) {
             Set<String> loaded = new HashSet<>();
             done.pieces().forEach(piece -> loaded.add(piece.structureSet()));
-            StartPieceLibrary.setsOf(SeedFinderClient.data()).stream().filter(set -> !loaded.contains(set)).forEach(missing::add);
+            StartPieceLibrary.setsOf(recognizerData).stream().filter(set -> !loaded.contains(set)).forEach(missing::add);
         }
         if (rigid != null) {
             Set<RigidKind> kinds = new HashSet<>();
             rigid.layouts().forEach(layout -> kinds.add(layout.kind()));
-            Arrays.stream(RigidKind.values()).filter(kind -> !kinds.contains(kind)).forEach(kind -> missing.add(kind.structureSet()));
+            Arrays.stream(RigidKind.values()).filter(kind -> rigidLibraryData.structureSet(kind.structureSet()).isPresent() && !kinds.contains(kind))
+                .forEach(kind -> missing.add(kind.structureSet()));
         }
         return missing;
     }
