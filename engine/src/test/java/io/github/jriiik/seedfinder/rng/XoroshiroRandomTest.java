@@ -11,24 +11,38 @@ import io.github.jriiik.seedfinder.bedrock.BedrockRule;
 import io.github.jriiik.seedfinder.version.MinecraftVersion;
 import java.util.Map;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedClass;
+import org.junit.jupiter.params.provider.MethodSource;
 
-/** Compares our Xoroshiro128++ generator and the generators built from it with values recorded from Minecraft 26.3. */
+/**
+ * Compares our Xoroshiro128++ generator and the generators built from it with values recorded from each supported
+ * Minecraft version.
+ */
+@ParameterizedClass
+@MethodSource("io.github.jriiik.seedfinder.Fixtures#versions")
 class XoroshiroRandomTest {
 
-    private static final JsonObject FIXTURE = Fixtures.load("26.3", "xoroshiro.json");
     private static final int[] BOUNDS = {1, 3, 24, 100, 1 << 30, 0x55555556, Integer.MAX_VALUE};
+
+    private final MinecraftVersion version;
+    private final JsonObject fixture;
+
+    XoroshiroRandomTest(MinecraftVersion version) {
+        this.version = version;
+        this.fixture = Fixtures.load(version, "xoroshiro.json");
+    }
 
     @Test
     void seedMixingMatchesTheGame() {
-        for (JsonElement element : FIXTURE.getAsJsonArray("mix_stafford13")) {
+        for (JsonElement element : fixture.getAsJsonArray("mix_stafford13")) {
             JsonArray row = element.getAsJsonArray();
             assertEquals(asLong(row, 1), RandomSupport.mixStafford13(asLong(row, 0)));
         }
-        for (JsonElement element : FIXTURE.getAsJsonArray("upgrade_seed_to_128bit")) {
+        for (JsonElement element : fixture.getAsJsonArray("upgrade_seed_to_128bit")) {
             JsonArray row = element.getAsJsonArray();
             assertEquals(new RandomSupport.Seed128(asLong(row, 1), asLong(row, 2)), RandomSupport.upgradeSeedTo128bit(asLong(row, 0)));
         }
-        for (JsonElement element : FIXTURE.getAsJsonArray("seed_from_hash_of")) {
+        for (JsonElement element : fixture.getAsJsonArray("seed_from_hash_of")) {
             JsonArray row = element.getAsJsonArray();
             assertEquals(new RandomSupport.Seed128(asLong(row, 1), asLong(row, 2)), RandomSupport.seedFromHashOf(row.get(0).getAsString()));
         }
@@ -36,7 +50,7 @@ class XoroshiroRandomTest {
 
     @Test
     void positionalSeedMatchesTheGame() {
-        for (JsonElement element : FIXTURE.getAsJsonArray("positional_seed")) {
+        for (JsonElement element : fixture.getAsJsonArray("positional_seed")) {
             JsonArray row = element.getAsJsonArray();
             assertEquals(asLong(row, 3), WorldgenSeeds.positional(row.get(0).getAsInt(), row.get(1).getAsInt(), row.get(2).getAsInt()), row.toString());
         }
@@ -44,7 +58,7 @@ class XoroshiroRandomTest {
 
     @Test
     void drawsMatchTheGame() {
-        for (Map.Entry<String, JsonElement> entry : FIXTURE.getAsJsonObject("seeds").entrySet()) {
+        for (Map.Entry<String, JsonElement> entry : fixture.getAsJsonObject("seeds").entrySet()) {
             long seed = Long.parseLong(entry.getKey());
             JsonObject s = entry.getValue().getAsJsonObject().getAsJsonObject("samples");
             XoroshiroRandom random = new XoroshiroRandom(seed);
@@ -68,9 +82,9 @@ class XoroshiroRandomTest {
 
     @Test
     void forksMatchTheGame() {
-        JsonArray positions = FIXTURE.getAsJsonArray("positional_seed");
-        JsonArray names = FIXTURE.getAsJsonArray("seed_from_hash_of");
-        for (Map.Entry<String, JsonElement> entry : FIXTURE.getAsJsonObject("seeds").entrySet()) {
+        JsonArray positions = fixture.getAsJsonArray("positional_seed");
+        JsonArray names = fixture.getAsJsonArray("seed_from_hash_of");
+        for (Map.Entry<String, JsonElement> entry : fixture.getAsJsonObject("seeds").entrySet()) {
             long seed = Long.parseLong(entry.getKey());
             JsonObject s = entry.getValue().getAsJsonObject();
             assertEquals(Long.parseLong(s.get("fork_next_long").getAsString()), new XoroshiroRandom(seed).fork().nextLong());
@@ -94,10 +108,10 @@ class XoroshiroRandomTest {
     /** The world's own generators for each bedrock rule (Xoroshiro in the overworld, the old generator in the nether). */
     @Test
     void worldBedrockGeneratorsMatchTheGame() {
-        Map<String, BedrockDimension> dimensions = MinecraftVersion.V26_3.data().bedrock();
-        JsonArray positions = FIXTURE.getAsJsonArray("positional_seed");
+        Map<String, BedrockDimension> dimensions = version.data().bedrock();
+        JsonArray positions = fixture.getAsJsonArray("positional_seed");
         int checked = 0;
-        for (Map.Entry<String, JsonElement> entry : FIXTURE.getAsJsonObject("seeds").entrySet()) {
+        for (Map.Entry<String, JsonElement> entry : fixture.getAsJsonObject("seeds").entrySet()) {
             long seed = Long.parseLong(entry.getKey());
             JsonObject byDimension = entry.getValue().getAsJsonObject().getAsJsonObject("world_bedrock_factories");
             for (Map.Entry<String, JsonElement> dimension : byDimension.entrySet()) {

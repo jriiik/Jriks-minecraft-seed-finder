@@ -8,18 +8,28 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 import io.github.jriiik.seedfinder.rng.JavaRandom;
+import io.github.jriiik.seedfinder.version.MinecraftVersion;
 import java.util.Arrays;
 import java.util.OptionalLong;
 import java.util.SplittableRandom;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedClass;
+import org.junit.jupiter.params.provider.MethodSource;
 
+/** Seeds as each supported Minecraft version makes them: typed text, the random pick and the hashed seed. */
+@ParameterizedClass
+@MethodSource("io.github.jriiik.seedfinder.Fixtures#versions")
 class SeedsTest {
 
-    private static final JsonObject RANDOM_SEEDS = Fixtures.load("26.3", "random_seeds.json");
+    private final JsonObject randomSeeds;
+
+    SeedsTest(MinecraftVersion version) {
+        randomSeeds = Fixtures.load(version, "random_seeds.json");
+    }
 
     @Test
     void parsingMatchesTheGame() {
-        for (JsonElement element : RANDOM_SEEDS.getAsJsonArray("parse_seed")) {
+        for (JsonElement element : randomSeeds.getAsJsonArray("parse_seed")) {
             String text = element.getAsJsonArray().get(0).getAsString();
             JsonElement expected = element.getAsJsonArray().get(1);
             OptionalLong want = expected.isJsonNull() ? OptionalLong.empty() : OptionalLong.of(Long.parseLong(expected.getAsString()));
@@ -30,7 +40,7 @@ class SeedsTest {
     @Test
     void randomSeedsFromTheGameAreFoundFromTheirStructureSeed() {
         int checked = 0;
-        for (JsonElement element : RANDOM_SEEDS.getAsJsonArray("next_long")) {
+        for (JsonElement element : randomSeeds.getAsJsonArray("next_long")) {
             long worldSeed = Long.parseLong(element.getAsJsonArray().get(1).getAsString());
             long[] candidates = Seeds.randomSeedCandidates(Seeds.structureSeed(worldSeed));
             assertTrue(Arrays.stream(candidates).anyMatch(c -> c == worldSeed), worldSeed + " not in " + Arrays.toString(candidates));
@@ -84,7 +94,7 @@ class SeedsTest {
     @Test
     void hashedSeedMatchesTheGame() {
         int checked = 0;
-        for (JsonElement element : RANDOM_SEEDS.getAsJsonArray("hashed_seed")) {
+        for (JsonElement element : randomSeeds.getAsJsonArray("hashed_seed")) {
             long worldSeed = Long.parseLong(element.getAsJsonArray().get(0).getAsString());
             long hashed = Long.parseLong(element.getAsJsonArray().get(1).getAsString());
             assertEquals(hashed, Seeds.hashedSeed(worldSeed), Long.toString(worldSeed));

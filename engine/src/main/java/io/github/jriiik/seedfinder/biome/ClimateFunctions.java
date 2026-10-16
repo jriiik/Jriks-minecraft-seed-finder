@@ -13,24 +13,14 @@ import java.util.Map;
 
 /**
  * The six climate functions of one world preset (temperature, vegetation, continents, erosion, depth, ridges), read
- * from the density functions the oracle exported and evaluated with float arithmetic in the same order as the
- * game's compiled samplers (26.x {@code DensityFunctionCompiler}). Only the function types the climate uses are
+ * from the density functions the oracle exported for 26.x and evaluated with float arithmetic in the same order as
+ * the game's compiled samplers (26.x {@code DensityFunctionCompiler}). Only the function types the climate uses are
  * supported; anything else fails when the data is read, never silently.
  *
  * <p>The functions themselves do not depend on the seed: the noises they sample and their caches live in a
- * {@link State}, one per world seed.
+ * {@link FloatState}, one per world seed.
  */
-final class ClimateFunctions {
-
-    /** The router fields, in the order of a climate target point (the game calls vegetation "humidity", ridges "weirdness"). */
-    static final String[] FIELDS = {"temperature", "vegetation", "continents", "erosion", "depth", "ridges"};
-
-    static final int TEMPERATURE = 0;
-    static final int VEGETATION = 1;
-    static final int CONTINENTS = 2;
-    static final int EROSION = 3;
-    static final int DEPTH = 4;
-    static final int RIDGES = 5;
+final class ClimateFunctions implements ClimateEvaluator {
 
     private final Node[] climate;
     private final List<NormalNoise.Recipe> noises;
@@ -44,9 +34,13 @@ final class ClimateFunctions {
         this.cacheSlots = cacheSlots;
     }
 
-    /** How a noise the climate uses is built, by id (null if the climate does not use it). */
-    NormalNoise.Recipe noise(String id) {
-        return noisesById.get(id);
+    @Override
+    public double noiseValue(String id, XoroshiroPositionalFactory world, double x, double y, double z) {
+        NormalNoise.Recipe recipe = noisesById.get(id);
+        if (recipe == null) {
+            throw new IllegalArgumentException("the climate does not use the noise " + id);
+        }
+        return recipe.create(world).get(x, y, z);
     }
 
     /**
@@ -69,25 +63,18 @@ final class ClimateFunctions {
         return new ClimateFunctions(climate, parser.noiseRecipes, parser.cacheSlots);
     }
 
-    State newState() {
-        return new State(this);
+    @Override
+    public FloatState newState() {
+        return new FloatState(this);
     }
 
-    /** The value of one climate function ({@link #TEMPERATURE} ...) at a block position, for the seed of the state. */
-    float sample(State state, int function, int blockX, int blockY, int blockZ) {
-        return climate[function].compute(state, blockX, blockY, blockZ);
-    }
-
-    /** True if a climate function depends on y (only depth does, in vanilla). */
-    boolean dependsOnY(int function) {
+    @Override
+    public boolean dependsOnY(int function) {
         return climate[function].dependsOnY;
     }
 
-    /**
-     * The noises and caches of one world seed. Noises are made when first sampled, since a check that reads only
-     * some climate functions then pays only for the noises those use. Not thread-safe; use one state per thread.
-     */
-    static final class State {
+    /** The noises and caches of one world seed, see {@link ClimateEvaluator.State}. */
+    static final class FloatState implements ClimateEvaluator.State {
 
         private final ClimateFunctions functions;
         private final NormalNoise[] noises;
@@ -98,7 +85,7 @@ final class ClimateFunctions {
         private final float[] cacheValue;
         private XoroshiroPositionalFactory world;
 
-        private State(ClimateFunctions functions) {
+        private FloatState(ClimateFunctions functions) {
             this.functions = functions;
             this.noises = new NormalNoise[functions.noises.size()];
             this.cacheFilled = new boolean[functions.cacheSlots];
@@ -108,11 +95,21 @@ final class ClimateFunctions {
             this.cacheValue = new float[functions.cacheSlots];
         }
 
-        /** Switches to another world seed, forgetting the noises and cached values of the previous one. */
-        void reset(XoroshiroPositionalFactory world) {
+        @Override
+        public void reset(XoroshiroPositionalFactory world) {
             this.world = world;
             Arrays.fill(noises, null);
             Arrays.fill(cacheFilled, false);
+        }
+
+        @Override
+        public float climate(int function, int x, int y, int z) {
+            return functions.climate[function].compute(this, x, y, z);
+        }
+
+        @Override
+        public double exact(int function, int x, int y, int z) {
+            return climate(function, x, y, z);
         }
 
         NormalNoise noise(int index) {
@@ -138,7 +135,7 @@ final class ClimateFunctions {
             this.dependsOnY = dependsOnY;
         }
 
-        abstract float compute(State state, int x, int y, int z);
+        abstract float compute(FloatState state, int x, int y, int z);
 
         boolean isConstant() {
             return false;
@@ -159,7 +156,7 @@ final class ClimateFunctions {
         }
 
         @Override
-        float compute(State state, int x, int y, int z) {
+        float compute(FloatState state, int x, int y, int z) {
             return value;
         }
 
@@ -187,7 +184,7 @@ final class ClimateFunctions {
         }
 
         @Override
-        float compute(State state, int x, int y, int z) {
+        float compute(FloatState state, int x, int y, int z) {
             if (state.cacheFilled[slot] && state.cacheX[slot] == x && state.cacheZ[slot] == z && (!dependsOnY || state.cacheY[slot] == y)) {
                 return state.cacheValue[slot];
             }
@@ -222,7 +219,7 @@ final class ClimateFunctions {
         }
 
         @Override
-        float compute(State state, int x, int y, int z) {
+        float compute(FloatState state, int x, int y, int z) {
             if (shiftX == null && shiftY == null && shiftZ == null) {
                 return state.noise(noise).get(x * xzScale, y * yScale, z * xzScale);
             }
@@ -248,7 +245,7 @@ final class ClimateFunctions {
         }
 
         @Override
-        float compute(State state, int x, int y, int z) {
+        float compute(FloatState state, int x, int y, int z) {
             NormalNoise offset = state.noise(noise);
             return switch (kind) {
                 case XYZ -> offset.get(x * 0.25, y * 0.25, z * 0.25) * 4.0F;
@@ -275,7 +272,7 @@ final class ClimateFunctions {
         }
 
         @Override
-        float compute(State state, int x, int y, int z) {
+        float compute(FloatState state, int x, int y, int z) {
             switch (kind) {
                 case ADD:
                     if (left.isConstant()) {
@@ -316,7 +313,7 @@ final class ClimateFunctions {
         }
 
         @Override
-        float compute(State state, int x, int y, int z) {
+        float compute(FloatState state, int x, int y, int z) {
             return Math.abs(input.compute(state, x, y, z));
         }
     }
@@ -336,7 +333,7 @@ final class ClimateFunctions {
         }
 
         @Override
-        float compute(State state, int x, int y, int z) {
+        float compute(FloatState state, int x, int y, int z) {
             float a = alpha.compute(state, x, y, z);
             if (a == 0.0F) {
                 return first.compute(state, x, y, z);
@@ -367,7 +364,7 @@ final class ClimateFunctions {
         }
 
         @Override
-        float compute(State state, int x, int y, int z) {
+        float compute(FloatState state, int x, int y, int z) {
             int relative = Math.min(Math.max(y, minY), maxY) - fromY;
             return fromValue + relative * factor;
         }
@@ -399,7 +396,7 @@ final class ClimateFunctions {
         }
 
         @Override
-        float compute(State state, int x, int y, int z) {
+        float compute(FloatState state, int x, int y, int z) {
             float input = coordinate.compute(state, x, y, z);
             // Mth.binarySearch(0, n, i -> input < locations[i]) - 1
             int from = 0;

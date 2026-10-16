@@ -7,6 +7,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
+import io.github.jriiik.seedfinder.Fixtures;
 import io.github.jriiik.seedfinder.structure.ConcentricRingsPlacement;
 import io.github.jriiik.seedfinder.structure.ExclusionZone;
 import io.github.jriiik.seedfinder.structure.FrequencyReduction;
@@ -17,11 +18,20 @@ import io.github.jriiik.seedfinder.structure.StructureSet;
 import io.github.jriiik.seedfinder.world.BlockPos;
 import java.util.List;
 import java.util.Optional;
+import java.util.Set;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.MethodSource;
 
 class VersionDataTest {
 
+    private static final String VERSIONS = "io.github.jriiik.seedfinder.Fixtures#versions";
     private static final VersionData DATA = MinecraftVersion.V26_3.data();
+    private static final VersionData OLD = MinecraftVersion.V1_21_11.data();
+    private static final List<String> DATA_FILES = List.of("bedrock.json", "biome_parameters.json", "climate.json", "dimensions.json",
+        "rigid_structures.json", "structure_sets.json", "structures.json");
+    private static final List<String> FIXTURE_FILES = List.of("bedrock.json", "biomes.json", "placements.json", "random_seeds.json", "rng.json",
+        "strongholds.json", "xoroshiro.json");
 
     @Test
     void loadsAllStructureSetsOf26_3() {
@@ -31,45 +41,88 @@ class VersionDataTest {
     }
 
     @Test
-    void villagesUseTheKnownPlacement() {
-        StructureSet villages = DATA.structureSet("villages").orElseThrow();
+    void loadsAllStructureSetsOf1_21_11() {
+        assertEquals("1.21.11", OLD.version());
+        assertEquals(20, OLD.structureSets().size());
+        assertTrue(OLD.structureSet("minecraft:abandoned_camp").isEmpty(), "new in 26.x");
+        assertTrue(OLD.findStructureSet("abandoned_camp_meadow").isEmpty());
+        assertTrue(OLD.structure("minecraft:abandoned_camp_meadow").isEmpty());
+    }
+
+    /**
+     * Every structure set 1.21.11 has is placed exactly as in 26.3, and the bedrock and rigid structures are the same:
+     * guards of measured estimates that use these (structure search, bedrock) need to run for one version only.
+     */
+    @Test
+    void sharedStructuresBedrockAndRigidStructuresAreTheSameInBothVersions() {
+        for (StructureSet set : OLD.structureSets()) {
+            assertEquals(set, DATA.structureSet(set.id()).orElseThrow(), set.id());
+        }
+        assertEquals(Set.of("minecraft:abandoned_camp"), DATA.structureSets().stream().map(StructureSet::id)
+            .filter(id -> OLD.structureSet(id).isEmpty()).collect(java.util.stream.Collectors.toSet()));
+        assertEquals(OLD.bedrock(), DATA.bedrock());
+        assertEquals(OLD.rigidStructures(), DATA.rigidStructures());
+    }
+
+    @ParameterizedTest
+    @MethodSource(VERSIONS)
+    void everyVersionHasItsOwnDataAndFixtures(MinecraftVersion version) {
+        for (String file : DATA_FILES) {
+            assertEquals(version.displayName(), VersionDataLoader.readBundled(version.displayName(), file).get("minecraft_version").getAsString(), file);
+        }
+        for (String file : FIXTURE_FILES) {
+            assertEquals(version.displayName(), Fixtures.load(version, file).get("minecraft_version").getAsString(), file);
+        }
+        assertEquals(version.displayName(), version.data().version());
+    }
+
+    @ParameterizedTest
+    @MethodSource(VERSIONS)
+    void villagesUseTheKnownPlacement(MinecraftVersion version) {
+        StructureSet villages = version.data().structureSet("villages").orElseThrow();
         assertEquals(5, villages.structures().size());
         assertEquals(
             new RandomSpreadPlacement(34, 8, SpreadType.LINEAR, 10387312, 1.0f, FrequencyReduction.DEFAULT, Optional.empty(), BlockPos.ZERO),
             villages.placement());
     }
 
-    @Test
-    void outpostsHaveAFrequencyAndAnExclusionZone() {
-        RandomSpreadPlacement outposts = (RandomSpreadPlacement) DATA.structureSet("pillager_outposts").orElseThrow().placement();
+    @ParameterizedTest
+    @MethodSource(VERSIONS)
+    void outpostsHaveAFrequencyAndAnExclusionZone(MinecraftVersion version) {
+        RandomSpreadPlacement outposts = (RandomSpreadPlacement) version.data().structureSet("pillager_outposts").orElseThrow().placement();
         assertEquals(0.2f, outposts.frequency());
         assertEquals(FrequencyReduction.LEGACY_TYPE_1, outposts.frequencyReduction());
         assertEquals(Optional.of(new ExclusionZone("minecraft:villages", 10)), outposts.exclusionZone());
     }
 
-    @Test
-    void strongholdsUseConcentricRings() {
-        ConcentricRingsPlacement rings = assertInstanceOf(ConcentricRingsPlacement.class, DATA.structureSet("strongholds").orElseThrow().placement());
+    @ParameterizedTest
+    @MethodSource(VERSIONS)
+    void strongholdsUseConcentricRings(MinecraftVersion version) {
+        ConcentricRingsPlacement rings = assertInstanceOf(ConcentricRingsPlacement.class,
+            version.data().structureSet("strongholds").orElseThrow().placement());
         assertEquals(128, rings.count());
         assertEquals(List.of("#minecraft:stronghold_biased_to"), rings.preferredBiomes());
     }
 
-    @Test
-    void structureSetsKnowTheirDimensions() {
-        assertEquals(List.of("minecraft:overworld"), DATA.dimensionsOf(DATA.structureSet("villages").orElseThrow()));
-        assertEquals(List.of("minecraft:the_nether"), DATA.dimensionsOf(DATA.structureSet("nether_complexes").orElseThrow()));
-        assertEquals(List.of("minecraft:the_end"), DATA.dimensionsOf(DATA.structureSet("end_cities").orElseThrow()));
+    @ParameterizedTest
+    @MethodSource(VERSIONS)
+    void structureSetsKnowTheirDimensions(MinecraftVersion version) {
+        VersionData data = version.data();
+        assertEquals(List.of("minecraft:overworld"), data.dimensionsOf(data.structureSet("villages").orElseThrow()));
+        assertEquals(List.of("minecraft:the_nether"), data.dimensionsOf(data.structureSet("nether_complexes").orElseThrow()));
+        assertEquals(List.of("minecraft:the_end"), data.dimensionsOf(data.structureSet("end_cities").orElseThrow()));
         assertEquals(
             List.of("minecraft:overworld", "minecraft:the_nether"),
-            DATA.dimensionsOf(DATA.structureSet("ruined_portals").orElseThrow()));
-        for (StructureSet set : DATA.structureSets()) {
-            assertTrue(!DATA.dimensionsOf(set).isEmpty(), set.id() + " should belong to a dimension");
+            data.dimensionsOf(data.structureSet("ruined_portals").orElseThrow()));
+        for (StructureSet set : data.structureSets()) {
+            assertTrue(!data.dimensionsOf(set).isEmpty(), set.id() + " should belong to a dimension");
         }
     }
 
-    @Test
-    void rigidStructuresKnowHowTheirMainPieceIsPlaced() {
-        RigidStructures rigid = DATA.rigidStructures();
+    @ParameterizedTest
+    @MethodSource(VERSIONS)
+    void rigidStructuresKnowHowTheirMainPieceIsPlaced(MinecraftVersion version) {
+        RigidStructures rigid = version.data().rigidStructures();
         assertEquals(List.of("minecraft:igloos", "minecraft:ocean_ruins", "minecraft:ruined_portals", "minecraft:shipwrecks"),
             rigid.templateSets().keySet().stream().sorted().toList());
         RigidStructures.TemplateSet portals = rigid.templateSets().get("minecraft:ruined_portals");
@@ -83,9 +136,17 @@ class VersionDataTest {
         assertEquals(3, rigid.codeBuiltSets().size());
     }
 
+    @ParameterizedTest
+    @MethodSource(VERSIONS)
+    void structuresKnowTheirBiomes(MinecraftVersion version) {
+        assertEquals(List.of("minecraft:meadow", "minecraft:plains"), version.data().structure("village_plains").orElseThrow().biomes());
+    }
+
     @Test
-    void structuresKnowTheirBiomes() {
-        assertEquals(List.of("minecraft:meadow", "minecraft:plains"), DATA.structure("village_plains").orElseThrow().biomes());
+    void theNewBiomesOf26_3AreOnlyIn26_3() {
+        assertTrue(DATA.structure("mineshaft").orElseThrow().biomes().contains("minecraft:dappled_forest"));
+        assertTrue(!OLD.structure("mineshaft").orElseThrow().biomes().contains("minecraft:dappled_forest"));
+        assertTrue(!OLD.structure("mineshaft").orElseThrow().biomes().contains("minecraft:sulfur_caves"));
     }
 
     @Test
@@ -109,17 +170,23 @@ class VersionDataTest {
         assertThrows(IllegalArgumentException.class, () -> VersionDataLoader.parseStructureSet("x", json));
     }
 
+    @ParameterizedTest
+    @MethodSource(VERSIONS)
+    void findsStructureSetsByTheNamesPeopleUse(MinecraftVersion version) {
+        VersionData data = version.data();
+        assertEquals("minecraft:villages", data.findStructureSet("village").orElseThrow().id());
+        assertEquals("minecraft:villages", data.findStructureSet("Village_Desert").orElseThrow().id());
+        assertEquals("minecraft:villages", data.findStructureSet("minecraft:villages").orElseThrow().id());
+        assertEquals("minecraft:desert_pyramids", data.findStructureSet("desert_pyramid").orElseThrow().id());
+        assertEquals("minecraft:ancient_cities", data.findStructureSet("ancient_city").orElseThrow().id());
+        assertEquals("minecraft:nether_complexes", data.findStructureSet("fortress").orElseThrow().id());
+        assertEquals("minecraft:nether_complexes", data.findStructureSet("bastion_remnant").orElseThrow().id());
+        assertTrue(data.findStructureSet("castle").isEmpty());
+    }
+
     @Test
-    void findsStructureSetsByTheNamesPeopleUse() {
-        assertEquals("minecraft:villages", DATA.findStructureSet("village").orElseThrow().id());
-        assertEquals("minecraft:villages", DATA.findStructureSet("Village_Desert").orElseThrow().id());
-        assertEquals("minecraft:villages", DATA.findStructureSet("minecraft:villages").orElseThrow().id());
-        assertEquals("minecraft:desert_pyramids", DATA.findStructureSet("desert_pyramid").orElseThrow().id());
-        assertEquals("minecraft:ancient_cities", DATA.findStructureSet("ancient_city").orElseThrow().id());
-        assertEquals("minecraft:nether_complexes", DATA.findStructureSet("fortress").orElseThrow().id());
-        assertEquals("minecraft:nether_complexes", DATA.findStructureSet("bastion_remnant").orElseThrow().id());
+    void findsAbandonedCampsIn26_3() {
         assertEquals("minecraft:abandoned_camp", DATA.findStructureSet("abandoned_camp_meadow").orElseThrow().id());
-        assertTrue(DATA.findStructureSet("castle").isEmpty());
     }
 
     @Test
@@ -130,9 +197,12 @@ class VersionDataTest {
     }
 
     @Test
-    void knowsTheLatestVersion() {
+    void knowsTheVersions() {
         assertEquals(MinecraftVersion.V26_3, MinecraftVersion.latest());
         assertEquals(Optional.of(MinecraftVersion.V26_3), MinecraftVersion.byName(" 26.3 "));
+        assertEquals(Optional.of(MinecraftVersion.V1_21_11), MinecraftVersion.byName("1.21.11"));
         assertTrue(MinecraftVersion.byName("1.8").isEmpty());
+        assertTrue(MinecraftVersion.byName("1.21.1").isEmpty());
+        assertEquals("1.21.11, 26.3", MinecraftVersion.supportedNames());
     }
 }

@@ -18,30 +18,39 @@ import java.util.TreeSet;
 import java.util.stream.Stream;
 import org.junit.jupiter.api.DynamicTest;
 import org.junit.jupiter.api.TestFactory;
+import org.junit.jupiter.params.ParameterizedClass;
+import org.junit.jupiter.params.provider.MethodSource;
 
 /**
  * The main Phase 1 check: for every structure set and many seeds, our engine must pick exactly the same chunks
- * as Minecraft 26.3 (recorded by tools/oracle), including frequency rolls and exclusion zones.
+ * as each supported Minecraft version (recorded by tools/oracle), including frequency rolls and exclusion zones.
  */
+@ParameterizedClass
+@MethodSource("io.github.jriiik.seedfinder.Fixtures#versions")
 class PlacementFixtureTest {
 
-    private static final VersionData DATA = MinecraftVersion.V26_3.data();
-    private static final JsonObject PLACEMENTS = Fixtures.load("26.3", "placements.json");
+    private final VersionData data;
+    private final JsonObject placements;
+
+    PlacementFixtureTest(MinecraftVersion version) {
+        data = version.data();
+        placements = Fixtures.load(version, "placements.json");
+    }
 
     @TestFactory
     Stream<DynamicTest> everyRandomSpreadSetMatchesTheGame() {
-        JsonObject sets = PLACEMENTS.getAsJsonObject("sets");
-        int chunkRadius = PLACEMENTS.get("chunk_radius").getAsInt();
+        JsonObject sets = placements.getAsJsonObject("sets");
+        int chunkRadius = placements.get("chunk_radius").getAsInt();
         assertEquals(
-            DATA.structureSets().stream().filter(s -> s.placement() instanceof RandomSpreadPlacement).count(),
+            data.structureSets().stream().filter(s -> s.placement() instanceof RandomSpreadPlacement).count(),
             sets.size(),
             "the fixture should cover every random-spread set");
         return sets.entrySet().stream().map(entry -> DynamicTest.dynamicTest(entry.getKey(), () -> {
-            StructureSet set = DATA.structureSet(entry.getKey()).orElseThrow();
+            StructureSet set = data.structureSet(entry.getKey()).orElseThrow();
             RandomSpreadPlacement placement = (RandomSpreadPlacement) set.placement();
             for (Map.Entry<String, JsonElement> bySeed : entry.getValue().getAsJsonObject().getAsJsonObject("seeds").entrySet()) {
                 long seed = Long.parseLong(bySeed.getKey());
-                StructureLocator locator = new StructureLocator(DATA, seed);
+                StructureLocator locator = new StructureLocator(data, seed);
                 JsonArray rows = bySeed.getValue().getAsJsonArray();
                 if (placement.spacing() == 1) {
                     assertEveryChunkMatches(set, locator, rows, chunkRadius);
@@ -85,17 +94,17 @@ class PlacementFixtureTest {
     Stream<DynamicTest> candidatesInAnAreaAreExactlyTheStructureChunks() {
         // Cross-check the area search against the per-region fixture rows: within the fixture's regions,
         // candidates() must return exactly the chunks the game marked as structure chunks.
-        int radius = PLACEMENTS.get("region_radius").getAsInt();
+        int radius = placements.get("region_radius").getAsInt();
         List<DynamicTest> tests = new ArrayList<>();
-        for (Map.Entry<String, JsonElement> entry : PLACEMENTS.getAsJsonObject("sets").entrySet()) {
-            StructureSet set = DATA.structureSet(entry.getKey()).orElseThrow();
+        for (Map.Entry<String, JsonElement> entry : placements.getAsJsonObject("sets").entrySet()) {
+            StructureSet set = data.structureSet(entry.getKey()).orElseThrow();
             RandomSpreadPlacement placement = (RandomSpreadPlacement) set.placement();
             if (placement.spacing() == 1) {
                 continue;
             }
             tests.add(DynamicTest.dynamicTest(entry.getKey(), () -> {
                 for (Map.Entry<String, JsonElement> bySeed : entry.getValue().getAsJsonObject().getAsJsonObject("seeds").entrySet()) {
-                    StructureLocator locator = new StructureLocator(DATA, Long.parseLong(bySeed.getKey()));
+                    StructureLocator locator = new StructureLocator(data, Long.parseLong(bySeed.getKey()));
                     Set<ChunkPos> expected = new java.util.HashSet<>();
                     for (JsonElement element : bySeed.getValue().getAsJsonArray()) {
                         JsonArray row = element.getAsJsonArray();

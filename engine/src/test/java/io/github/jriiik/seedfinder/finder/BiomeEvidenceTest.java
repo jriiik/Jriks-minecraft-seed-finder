@@ -13,15 +13,19 @@ import java.util.List;
 import java.util.OptionalDouble;
 import java.util.OptionalLong;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedClass;
+import org.junit.jupiter.params.provider.MethodSource;
 
 /**
  * The biome evidence rule: when biomes prove a seed, and a guard that its estimate of how often wrong seeds fit is
  * not below what really happens. Biomes of a world are made with the engine's own biome code, which is checked
- * against the game in {@code OverworldBiomesTest}.
+ * against the game in {@code OverworldBiomesTest}. Runs for every supported version: their biomes differ (new
+ * biomes in 26.x, double arithmetic and another search tree in 1.21.x).
  */
+@ParameterizedClass
+@MethodSource("io.github.jriiik.seedfinder.Fixtures#versions")
 class BiomeEvidenceTest {
 
-    private static final MinecraftVersion VERSION = MinecraftVersion.V26_3;
     private static final int THREADS = 4;
     private static final long MASK = 0xFFFF_FFFF_FFFFL;
 
@@ -30,9 +34,21 @@ class BiomeEvidenceTest {
     /** A seed nobody would pick at random: not one of its structure seed's likely seeds. */
     private static final long ARBITRARY = 0x1234_0000_0000_0000L | (LIKELY & MASK);
 
-    /** The stored biomes of every 4 x 4 cell at height y of the chunks within a radius around a block. */
+    private final MinecraftVersion version;
+
+    BiomeEvidenceTest(MinecraftVersion version) {
+        this.version = version;
+    }
+
+    /** {@link #area(MinecraftVersion, long, OverworldBiomes.Preset, int, int, int, int)} in a 26.3 world. */
     static List<BiomeObservation> area(long seed, OverworldBiomes.Preset preset, int blockX, int blockZ, int radiusChunks, int y) {
-        OverworldBiomes biomes = OverworldBiomes.of(VERSION, preset);
+        return area(MinecraftVersion.V26_3, seed, preset, blockX, blockZ, radiusChunks, y);
+    }
+
+    /** The stored biomes of every 4 x 4 cell at height y of the chunks within a radius around a block. */
+    static List<BiomeObservation> area(MinecraftVersion version, long seed, OverworldBiomes.Preset preset, int blockX, int blockZ, int radiusChunks,
+                                       int y) {
+        OverworldBiomes biomes = OverworldBiomes.of(version, preset);
         OverworldBiomes.Sampler sampler = biomes.newSampler().seed(seed);
         List<BiomeObservation> notes = new ArrayList<>();
         for (int dx = -radiusChunks; dx <= radiusChunks; dx++) {
@@ -55,15 +71,15 @@ class BiomeEvidenceTest {
         return notes;
     }
 
-    private static BiomeEvidence evidence(List<BiomeObservation> notes) {
-        return new BiomeEvidence(VERSION, notes, OptionalLong.empty());
+    private BiomeEvidence evidence(List<BiomeObservation> notes) {
+        return new BiomeEvidence(version, notes, OptionalLong.empty());
     }
 
     @Test
     void oneLoadedAreaProvesALikelySeed() {
         List<Long> likely = WorldSeedSearch.likelySeeds(LIKELY & MASK);
         assertTrue(likely.contains(LIKELY));
-        BiomeEvidence evidence = evidence(area(LIKELY, OverworldBiomes.Preset.NORMAL, 100, -300, 6, 64));
+        BiomeEvidence evidence = evidence(area(version, LIKELY, OverworldBiomes.Preset.NORMAL, 100, -300, 6, 64));
         BiomeEvidence.Decision decision = evidence.search(List.of(LIKELY & MASK), likely, THREADS, () -> false, null);
         assertEquals(List.of(LIKELY), decision.fitting());
         assertTrue(decision.likely());
@@ -73,7 +89,7 @@ class BiomeEvidenceTest {
 
     @Test
     void oneAreaNeverProvesASeedAmongAllCandidates() {
-        BiomeEvidence evidence = evidence(area(ARBITRARY, OverworldBiomes.Preset.NORMAL, 100, -300, 6, 64));
+        BiomeEvidence evidence = evidence(area(version, ARBITRARY, OverworldBiomes.Preset.NORMAL, 100, -300, 6, 64));
         BiomeEvidence.Decision decision = evidence.search(List.of(ARBITRARY & MASK), WorldSeedSearch.likelySeeds(ARBITRARY & MASK), THREADS,
             () -> false, null);
         assertEquals(List.of(ARBITRARY), decision.fitting());
@@ -84,14 +100,14 @@ class BiomeEvidenceTest {
 
     @Test
     void twoFarAreasProveAnySeedButNearOnesCountOnce() {
-        List<BiomeObservation> near = new ArrayList<>(area(ARBITRARY, OverworldBiomes.Preset.NORMAL, 100, -300, 4, 64));
-        near.addAll(area(ARBITRARY, OverworldBiomes.Preset.NORMAL, 1600, -300, 4, 64));
+        List<BiomeObservation> near = new ArrayList<>(area(version, ARBITRARY, OverworldBiomes.Preset.NORMAL, 100, -300, 4, 64));
+        near.addAll(area(version, ARBITRARY, OverworldBiomes.Preset.NORMAL, 1600, -300, 4, 64));
         BiomeEvidence nearEvidence = evidence(near);
         assertEquals(2, nearEvidence.places());
         assertEquals(1, nearEvidence.groups(OverworldBiomes.Preset.NORMAL).size());
 
-        List<BiomeObservation> far = new ArrayList<>(area(ARBITRARY, OverworldBiomes.Preset.NORMAL, 100, -300, 4, 64));
-        far.addAll(area(ARBITRARY, OverworldBiomes.Preset.NORMAL, 100 + 4400, -300, 4, 64));
+        List<BiomeObservation> far = new ArrayList<>(area(version, ARBITRARY, OverworldBiomes.Preset.NORMAL, 100, -300, 4, 64));
+        far.addAll(area(version, ARBITRARY, OverworldBiomes.Preset.NORMAL, 100 + 4400, -300, 4, 64));
         BiomeEvidence farEvidence = evidence(far);
         assertEquals(2, farEvidence.groups(OverworldBiomes.Preset.NORMAL).size());
         // large-biome worlds need their groups much farther apart
@@ -103,8 +119,8 @@ class BiomeEvidenceTest {
 
     @Test
     void biomesOfAnotherWorldProveNothing() {
-        List<BiomeObservation> notes = new ArrayList<>(area(ARBITRARY, OverworldBiomes.Preset.NORMAL, 100, -300, 4, 64));
-        notes.addAll(area(ARBITRARY, OverworldBiomes.Preset.NORMAL, 100 + 4400, -300, 4, 64));
+        List<BiomeObservation> notes = new ArrayList<>(area(version, ARBITRARY, OverworldBiomes.Preset.NORMAL, 100, -300, 4, 64));
+        notes.addAll(area(version, ARBITRARY, OverworldBiomes.Preset.NORMAL, 100 + 4400, -300, 4, 64));
         long other = 987654321987L;
         BiomeEvidence.Decision decision = evidence(notes).search(List.of(other), WorldSeedSearch.likelySeeds(other), THREADS, () -> false, null);
         assertFalse(decision.proven());
@@ -117,7 +133,7 @@ class BiomeEvidenceTest {
         // a place with a few biomes (large-biome areas are often all one biome, which fits many seeds)
         List<BiomeObservation> notes = List.of();
         for (int x = -2000; notes.stream().map(BiomeObservation::biome).distinct().count() < 3; x += 1000) {
-            notes = area(seed, OverworldBiomes.Preset.LARGE_BIOMES, x, 700, 6, 64);
+            notes = area(version, seed, OverworldBiomes.Preset.LARGE_BIOMES, x, 700, 6, 64);
         }
         BiomeEvidence evidence = evidence(notes);
         assertFalse(evidence.fits(seed, OverworldBiomes.Preset.NORMAL));
@@ -129,7 +145,7 @@ class BiomeEvidenceTest {
 
     @Test
     void f3NotesFitWithAndWithoutTheHashedSeed() {
-        OverworldBiomes biomes = OverworldBiomes.of(VERSION, OverworldBiomes.Preset.NORMAL);
+        OverworldBiomes biomes = OverworldBiomes.of(version, OverworldBiomes.Preset.NORMAL);
         OverworldBiomes.Sampler sampler = biomes.newSampler().seed(ARBITRARY);
         long hashed = Seeds.hashedSeed(ARBITRARY);
         List<BiomeObservation> notes = new ArrayList<>();
@@ -140,8 +156,8 @@ class BiomeEvidenceTest {
             int[] quart = BiomeZoom.quart(hashed, x, y, z);
             notes.add(new BiomeObservation(biomes.parameters().biomes().get(sampler.biome(quart[0], quart[1], quart[2])), x, y, z, false));
         }
-        assertTrue(new BiomeEvidence(VERSION, notes, OptionalLong.of(hashed)).fits(ARBITRARY, OverworldBiomes.Preset.NORMAL));
-        assertTrue(new BiomeEvidence(VERSION, notes, OptionalLong.empty()).fits(ARBITRARY, OverworldBiomes.Preset.NORMAL));
+        assertTrue(new BiomeEvidence(version, notes, OptionalLong.of(hashed)).fits(ARBITRARY, OverworldBiomes.Preset.NORMAL));
+        assertTrue(new BiomeEvidence(version, notes, OptionalLong.empty()).fits(ARBITRARY, OverworldBiomes.Preset.NORMAL));
     }
 
     @Test
@@ -152,7 +168,7 @@ class BiomeEvidenceTest {
         assertEquals(1, evidence.problems().size());
 
         // the notes left out are not checked either: a misspelled name doesn't spoil the others
-        List<BiomeObservation> notes = new ArrayList<>(area(LIKELY, OverworldBiomes.Preset.NORMAL, 100, -300, 6, 64));
+        List<BiomeObservation> notes = new ArrayList<>(area(version, LIKELY, OverworldBiomes.Preset.NORMAL, 100, -300, 6, 64));
         notes.add(new BiomeObservation("dark forrest", 120, 64, -35, false));
         BiomeEvidence withTypo = evidence(notes);
         assertEquals(1, withTypo.problems().size());
@@ -165,7 +181,7 @@ class BiomeEvidenceTest {
 
     @Test
     void storedCellsAreThinnedToBordersAndOnePerChunk() {
-        List<BiomeObservation> notes = area(LIKELY, OverworldBiomes.Preset.NORMAL, 100, -300, 6, 64);
+        List<BiomeObservation> notes = area(version, LIKELY, OverworldBiomes.Preset.NORMAL, 100, -300, 6, 64);
         BiomeEvidence evidence = evidence(notes);
         assertTrue(evidence.notes().size() < notes.size());
         assertEquals(notes.stream().map(BiomeObservation::biome).distinct().count(),
@@ -175,7 +191,7 @@ class BiomeEvidenceTest {
     @Test
     void theCountedPlacesAreChosenFromTheNotesAlone() {
         // a place with one biome noted first and a richer one 1,500 blocks away: the richer one counts
-        List<BiomeObservation> rich = area(ARBITRARY, OverworldBiomes.Preset.NORMAL, 100, -300, 4, 64);
+        List<BiomeObservation> rich = area(version, ARBITRARY, OverworldBiomes.Preset.NORMAL, 100, -300, 4, 64);
         assertTrue(rich.stream().map(BiomeObservation::biome).distinct().count() >= 2);
         List<BiomeObservation> notes = new ArrayList<>(List.of(new BiomeObservation(rich.get(0).biome(), 1600, 64, -300, false)));
         notes.addAll(rich);
@@ -184,16 +200,16 @@ class BiomeEvidenceTest {
         assertEquals(List.of(1), evidence.groups(OverworldBiomes.Preset.NORMAL));
 
         // trips from spawn in three directions: the three far places count, though each is near the first
-        List<BiomeObservation> star = new ArrayList<>(area(ARBITRARY, OverworldBiomes.Preset.NORMAL, 0, 0, 1, 64));
-        star.addAll(area(ARBITRARY, OverworldBiomes.Preset.NORMAL, 3950, 0, 1, 64));
-        star.addAll(area(ARBITRARY, OverworldBiomes.Preset.NORMAL, -3950, 0, 1, 64));
-        star.addAll(area(ARBITRARY, OverworldBiomes.Preset.NORMAL, 0, 3950, 1, 64));
+        List<BiomeObservation> star = new ArrayList<>(area(version, ARBITRARY, OverworldBiomes.Preset.NORMAL, 0, 0, 1, 64));
+        star.addAll(area(version, ARBITRARY, OverworldBiomes.Preset.NORMAL, 3950, 0, 1, 64));
+        star.addAll(area(version, ARBITRARY, OverworldBiomes.Preset.NORMAL, -3950, 0, 1, 64));
+        star.addAll(area(version, ARBITRARY, OverworldBiomes.Preset.NORMAL, 0, 3950, 1, 64));
         assertEquals(3, evidence(star).groups(OverworldBiomes.Preset.NORMAL).size());
     }
 
     @Test
     void aTypedSeedIsConfirmedByOneArea() {
-        BiomeEvidence evidence = evidence(area(ARBITRARY, OverworldBiomes.Preset.NORMAL, 100, -300, 6, 64));
+        BiomeEvidence evidence = evidence(area(version, ARBITRARY, OverworldBiomes.Preset.NORMAL, 100, -300, 6, 64));
         OptionalDouble chance = evidence.falseFitChance(ARBITRARY, THREADS, () -> false, null);
         assertTrue(chance.isPresent() && chance.getAsDouble() <= BiomeEvidence.MAX_FALSE_FIT_CHANCE, chance.toString());
         assertTrue(evidence.falseFitChance(ARBITRARY ^ (1L << 50), THREADS, () -> false, null).isEmpty());
@@ -204,9 +220,11 @@ class BiomeEvidenceTest {
      * the spacing apart, the number of wrong candidates that really fit all groups must not exceed the rule's
      * estimate (LIFT^(G-1) x product of (k + 3) / M, times M), for each preset on its own; and the worlds must expect
      * enough wrong fits for the comparison to mean something. At the spacing, groups fit together about as often as
-     * independent ones (measured 1.00 to 1.04 times here; at most 1.9 in single worlds of a wider measurement), so more
-     * than {@link #MAX_GUARD_LIFT} times means the spacing no longer works (large-biome places only 4,096 apart give
-     * 1.76 here). Re-measure if the grouping, spacing or LIFT change.
+     * independent ones (measured 1.00 to 1.04 times here for 26.3 and for 1.21.11; at most 1.9 in single worlds of a
+     * wider measurement of 26.3), so more than {@link #MAX_GUARD_LIFT} times means the spacing no longer works
+     * (large-biome places only 4,096 apart give 1.76 here). Measured: 26.3 real 916 / 961 / 885 wrong fits (normal /
+     * large biomes / amplified) against estimates 1780 / 1926 / 1710; 1.21.11 real 948 / 1025 / 922 against 1845 /
+     * 2042 / 1783. Re-measure if the grouping, spacing or LIFT change.
      */
     @Test
     void theFalseFitEstimateIsNotBelowReality() {
@@ -219,8 +237,8 @@ class BiomeEvidenceTest {
             double independent = 0;
             int spacing = BiomeEvidence.groupSpacing(preset);
             for (long seed : seeds) {
-                List<BiomeObservation> notes = new ArrayList<>(area(seed, preset, 40, 40, 0, 64));
-                notes.addAll(area(seed, preset, 40 + spacing + 16, 40, 0, 64));
+                List<BiomeObservation> notes = new ArrayList<>(area(version, seed, preset, 40, 40, 0, 64));
+                notes.addAll(area(version, seed, preset, 40 + spacing + 16, 40, 0, 64));
                 BiomeEvidence evidence = evidence(notes);
                 assertEquals(2, evidence.groups(preset).size());
                 BiomeEvidence.Scan scan = evidence.scan(seed & MASK, preset, THREADS, () -> false, null);
@@ -242,8 +260,7 @@ class BiomeEvidenceTest {
             assertTrue(real <= estimated, "wrong candidates fitting both groups: " + report);
             assertTrue(real <= MAX_GUARD_LIFT * independent, "groups at the spacing fit together too often: " + report);
             assertTrue(estimated >= MIN_GUARD_ESTIMATE, "too few expected wrong fits for the guard to tell anything: " + report);
-        }
-    }
+        }    }
 
     /** The guard's worlds must expect at least this many wrong fits per preset, or it couldn't catch an estimate too low. */
     private static final double MIN_GUARD_ESTIMATE = 500;
