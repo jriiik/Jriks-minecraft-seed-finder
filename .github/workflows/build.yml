@@ -22,6 +22,8 @@ jobs:
 
       - uses: gradle/actions/setup-gradle@v5
 
+      # Builds the command-line app and the mod for every Minecraft version, and runs all their tests (the no-network
+      # guard scans each version's mod jar).
       - name: Build and test
         run: ./gradlew build
 
@@ -32,21 +34,33 @@ jobs:
           path: cli/build/libs/seedfinder.jar
           if-no-files-found: error
 
-      - name: Upload the Minecraft mod
+      - name: Upload the Minecraft mod for 26.3
         uses: actions/upload-artifact@v5
         with:
-          name: jriks-seed-finder-mod
-          path: |
-            mod/build/libs/jriks-seed-finder-mod-*.jar
-            !mod/build/libs/*-sources.jar
-            !mod/build/libs/*-gametest.jar
+          name: jriks-seed-finder-mod-mc26.3
+          path: mod/versions/26.3/build/libs/jriks-seed-finder-mod-*-mc26.3.jar
           if-no-files-found: error
 
-  # Starts the real Minecraft 26.3 client on a virtual display and uses the mod like a player: switch collecting on,
-  # /locate a few structures, and check that the mod finds the seed and that nothing is noted while it is off.
+      - name: Upload the Minecraft mod for 1.21.11
+        uses: actions/upload-artifact@v5
+        with:
+          name: jriks-seed-finder-mod-mc1.21.11
+          path: mod/versions/1.21.11/build/libs/jriks-seed-finder-mod-*-mc1.21.11.jar
+          if-no-files-found: error
+
+  # Starts the real Minecraft client of each version on a virtual display and uses the mod like a player: switch
+  # collecting on, /locate a few structures, and check that the mod finds the seed and that nothing is noted while it
+  # is off.
   in-game-test:
+    name: in-game-test (Minecraft ${{ matrix.minecraft }})
+    strategy:
+      fail-fast: false
+      matrix:
+        minecraft: ["26.3", "1.21.11"]
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 45
+    env:
+      MINECRAFT: ${{ matrix.minecraft }}
     steps:
       - uses: actions/checkout@v5
 
@@ -61,15 +75,15 @@ jobs:
         uses: actions/cache@v4
         with:
           path: ~/.gradle/caches/fabric-loom/assets
-          key: minecraft-assets-26.3
+          key: minecraft-assets-${{ matrix.minecraft }}
 
       - name: Run the in-game test
-        run: xvfb-run -a -s "-screen 0 1280x800x24" ./gradlew :mod:runProductionClientGameTest
+        run: xvfb-run -a -s "-screen 0 1280x800x24" ./gradlew ":mod-$MINECRAFT:runProductionClientGameTest"
 
       - name: Upload screenshots
         if: always()
         uses: actions/upload-artifact@v5
         with:
-          name: in-game-test-screenshots
-          path: mod/build/run/productionClientGameTest/screenshots/
+          name: in-game-test-screenshots-mc${{ matrix.minecraft }}
+          path: mod/versions/${{ matrix.minecraft }}/build/run/productionClientGameTest/screenshots/
           if-no-files-found: ignore
