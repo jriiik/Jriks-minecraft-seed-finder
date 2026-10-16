@@ -96,6 +96,12 @@ final class WorldSession {
     private OptionalLong hashedSeed = OptionalLong.empty();
     private final List<NotedStructure> structures = new ArrayList<>();
     /**
+     * Structures saved for this world by the mod for another Minecraft version whose set the running version doesn't
+     * have (abandoned camps noted with 26.3, read with 1.21.11): kept and saved again, so that version still has them,
+     * but left out of the notes and the searches here, which would refuse them.
+     */
+    private final List<NotedStructure> otherVersions = new ArrayList<>();
+    /**
      * Structures automatic recognition must not note again: removed by the player, or recognized starts that
      * contradicted another note in the same placement region.
      */
@@ -573,6 +579,7 @@ final class WorldSession {
      */
     void clearAll() {
         structures.clear();
+        otherVersions.clear();
         disagreements.clear();
         typedSeedCheck = null;
         bedrock.clear();
@@ -636,6 +643,13 @@ final class WorldSession {
         for (NotedStructure structure : structures) {
             lines.add("# " + structure.source());
             lines.add(structure.set() + " " + structure.x() + " " + structure.z());
+        }
+        if (!otherVersions.isEmpty()) {
+            lines.add("# Noted while the world was played with another Minecraft version; Minecraft " + minecraft.displayName()
+                + " doesn't have these, so they are left out:");
+            for (NotedStructure structure : otherVersions) {
+                lines.add("# " + structure.set() + " " + structure.x() + " " + structure.z());
+            }
         }
         for (ScannedChunk chunk : bedrock) {
             lines.add("");
@@ -706,7 +720,9 @@ final class WorldSession {
         json.addProperty("typed_seed_layout", TypedSeedSearch.LAYOUT);
         json.addProperty("typed_seed_pieces", typedSeedPieces);
         typedSeed.ifPresent(value -> json.addProperty("typed_seed", Long.toString(value)));
-        json.add("structures", structuresJson(structures));
+        List<NotedStructure> allStructures = new ArrayList<>(structures);
+        allStructures.addAll(otherVersions);
+        json.add("structures", structuresJson(allStructures));
         json.add("removed_structures", structuresJson(removed));
         JsonArray bedrockArray = new JsonArray();
         for (ScannedChunk chunk : bedrock) {
@@ -886,7 +902,15 @@ final class WorldSession {
                 session.hashedSeed = OptionalLong.of(Long.parseLong(json.get("hashed_seed").getAsString()));
             }
             readTypedSeedSearch(json, session);
-            readStructures(json, "structures", session.structures);
+            List<NotedStructure> saved = new ArrayList<>();
+            readStructures(json, "structures", saved);
+            for (NotedStructure structure : saved) {
+                (minecraft.data().findStructureSet(structure.set()).isPresent() ? session.structures : session.otherVersions).add(structure);
+            }
+            if (!session.otherVersions.isEmpty()) {
+                SeedFinderClient.LOG.info("Minecraft {} doesn't have {} of the structures noted for {} (noted with another Minecraft version):"
+                    + " kept, but left out of the search", minecraft.displayName(), session.otherVersions.size(), world);
+            }
             readStructures(json, "removed_structures", session.removed);
             for (JsonElement element : json.getAsJsonArray("bedrock")) {
                 JsonObject c = element.getAsJsonObject();

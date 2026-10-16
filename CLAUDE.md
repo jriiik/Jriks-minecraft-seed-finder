@@ -234,7 +234,9 @@ the client already received.
   of it first and whatever is left at the end, one tracker per dimension; the rigid recognizers are made in the
   background with the layouts; ruined portals in the nether only when the player switches `netherPortals` on, since
   nether chunks made by 1.16 to 1.18.1 have them on a 25/10 grid) and notes recognized starts; `WorldSession`
-  keys notes by address + hashed seed (`WorldIdentity.key`), checks recognized starts against all notes of their
+  keys notes by address + hashed seed (`WorldIdentity.key`; the same key in every version, and jars of two versions
+  may share the config folder, so a saved structure whose set the running version lacks is kept aside in
+  `otherVersions`: saved again, a comment in the notes, never searched), checks recognized starts against all notes of their
   placement region, and persists starts not to note again (`removed_structures`: removed by the player, placed
   with /place (source `PLACED`), or contradicted; kept by "Remove all notes"). The answers to `/place structure`
   (`PlacedStructureMessage`) and `/place template` (`PlacedTemplateMessage`: every pose's start chunk, rigid

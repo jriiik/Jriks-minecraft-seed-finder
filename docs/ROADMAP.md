@@ -381,7 +381,10 @@ once per version from one shared source.
   in-game test ran on.
 - *Known limit:* notes are kept per world, not per version. A world played in 1.21.11 and then in 26.3 keeps its
   notes; biomes noted from chunks made by 1.21.11 can then miss in 26.3 (plains where 26.3 has dappled forest), a
-  miss, not a wrong answer. Structures and bedrock are the same in both versions and are unaffected.
+  miss, not a wrong answer. Structures and bedrock are the same in both versions and are unaffected. The other way
+  round (the same world opened with the 1.21.11 jar after the 26.3 jar, from a shared game folder), abandoned camps
+  the 26.3 jar noted are kept aside: saved again, so 26.3 still has them, but left out of 1.21.11's notes and
+  searches, which would refuse them.
 
 ## Things that can't work
 

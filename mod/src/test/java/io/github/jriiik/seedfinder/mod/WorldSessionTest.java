@@ -206,6 +206,38 @@ class WorldSessionTest {
         }
     }
 
+    /**
+     * The same world opened with both mod jars (a shared game folder): an abandoned camp the 26.3 jar noted must not
+     * break the 1.21.11 jar's searches, which would refuse it; it is kept aside and is back under 26.3.
+     */
+    @Test
+    void structuresAnotherVersionNotedAreKeptAsideNotSearched(@TempDir Path folder) throws IOException {
+        WorldSession newer = new WorldSession(WORLD, MinecraftVersion.V26_3);
+        newer.addStructure(new WorldSession.NotedStructure("abandoned_camp", 2752, 2752, StructureRecognition.SOURCE));
+        newer.addStructure(new WorldSession.NotedStructure("villages", 50, 70, "from /locate"));
+        newer.save(folder);
+
+        WorldSession older = WorldSession.load(folder, WORLD, MinecraftVersion.V1_21_11);
+        assertEquals(List.of(new WorldSession.NotedStructure("villages", 50, 70, "from /locate")), older.structures());
+        assertEquals(List.of("villages 50 70"), older.structureLines());
+        List<String> notes = older.notesLines();
+        assertTrue(notes.contains("# abandoned_camp 2752 2752") && !notes.contains("abandoned_camp 2752 2752"), notes.toString());
+        ObservationReader.Observations read = ObservationReader.read(MinecraftVersion.V1_21_11.data(), notes);
+        assertEquals(1, read.structures().size());
+        older.addStructure(new WorldSession.NotedStructure("villages", 900, 900, "from /locate"));
+        older.save(folder);
+        assertEquals(notes.size() + 2, Files.readAllLines(folder.resolve(WorldSession.fileName(WORLD) + ".txt"), StandardCharsets.UTF_8).size());
+
+        // Back in 26.3 the camp is a note again, and nothing was lost.
+        WorldSession again = WorldSession.load(folder, WORLD, MinecraftVersion.V26_3);
+        assertEquals(List.of("villages 50 70", "villages 900 900", "abandoned_camp 2752 2752"), again.structureLines());
+        assertEquals(3, ObservationReader.read(MinecraftVersion.V26_3.data(), again.notesLines()).structures().size());
+        // "Remove all notes" removes it too.
+        older.clearAll();
+        older.save(folder);
+        assertEquals(List.of(), WorldSession.load(folder, WORLD, MinecraftVersion.V26_3).structures());
+    }
+
     @Test
     void theTypedSeedSearchIsSavedAndContinuedLater(@TempDir Path folder) throws IOException {
         WorldSession session = new WorldSession(WORLD, MC);
