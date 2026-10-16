@@ -328,7 +328,9 @@ once per version from one shared source.
 
 **What is the same, and what differs.** The oracle ran both games, and their outputs were compared.
 
-- *The same:* where structures go (all 20 structure sets 1.21.11 has; 26.3 adds abandoned camps), the random number
+- *The same:* where structures go (the 19 sets of 1.21.11 the finder uses; 26.3 adds abandoned camps; strongholds,
+  the twentieth set, follow the biomes, so 27 of the oracle's 384 strongholds sit elsewhere; the finder doesn't use
+  strongholds), the random number
   generators, how seeds come about (the `nextLong()` shortcut, text seeds, the hashed seed), the bedrock rules and
   the bedrock of real chunks, how rigid structures are placed, and the F3 biome zoom. A test fails if the data the
   two versions share ever differs, so tests whose data is equal in both (the bedrock false-fit rates, the structure
@@ -342,7 +344,8 @@ once per version from one shared source.
     the engine has an evaluator for each, picked by the version.
   - The biome search tree has 6 children per node in 1.21.11 and 19 in 26.3. The tree's shape decides ties: with 19
     on 1.21.11 about 1 cell in 5,000 got the wrong biome, with float instead of double about 2 in a million. The
-    fixtures catch both.
+    fixtures catch both: the search fixture the tree, the noise and climate fixtures (compared bit for bit) the
+    arithmetic.
   - Checked for each version: noises and climate values, the search with its ties, whole generated chunks and the
     zoom, for the three presets; and 1,000,000 random cells per version against the real games, with no difference.
     The biome proof's guard holds for 1.21.11 (wrong seeds that fit: 948, 1,025 and 922 for the three presets,
@@ -355,7 +358,8 @@ once per version from one shared source.
   layers fills with lava, and the roll skips fluids), as unknown in every version. That is the first deliberate
   change for 26.3: slightly fewer known blocks (the in-game test still notes about 3,700). Lava in the nether still
   counts as "not bedrock": there the terrain step only leaves netherrack in the bedrock layers. For hand-written
-  1.21.11 notes, the README says to mark such a column `?`.
+  notes, the README says to mark such a column `?` (lava in any version, the vein blocks in 1.21.11): later
+  measurements found lava the terrain step left at a bedrock spot in both versions, about as rarely as the vein case.
 
 **How it is built.**
 

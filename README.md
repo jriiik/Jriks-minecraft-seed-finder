@@ -34,8 +34,9 @@ such as where villages, temples and other structures are. Built from scratch, fo
 
 ## Minecraft versions
 
-The finder works for worlds of Minecraft Java Edition **26.3** and **1.21.11**. Structures, bedrock and the seeds
-Minecraft picks work the same in both; biomes are worked out exactly the way each version does it. For a player the
+The finder works for worlds of Minecraft Java Edition **26.3** and **1.21.11**. The structures the finder uses,
+bedrock and the seeds Minecraft picks work the same in both (strongholds don't: they follow the biomes, and the finder
+doesn't use them); biomes are worked out exactly the way each version does it. For a player the
 differences are small: 1.21.11 has no abandoned camps, and it lacks the two biomes 26.3 added (dappled forest and
 sulfur caves).
 
@@ -142,9 +143,11 @@ depends on the whole seed. With bedrock notes, the finder checks every one of th
    `0` for y=-60, `1` for -61, `2` for -62, `3` for -63, `4` for -64. F3 shows the height of the block you look at
    ("Targeted Block"). Write one row of 16 digits per z, from north to south, each row from west to east, below a line
    with the x and z of the north-west column (the corner with the lowest x and z). Use `?` for columns you skipped.
-   In a 1.21.11 world, also write `?` for a column where you mined tuff, a raw iron block or deepslate iron ore at
-   y=-60 (part of an iron ore vein): 1.21.11 never rolls for bedrock where such a block lies. It is very rare (once
-   in about 1,600 chunks when measured).
+   Also write `?` for a column where you met lava in the bedrock layers (y=-63 to -60), in any version: the game
+   skips lava when it places bedrock, so now and then lava sits where bedrock would be. In a 1.21.11 world, do the
+   same for a column where you mined tuff, a raw iron block or deepslate iron ore at y=-60 (part of an iron ore
+   vein): 1.21.11 never rolls for bedrock where such a block lies. Both cases are very rare (each about once in a few
+   thousand chunks when measured), and the mod leaves such columns out by itself.
 
    ```
    # my-bedrock.txt

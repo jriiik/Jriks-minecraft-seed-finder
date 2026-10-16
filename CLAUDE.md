@@ -41,8 +41,11 @@ the client already received.
     from `biome_parameters.json`; the game's RTree built exactly as the game builds it, with the version's children
     per node, because the tree and the last-result shortcut decide ties), `OverworldBiomes` (per version and preset;
     exhaustive switches on the version pick the evaluator and `treeChildrenPerNode`: 1.21.11 classic double + 6,
-    26.3 float + 19; with 19 on 1.21.11 ~1 cell in 5,000 is wrong, float for double ~2 per million, and the 1.21.11
-    search fixture catches both (1642/1884 with 19); a `Sampler` is reused across seeds; `couldBe` = the biome is
+    26.3 float + 19; with 19 on 1.21.11 ~1 cell in 5,000 is wrong, which the search fixture catches (its rows are
+    ready-made climate targets, so it checks only the tree: 242 of 1884 lookups differ with 19); float for double ~2
+    per million, which only the noise and climate fixtures catch (`noisesMatchTheGame` and
+    `climateMatchesTheGameBitForBit` compare 1.21.11's doubles bit for bit; each parser also refuses the other
+    version's format), so never loosen those comparisons; a `Sampler` is reused across seeds; `couldBe` = the biome is
     among the closest), `BiomeZoom` (F3's block biome, picked among 8 cells with the hashed seed; same in both).
   - `structure/`: placements, `StructureLocator` (placement + frequency + exclusion zones; no biome checks yet),
     `RigidStructures` (from version data `rigid_structures.json`: how each rigid structure's main piece is placed).
@@ -50,7 +53,9 @@ the client already received.
     `supportedNames()`), data loaded from `src/main/resources/io/github/jriiik/seedfinder/versions/<v>/` (7 files per
     version, the same formats except `climate.json`). 1.21.11 vs 26.3: structure sets (the 20 shared ones, placements
     included), bedrock rules, `rigid_structures.json`, RNG, seeds and zoom are equal
-    (`VersionDataTest.sharedStructuresBedrockAndRigidStructuresAreTheSameInBothVersions`); 26.3 adds
+    (`VersionDataTest.sharedStructuresBedrockAndRigidStructuresAreTheSameInBothVersions`), but that is the placement
+    data: stronghold positions follow the biomes and differ (27 of the 384 in `strongholds.json`), so a stronghold
+    feature must be tested on each version's fixture; 26.3 adds
     `abandoned_camp` and the biomes `dappled_forest` (92 entries that are plains in 1.21.11) and `sulfur_caves`; the
     climate is computed differently (see `biome/`). Anything that assumes a structure exists must ask the version
     data.
