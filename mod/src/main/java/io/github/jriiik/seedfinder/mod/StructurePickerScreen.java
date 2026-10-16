@@ -33,9 +33,8 @@ final class StructurePickerScreen extends Screen {
         LinearLayout contents = LinearLayout.vertical().spacing(6);
         contents.addChild(new FittingMultiLineTextWidget(0, 0, 360, 40, Component.literal(
             "Stand in the chunk where the structure starts (F3+G shows chunk borders), then pick its type. The start chunk "
-                + "is hard to see, so use /locate if you may. Types the mod recognizes by itself (villages, outposts, trial "
-                + "chambers, ancient cities, trail ruins, camps, pyramids, jungle temples, swamp huts, igloos, shipwrecks, "
-                + "ocean ruins, ruined portals) are not listed."), font));
+                + "is hard to see, so use /locate if you may. Types the mod recognizes by itself ("
+                + StatusText.recognizedTypes(SeedFinderClient.data()) + ") are not listed."), font));
         LinearLayout buttons = LinearLayout.vertical().spacing(2);
         String dimension = minecraft.level == null ? "minecraft:overworld" : minecraft.level.dimension().identifier().toString();
         for (StructureSet set : usableSets(dimension)) {

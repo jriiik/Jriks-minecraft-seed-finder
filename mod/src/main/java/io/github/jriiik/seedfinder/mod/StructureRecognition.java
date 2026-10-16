@@ -38,7 +38,7 @@ import net.minecraft.world.level.chunk.status.ChunkStatus;
 
 /**
  * Recognizes structures from the blocks of loaded chunks and notes their start chunks: villages, pillager outposts,
- * trial chambers, ancient cities, trail ruins and camps by their start piece ({@link StartPieceRecognizer}), and
+ * trial chambers, ancient cities, trail ruins and (26.x) camps by their start piece ({@link StartPieceRecognizer}), and
  * desert pyramids, jungle temples, swamp huts, igloos, shipwrecks, ocean ruins and ruined portals as a whole
  * ({@link RigidRecognizer}, run chunk by chunk by a {@link RigidTracker}). Runs on the game's main thread in small
  * steps, so it never holds up a frame for long.

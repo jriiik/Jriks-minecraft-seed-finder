@@ -150,6 +150,11 @@ final class WorldSession {
         this.minecraft = minecraft;
     }
 
+    /** The Minecraft version the world is played with (the one this mod jar is for). */
+    MinecraftVersion minecraft() {
+        return minecraft;
+    }
+
     /** How many pieces of the typed-seed search are done (where it continues). */
     int typedSeedPieces() {
         return typedSeedPieces;
