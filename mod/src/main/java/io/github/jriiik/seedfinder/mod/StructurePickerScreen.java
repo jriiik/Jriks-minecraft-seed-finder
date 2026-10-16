@@ -72,7 +72,7 @@ final class StructurePickerScreen extends Screen {
 
     @Override
     public void onClose() {
-        minecraft.gui.setScreen(parent);
+        GameVersion.setScreen(minecraft, parent);
     }
 
     @Override

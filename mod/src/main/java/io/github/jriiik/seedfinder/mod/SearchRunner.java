@@ -83,7 +83,7 @@ final class SearchRunner {
 
     private void start(WorldSession session) {
         int version = session.version();
-        List<String> lines = session.notesLines();
+        List<String> lines = session.observationLines();
         OptionalLong typedSeed = session.typedSeed();
         boolean genuine = session.hashedSeedIsGenuine();
         String structureKey = session.world() + "\n" + String.join("\n", session.structureLines());

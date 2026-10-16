@@ -13,6 +13,7 @@ import io.github.jriiik.seedfinder.finder.BiomeText;
 import io.github.jriiik.seedfinder.finder.SeedCheck;
 import io.github.jriiik.seedfinder.finder.TypedSeedSearch;
 import io.github.jriiik.seedfinder.finder.WorldSeedSearch;
+import io.github.jriiik.seedfinder.version.MinecraftVersion;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
@@ -29,7 +30,8 @@ import java.util.OptionalLong;
  * the hashed seed, and the latest search result. Changed only on the game's main thread.
  *
  * <p>It is saved in the config folder as JSON (the mod's own memory) and as a notes file in the format the
- * command-line app reads ({@code seedfinder find --file <notes file>}).
+ * command-line app reads ({@code seedfinder find --file <notes file>}). The notes file starts with the Minecraft version
+ * the game runs ({@code minecraft 26.3}), so the app reads it with that version's data.
  */
 final class WorldSession {
 
@@ -80,6 +82,8 @@ final class WorldSession {
     private static final Gson GSON = new GsonBuilder().setPrettyPrinting().disableHtmlEscaping().create();
 
     private final String world;
+    /** The Minecraft version the game runs. */
+    private final MinecraftVersion minecraft;
     private boolean collecting;
     private boolean showStatus = true;
     /**
@@ -134,8 +138,9 @@ final class WorldSession {
     private int resultVersion = -1;
     private String resultError;
 
-    WorldSession(String world) {
+    WorldSession(String world, MinecraftVersion minecraft) {
         this.world = world;
+        this.minecraft = minecraft;
     }
 
     /** How many pieces of the typed-seed search are done (where it continues). */
@@ -612,8 +617,19 @@ final class WorldSession {
         return lines;
     }
 
-    /** Everything as a notes file the command-line app can read. */
+    /**
+     * Everything as a notes file the command-line app can read (and "Copy notes" copies): first the line that names the
+     * Minecraft version, then {@link #observationLines()}.
+     */
     List<String> notesLines() {
+        List<String> lines = new ArrayList<>();
+        lines.add("minecraft " + minecraft.displayName());
+        lines.addAll(observationLines());
+        return lines;
+    }
+
+    /** The notes without the version line: what the mod's own searches read (they use the running version's data). */
+    List<String> observationLines() {
         List<String> lines = new ArrayList<>();
         lines.add("# Jrik's Seed Finder notes for " + world);
         lines.add("# Written by the mod. The command-line app reads this file too: seedfinder find --file <this file>");
@@ -792,20 +808,20 @@ final class WorldSession {
      * Loads what was saved for this world, or starts empty (collecting switched off). Notes saved by earlier versions
      * of the mod under the address alone are picked up when their hashed seed is the same (or wasn't known).
      */
-    static WorldSession load(Path folder, String world, String identity, long hashedSeed) {
+    static WorldSession load(Path folder, String world, String identity, long hashedSeed, MinecraftVersion minecraft) {
         if (!Files.isRegularFile(folder.resolve(fileName(world) + ".json")) && Files.isRegularFile(folder.resolve(fileName(identity) + ".json"))) {
-            WorldSession earlier = load(folder, identity);
+            WorldSession earlier = load(folder, identity, minecraft);
             if (earlier.hashedSeed.isEmpty() || earlier.hashedSeed.getAsLong() == hashedSeed) {
-                WorldSession moved = load(folder, identity, world);
+                WorldSession moved = load(folder, identity, world, minecraft);
                 moved.version++;
                 return moved;
             }
         }
-        return load(folder, world);
+        return load(folder, world, minecraft);
     }
 
-    static WorldSession load(Path folder, String world) {
-        return load(folder, world, world);
+    static WorldSession load(Path folder, String world, MinecraftVersion minecraft) {
+        return load(folder, world, world, minecraft);
     }
 
     /**
@@ -861,8 +877,8 @@ final class WorldSession {
     }
 
     /** Reads the notes saved under {@code savedAs} into a session for {@code world}. */
-    private static WorldSession load(Path folder, String savedAs, String world) {
-        WorldSession session = new WorldSession(world);
+    private static WorldSession load(Path folder, String savedAs, String world, MinecraftVersion minecraft) {
+        WorldSession session = new WorldSession(world, minecraft);
         Path file = folder.resolve(fileName(savedAs) + ".json");
         if (!Files.isRegularFile(file)) {
             return session;
@@ -897,7 +913,7 @@ final class WorldSession {
             readBiomes(json, session);
         } catch (IOException | RuntimeException e) {
             SeedFinderClient.LOG.warn("Could not read {}, starting over for this world", file, e);
-            return new WorldSession(world);
+            return new WorldSession(world, minecraft);
         }
         session.version = 1;
         session.savedVersion = 1;

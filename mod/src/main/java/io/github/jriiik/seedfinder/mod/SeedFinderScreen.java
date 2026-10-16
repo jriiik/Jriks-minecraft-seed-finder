@@ -37,7 +37,7 @@ final class SeedFinderScreen extends Screen {
         LinearLayout row = LinearLayout.horizontal().spacing(6);
         collect = row.addChild(Button.builder(Component.empty(), button -> session.setCollecting(!session.collecting())).width(176).build());
         row.addChild(Button.builder(Component.translatable("gui.jriksseedfinder.add_structure"),
-            button -> minecraft.gui.setScreen(new StructurePickerScreen(this, session))).width(176).build());
+            button -> GameVersion.setScreen(minecraft, new StructurePickerScreen(this, session))).width(176).build());
         contents.addChild(row);
         netherPortals = contents.addChild(Button.builder(Component.empty(), button -> session.setNetherPortals(!session.netherPortals()))
             .tooltip(Tooltip.create(Component.translatable("gui.jriksseedfinder.nether_portals.tooltip"))).width(358).build());
@@ -51,7 +51,7 @@ final class SeedFinderScreen extends Screen {
         tools.addChild(Button.builder(Component.translatable("gui.jriksseedfinder.copy_notes"),
             button -> minecraft.keyboardHandler.setClipboard(String.join("\n", session.notesLines()))).width(114).build());
         tools.addChild(Button.builder(Component.translatable("gui.jriksseedfinder.remove_structure"),
-            button -> minecraft.gui.setScreen(new RemoveStructureScreen(this, session))).width(114).build());
+            button -> GameVersion.setScreen(minecraft, new RemoveStructureScreen(this, session))).width(114).build());
         LinearLayout bottom = footer.addChild(LinearLayout.horizontal().spacing(6));
         showStatus = bottom.addChild(Button.builder(Component.empty(), button -> session.setShowStatus(!session.showStatus())).width(176).build());
         bottom.addChild(Button.builder(Component.translatable("gui.jriksseedfinder.close"), button -> onClose()).width(176).build());

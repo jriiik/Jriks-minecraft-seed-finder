@@ -73,7 +73,7 @@ class StatusTextTest {
     @Test
     void aTypedSeedOnAServerIsShownOnlyAsTheNotesAllow() {
         SearchRunner runner = new SearchRunner(DATA);
-        WorldSession session = new WorldSession(SERVER);
+        WorldSession session = new WorldSession(SERVER, MinecraftVersion.V26_3);
         session.setCollecting(true);
         session.setHashedSeed(Seeds.hashedSeed(12345L));
         session.setTypedSeedSearch(new TypedSeedSearch.Outcome(OptionalLong.of(12345L), 0));
@@ -119,7 +119,7 @@ class StatusTextTest {
     @Test
     void aSeedProvedByTheStructureSearchComesFirst() {
         SearchRunner runner = new SearchRunner(DATA);
-        WorldSession session = new WorldSession(SERVER);
+        WorldSession session = new WorldSession(SERVER, MinecraftVersion.V26_3);
         session.setCollecting(true);
         session.setHashedSeed(Seeds.hashedSeed(12345L));
         session.setTypedSeedSearch(new TypedSeedSearch.Outcome(OptionalLong.of(12345L), 0));
@@ -136,7 +136,7 @@ class StatusTextTest {
     @Test
     void aSeedFoundFromTheNetherNamesTheStructureThatDoesntFit() {
         SearchRunner runner = new SearchRunner(DATA);
-        WorldSession session = new WorldSession(SERVER);
+        WorldSession session = new WorldSession(SERVER, MinecraftVersion.V26_3);
         session.setCollecting(true);
         session.setHashedSeed(Seeds.hashedSeed(12345L));
         // a village noted a chunk off, and one nether chunk's floor and roof

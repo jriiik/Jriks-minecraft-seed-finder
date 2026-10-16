@@ -14,9 +14,7 @@ import java.util.concurrent.CompletableFuture;
 import net.fabricmc.api.ClientModInitializer;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientChunkEvents;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
-import net.fabricmc.fabric.api.client.keymapping.v1.KeyMappingHelper;
 import net.fabricmc.fabric.api.client.message.v1.ClientReceiveMessageEvents;
-import net.fabricmc.fabric.api.client.rendering.v1.hud.HudElementRegistry;
 import net.fabricmc.loader.api.FabricLoader;
 import net.minecraft.client.KeyMapping;
 import net.minecraft.client.Minecraft;
@@ -58,24 +56,26 @@ public final class SeedFinderClient implements ClientModInitializer {
     @Override
     public void onInitializeClient() {
         KeyMapping.Category category = KeyMapping.Category.register(Identifier.fromNamespaceAndPath(MOD_ID, "main"));
-        openKey = KeyMappingHelper.registerKeyMapping(
-            new KeyMapping("key.jriksseedfinder.open", InputConstants.Type.KEYBOARD, InputConstants.UNKNOWN.getValue(), category));
+        openKey = GameVersion.registerKey(
+            new KeyMapping("key.jriksseedfinder.open", InputConstants.UNKNOWN.getType(), InputConstants.UNKNOWN.getValue(), category));
         runner = new SearchRunner(data());
 
         ClientTickEvents.END_CLIENT_TICK.register(SeedFinderClient::onTick);
         ClientChunkEvents.CHUNK_LOAD.register(SeedFinderClient::onChunkLoad);
         ClientReceiveMessageEvents.GAME.register(SeedFinderClient::onGameMessage);
-        HudElementRegistry.addLast(Identifier.fromNamespaceAndPath(MOD_ID, "status"), (graphics, delta) -> {
-            if (session != null && session.collecting() && session.showStatus()) {
-                Minecraft minecraft = Minecraft.getInstance();
-                graphics.text(minecraft.font, Component.literal(StatusText.statusLine(session, runner)), 4, 4, 0xFFFFFFFF);
-            }
-        });
+        GameVersion.addStatusLine(Identifier.fromNamespaceAndPath(MOD_ID, "status"),
+            () -> session != null && session.collecting() && session.showStatus() ? StatusText.statusLine(session, runner) : null);
+    }
+
+    /** The Minecraft version the game is (each version has its own jar of the mod). */
+    static MinecraftVersion minecraftVersion() {
+        return MinecraftVersion.byName(GameVersion.NAME)
+            .orElseThrow(() -> new IllegalStateException("the seed finder's engine has no data for Minecraft " + GameVersion.NAME));
     }
 
     static synchronized VersionData data() {
         if (data == null) {
-            data = MinecraftVersion.V26_3.data();
+            data = minecraftVersion().data();
         }
         return data;
     }
@@ -89,7 +89,8 @@ public final class SeedFinderClient implements ClientModInitializer {
         String world = WorldIdentity.key(minecraft);
         if (!Objects.equals(world, session == null ? null : session.world())) {
             save();
-            session = world == null ? null : WorldSession.load(folder(), world, WorldIdentity.current(minecraft), HashedSeed.read(minecraft.level));
+            session = world == null ? null
+                : WorldSession.load(folder(), world, WorldIdentity.current(minecraft), HashedSeed.read(minecraft.level), minecraftVersion());
             recognition = world == null ? null : new StructureRecognition(data());
             wasCollecting = false;
         }
@@ -152,7 +153,7 @@ public final class SeedFinderClient implements ClientModInitializer {
         }
         while (openKey.consumeClick()) {
             if (current != null) {
-                minecraft.gui.setScreen(new SeedFinderScreen(current, runner));
+                GameVersion.setScreen(minecraft, new SeedFinderScreen(current, runner));
             }
         }
     }
@@ -171,7 +172,7 @@ public final class SeedFinderClient implements ClientModInitializer {
         WorldSession current = session(Minecraft.getInstance());
         if (current != null && current.collecting()) {
             bedrockDimension(level, current)
-                .filter(dimension -> current.wantsBedrock(dimension.id(), chunk.getPos().x(), chunk.getPos().z()))
+                .filter(dimension -> current.wantsBedrock(dimension.id(), Chunks.x(chunk.getPos()), Chunks.z(chunk.getPos())))
                 .ifPresent(dimension -> BedrockScanner.scan(dimension, chunk).ifPresent(current::offerBedrock));
             scanBiomes(level, current, chunk);
             recognition.chunkLoaded(level, chunk);
@@ -185,7 +186,7 @@ public final class SeedFinderClient implements ClientModInitializer {
     private static Set<String> overworldBiomes() {
         if (overworldBiomes == null) {
             overworldBiomes = CompletableFuture.supplyAsync(
-                () -> Set.copyOf(OverworldBiomes.of(MinecraftVersion.V26_3, OverworldBiomes.Preset.NORMAL).parameters().biomes()));
+                () -> Set.copyOf(OverworldBiomes.of(minecraftVersion(), OverworldBiomes.Preset.NORMAL).parameters().biomes()));
             overworldBiomes.exceptionally(error -> {
                 LOG.warn("Could not load the overworld biomes; biomes are not noted", error);
                 return null;
@@ -202,7 +203,7 @@ public final class SeedFinderClient implements ClientModInitializer {
     /** Notes the chunk's biomes when they are wanted (overworld, not superflat, an area that still needs chunks). */
     private static void scanBiomes(ClientLevel level, WorldSession current, LevelChunk chunk) {
         if (!level.dimension().identifier().toString().equals("minecraft:overworld") || WorldIdentity.isSuperflat(level)
-            || !current.wantsBiomes(chunk.getPos().x(), chunk.getPos().z())) {
+            || !current.wantsBiomes(Chunks.x(chunk.getPos()), Chunks.z(chunk.getPos()))) {
             return;
         }
         Set<String> known = overworldBiomes();
@@ -241,7 +242,7 @@ public final class SeedFinderClient implements ClientModInitializer {
                     LevelChunk chunk = level.getChunkSource().getChunk(centerX + dx, centerZ + dz, ChunkStatus.FULL, false);
                     if (chunk != null) {
                         Optional<BedrockDimension> dimension = bedrockDimension(level, current);
-                        dimension.filter(rules -> current.wantsBedrock(rules.id(), chunk.getPos().x(), chunk.getPos().z()))
+                        dimension.filter(rules -> current.wantsBedrock(rules.id(), Chunks.x(chunk.getPos()), Chunks.z(chunk.getPos())))
                             .ifPresent(rules -> BedrockScanner.scan(rules, chunk).ifPresent(current::offerBedrock));
                         scanBiomes(level, current, chunk);
                     }

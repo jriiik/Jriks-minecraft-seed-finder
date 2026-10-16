@@ -48,7 +48,7 @@ final class RemoveStructureScreen extends Screen {
         list = new ScrollableLayout(minecraft, buttons, height - 33 - 33 - 20);
         layout.addToContents(list);
         LinearLayout footer = layout.addToFooter(LinearLayout.horizontal().spacing(6));
-        footer.addChild(Button.builder(Component.translatable("gui.jriksseedfinder.start_over"), button -> minecraft.gui.setScreen(new ConfirmScreen(
+        footer.addChild(Button.builder(Component.translatable("gui.jriksseedfinder.start_over"), button -> GameVersion.setScreen(minecraft, new ConfirmScreen(
             confirmed -> {
                 if (confirmed) {
                     SeedFinderClient.startOver();
@@ -70,7 +70,7 @@ final class RemoveStructureScreen extends Screen {
 
     @Override
     public void onClose() {
-        minecraft.gui.setScreen(parent);
+        GameVersion.setScreen(minecraft, parent);
     }
 
     @Override

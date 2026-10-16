@@ -46,7 +46,7 @@ final class BiomeScanner {
             List<String> cells = new ArrayList<>(16);
             for (int qz = 0; qz < 4; qz++) {
                 for (int qx = 0; qx < 4; qx++) {
-                    String biome = chunk.getNoiseBiome(pos.x() * 4 + qx, y >> 2, pos.z() * 4 + qz).unwrapKey()
+                    String biome = chunk.getNoiseBiome(Chunks.x(pos) * 4 + qx, y >> 2, Chunks.z(pos) * 4 + qz).unwrapKey()
                         .map(key -> key.identifier().toString()).orElse("?");
                     if (!known.contains(biome)) {
                         return new Unknown(biome);
@@ -56,6 +56,6 @@ final class BiomeScanner {
             }
             levels.put(y, cells);
         }
-        return new Read(new BiomeChunk(pos.x(), pos.z(), levels));
+        return new Read(new BiomeChunk(Chunks.x(pos), Chunks.z(pos), levels));
     }
 }

@@ -58,7 +58,7 @@ final class RecognitionSweep {
     static Result run(ServerLevel level, StartPieceRecognizer recognizer) {
         Registry<StructureSet> sets = level.registryAccess().lookupOrThrow(Registries.STRUCTURE_SET);
         Set<RecognizedStarts.Start> real = new LinkedHashSet<>();
-        for (String set : StartPieceLibrary.SETS) {
+        for (String set : StartPieceLibrary.setsOf(SeedFinderClient.data())) {
             real.addAll(nearestStarts(level, set, sets.getValue(Identifier.withDefaultNamespace(set))));
         }
 
@@ -68,7 +68,7 @@ final class RecognitionSweep {
         for (RecognizedStarts.Start start : real) {
             for (int dx = -RADIUS; dx <= RADIUS; dx++) {
                 for (int dz = -RADIUS; dz <= RADIUS; dz++) {
-                    window.add(ChunkPos.pack(start.chunkX() + dx, start.chunkZ() + dz));
+                    window.add(Chunks.key(start.chunkX() + dx, start.chunkZ() + dz));
                 }
             }
         }
@@ -77,7 +77,7 @@ final class RecognitionSweep {
 
             @Override
             public boolean isLoaded(int chunkX, int chunkZ) {
-                return window.contains(ChunkPos.pack(chunkX, chunkZ));
+                return window.contains(Chunks.key(chunkX, chunkZ));
             }
 
             @Override
@@ -90,7 +90,7 @@ final class RecognitionSweep {
         Set<StartPieceRecognizer.Candidate> seen = new HashSet<>();
         Map<String, Integer> pieces = new TreeMap<>();
         for (long packed : window) {
-            LevelChunk chunk = level.getChunk(ChunkPos.getX(packed), ChunkPos.getZ(packed));
+            LevelChunk chunk = level.getChunk(Chunks.keyX(packed), Chunks.keyZ(packed));
             LevelChunkSection[] sections = chunk.getSections();
             for (int index = 0; index < sections.length; index++) {
                 LevelChunkSection section = sections[index];
@@ -141,7 +141,7 @@ final class RecognitionSweep {
         for (RecognizedStarts.Start start : real) {
             for (int dx = -tracker.reach(); dx <= tracker.reach(); dx++) {
                 for (int dz = -tracker.reach(); dz <= tracker.reach(); dz++) {
-                    window.add(ChunkPos.pack(start.chunkX() + dx, start.chunkZ() + dz));
+                    window.add(Chunks.key(start.chunkX() + dx, start.chunkZ() + dz));
                 }
             }
         }
@@ -150,7 +150,7 @@ final class RecognitionSweep {
 
             @Override
             public boolean isLoaded(int chunkX, int chunkZ) {
-                return window.contains(ChunkPos.pack(chunkX, chunkZ));
+                return window.contains(Chunks.key(chunkX, chunkZ));
             }
 
             @Override
@@ -171,7 +171,7 @@ final class RecognitionSweep {
         };
         Map<Block, Integer> classes = new java.util.IdentityHashMap<>();
         for (long packed : window) {
-            LevelChunk chunk = level.getChunk(ChunkPos.getX(packed), ChunkPos.getZ(packed));
+            LevelChunk chunk = level.getChunk(Chunks.keyX(packed), Chunks.keyZ(packed));
             List<Integer> found = new ArrayList<>();
             LevelChunkSection[] sections = chunk.getSections();
             for (int index = 0; index < sections.length; index++) {
@@ -187,7 +187,7 @@ final class RecognitionSweep {
                     }
                 }
             }
-            tracker.chunkScanned(chunk.getPos().x(), chunk.getPos().z(), found.stream().mapToInt(Integer::intValue).toArray());
+            tracker.chunkScanned(Chunks.x(chunk.getPos()), Chunks.z(chunk.getPos()), found.stream().mapToInt(Integer::intValue).toArray());
         }
         RecognizedStarts found = new RecognizedStarts();
         Map<String, Integer> layouts = new TreeMap<>();
@@ -228,7 +228,7 @@ final class RecognitionSweep {
                 break;
             }
             ChunkPos chunk = placement.getPotentialStructureChunk(level.getSeed(), region[0] * placement.spacing(), region[1] * placement.spacing());
-            RecognizedStarts.Start start = new RecognizedStarts.Start(set, chunk.x(), chunk.z());
+            RecognizedStarts.Start start = new RecognizedStarts.Start(set, Chunks.x(chunk), Chunks.z(chunk));
             if (isRealStart(level, start)) {
                 starts.add(start);
                 if (starts.size() == STARTS_PER_SET) {
