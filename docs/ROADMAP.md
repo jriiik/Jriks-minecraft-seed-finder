@@ -382,7 +382,8 @@ once per version from one shared source.
 - *Tests and releases:* every build runs the in-game test for both versions (in 1.21.11 Fabric API's older test
   harness needs its packet synchronizer switched off). A release gets `seedfinder.jar` and one mod file per version,
   attached only when all tests and every version's in-game test passed; each mod file is the one its version's
-  in-game test ran on.
+  in-game test ran on. Since 1.02 every merge into `main` becomes a release by itself, numbered after the newest one
+  (1.01, 1.02, ...); a release published by hand sets a new number to continue from.
 - *Known limit:* notes are kept per world, not per version. A world played in 1.21.11 and then in 26.3 keeps its
   notes; biomes noted from chunks made by 1.21.11 can then miss in 26.3 (plains where 26.3 has dappled forest), a
   miss, not a wrong answer. Structures and bedrock are the same in both versions and are unaffected. The other way

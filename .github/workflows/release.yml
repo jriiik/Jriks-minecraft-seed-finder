@@ -1,17 +1,26 @@
 name: Release files
 
-# When a release is published on GitHub: builds the mod (once per Minecraft version) and the command-line app from the
-# release's tag, labelled with its version (a tag "v1.01" gives 1.01), runs every test including each version's
-# in-game test, and only then attaches jriks-seed-finder-mod-<version>-mc26.3.jar,
-# jriks-seed-finder-mod-<version>-mc1.21.11.jar and seedfinder.jar to the release. Each mod jar is the one its own
-# version's tests and in-game test ran on. If anything fails, nothing is attached; "Re-run all jobs" on the run tries
-# again.
+# Every merge into main becomes a release: it gets the next version number after the newest release (1.01 gives 1.02,
+# see .github/scripts/next-version.sh), the mod (once per Minecraft version) and the command-line app are built from
+# that commit labelled with that version, every test runs including each version's in-game test, and only then the
+# release is created with jriks-seed-finder-mod-<version>-mc<minecraft>.jar for each Minecraft version and
+# seedfinder.jar. A release published by hand (to choose the number, e.g. 2.00; a tag "v2.00" gives 2.00) gets the same
+# files attached. Each mod jar is the one its own version's tests and in-game test ran on. If anything fails, no release
+# is made (or nothing is attached); "Re-run all jobs" on the run tries again.
 on:
+  push:
+    branches: [main]
   release:
     types: [published]
 
 permissions:
   contents: read
+
+# One release at a time, so two merges close together never pick the same number. (A release made here with the
+# workflow's own token starts no further workflow runs, so it doesn't come back as a "release published" event.)
+concurrency:
+  group: release
+  cancel-in-progress: false
 
 jobs:
   version:
@@ -19,16 +28,23 @@ jobs:
     outputs:
       version: ${{ steps.read.outputs.version }}
     steps:
-      - name: Read the version from the release's tag
+      - uses: actions/checkout@v5
+
+      - name: Choose the version
         id: read
         env:
           TAG: ${{ github.event.release.tag_name }}
         run: |
-          version="${TAG#[vV]}"
+          if [[ "$GITHUB_EVENT_NAME" == "release" ]]; then
+            version="${TAG#[vV]}"
+          else
+            version="$(git ls-remote --tags --refs origin | sed 's#^.*refs/tags/##' | .github/scripts/next-version.sh)"
+          fi
           if [[ ! "$version" =~ ^[0-9A-Za-z][0-9A-Za-z._+-]*$ ]]; then
-            echo "::error::The release's tag \"$TAG\" is not a version such as 1.01 or v1.01."
+            echo "::error::\"$version\" is not a version such as 1.01 (a release's tag must look like 1.01 or v1.01)."
             exit 1
           fi
+          echo "Version: $version"
           echo "version=$version" >> "$GITHUB_OUTPUT"
 
   # The command-line app, with every test of the project (the engine, the app, and each version's mod with the
@@ -113,13 +129,16 @@ jobs:
           path: release-files/
           if-no-files-found: error
 
-  # A separate job, so the permission to change the release is never given to the builds (Gradle and its plugins). It
+  # A separate job, so the permission to change releases is never given to the builds (Gradle and its plugins). It
   # runs only when the app and the mod for every Minecraft version passed.
-  attach:
-    needs: [app, mod]
+  publish:
+    needs: [version, app, mod]
     runs-on: ubuntu-latest
     permissions:
       contents: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+      VERSION: ${{ needs.version.outputs.version }}
     steps:
       - uses: actions/download-artifact@v5
         with:
@@ -127,9 +146,28 @@ jobs:
           merge-multiple: true
           path: release-files
 
-      - name: Attach the files to the release
+      - name: Create the release for this merge
+        if: github.event_name == 'push'
+        run: |
+          ls -l release-files
+          {
+            echo "Pick the mod file that ends in your Minecraft version:"
+            for jar in release-files/jriks-seed-finder-mod-*.jar; do
+              name="${jar##*/}"
+              minecraft="${name##*-mc}"
+              echo "- \`$name\`: the mod for Minecraft ${minecraft%.jar}"
+            done
+            echo "- \`seedfinder.jar\`: the command-line app (for every Minecraft version)"
+          } > release-notes.md
+          cat release-notes.md
+          # Created as a draft, filled with the files and then published in one go, so the release never shows without
+          # them; the notes above come first, then the merged pull requests GitHub lists by itself.
+          gh release create "$VERSION" release-files/* --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" \
+            --title "Jrik's Minecraft Seed Finder v$VERSION" --notes-file release-notes.md --generate-notes
+
+      - name: Attach the files to the release published by hand
+        if: github.event_name == 'release'
         env:
-          GH_TOKEN: ${{ github.token }}
           TAG: ${{ github.event.release.tag_name }}
         run: |
           ls -l release-files

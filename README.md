@@ -382,11 +382,14 @@ xvfb-run -a ./gradlew :mod-1.21.11:runProductionClientGameTest  # the same in Mi
 The mod files end up in `mod/versions/26.3/build/libs/jriks-seed-finder-mod-<version>-mc26.3.jar` and
 `mod/versions/1.21.11/build/libs/jriks-seed-finder-mod-<version>-mc1.21.11.jar`.
 
-When a release is published on GitHub, the "Release files" workflow builds the files from the release's tag,
-labelled with its version (a tag `v1.01` gives 1.01), runs all tests and, for each Minecraft version, the in-game
-test with that version's mod file, and only then attaches `seedfinder.jar`,
-`jriks-seed-finder-mod-<version>-mc26.3.jar` and `jriks-seed-finder-mod-<version>-mc1.21.11.jar` to the release. If a
-test fails, nothing is attached; the failed run is listed under Actions.
+Every merge into `main` becomes a release by itself: the "Release files" workflow gives it the next number after the
+newest release (1.01 is followed by 1.02, 1.09 by 1.10), builds the files from that merge labelled with that number,
+runs all tests and, for each Minecraft version, the in-game test with that version's mod file, and only then creates
+the release with `seedfinder.jar`, `jriks-seed-finder-mod-<version>-mc26.3.jar` and
+`jriks-seed-finder-mod-<version>-mc1.21.11.jar`, about 15 minutes after the merge. Its description says which file is
+which and lists the merged pull requests. To choose a number yourself (for example 2.00, after which the automatic ones
+continue with 2.01), publish a release by hand on GitHub: the same workflow attaches the files to it (a tag `v2.00`
+gives 2.00). If a test fails, no release is made (or nothing is attached); the failed run is listed under Actions.
 
 To add or refresh a Minecraft version (needs Java 25). Versions whose game code comes with scrambled names, like
 1.21.11, first get it with Mojang's own names through Fabric Loom, so they take about 10 minutes instead of 2:

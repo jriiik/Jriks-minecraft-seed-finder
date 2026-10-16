@@ -308,14 +308,21 @@ the client already received.
   so the RTree's last-result shortcut starts empty, and the zoom).
 - `.github/workflows/`: `build.yml` (every push and pull request: a `build` job, `./gradlew build`, uploading
   `seedfinder` and one artifact per mod jar (an upload step per version); an `in-game-test` matrix over `26.3` and
-  `1.21.11`, fail-fast off, 45 min, its own asset cache and screenshot artifact per version) and `release.yml` (a
-  published GitHub release: `version` checks the tag and outputs it without a leading v; `app` runs
-  `./gradlew build -Pversion=...` and uploads `seedfinder.jar`; `mod`, a matrix per Minecraft version, runs
-  `:mod-<v>:build` and then the in-game test on that same jar and uploads it; `attach`, the only job with
-  `contents: write`, needs `app` and `mod`, downloads `release-*` merged and uploads `seedfinder.jar`,
-  `jriks-seed-finder-mod-<version>-mc26.3.jar` and `jriks-seed-finder-mod-<version>-mc1.21.11.jar`, so nothing is
-  attached unless all passed; it uploads after publishing, so it would fail if the repository's "immutable
-  releases" setting were switched on). A new version goes into both matrices and gets an upload step in `build.yml`.
+  `1.21.11`, fail-fast off, 45 min, its own asset cache and screenshot artifact per version) and `release.yml` (every
+  push to `main`, i.e. every merge, becomes a release, and a release published by hand gets the files; `concurrency`
+  group `release` runs one at a time, so two merges never pick the same number (a third queued run replaces a waiting
+  one, whose changes it contains); `version` = the tag without a leading v for a hand-made release, else
+  `.github/scripts/next-version.sh` over `git ls-remote --tags` (the highest `X.Y`/`vX.Y` tag with Y + 1, zero padding
+  kept: 1.01 -> 1.02, 1.99 -> 1.100; other tags ignored; none -> 1.00); `app` runs `./gradlew build -Pversion=...` and
+  uploads `seedfinder.jar`; `mod`, a matrix per Minecraft version, runs `:mod-<v>:build` and then the in-game test on
+  that same jar and uploads it; `publish`, the only job with `contents: write`, needs `app` and `mod`, downloads
+  `release-*` merged, and for a merge runs `gh release create <version> --target <sha>` with the files (gh makes a
+  draft, uploads, then publishes, so it also works with "immutable releases"), the title "Jrik's Minecraft Seed Finder
+  v<version>", notes naming each jar's Minecraft version (from the file names) followed by `--generate-notes`; for a
+  hand-made release it runs `gh release upload --clobber` (this path uploads after publishing, so it would fail with
+  "immutable releases" on). Nothing is released or attached unless all passed. Releases and tags made with the
+  workflow's own token start no workflow runs, so an automatic release doesn't run the workflow again). A new
+  Minecraft version goes into both matrices and gets an upload step in `build.yml`.
 
 ## Commands
 
