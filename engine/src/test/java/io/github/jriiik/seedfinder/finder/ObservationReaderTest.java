@@ -218,6 +218,18 @@ class ObservationReaderTest {
         ObservationReader.LineException other = assertThrows(ObservationReader.LineException.class, () -> read("igloo 48 208", "minecraft 1.21.11"));
         assertEquals(1, other.lineIndex());
         assertTrue(other.getMessage().contains("from Minecraft 1.21.11, but are being read as Minecraft 26.3"), other.getMessage());
+
+        // a line that starts like the version line but says more is a mistake in that line (not a structure)
+        for (String line : List.of("minecraft 1.21.11 world", "Minecraft version: 26.3, normal", "minecraft: 1.21.11 (my world)")) {
+            ObservationReader.LineException more = assertThrows(ObservationReader.LineException.class,
+                () -> ObservationReader.minecraftVersion(List.of("igloo 48 208", line)), line);
+            assertEquals(1, more.lineIndex());
+            assertTrue(more.getMessage().contains("the line that names the Minecraft version") && more.getMessage().contains("'minecraft 26.3'"),
+                more.getMessage());
+            ObservationReader.LineException read = assertThrows(ObservationReader.LineException.class, () -> read("igloo 48 208", line), line);
+            assertEquals(1, read.lineIndex());
+            assertEquals(more.getMessage(), read.getMessage());
+        }
     }
 
     @Test

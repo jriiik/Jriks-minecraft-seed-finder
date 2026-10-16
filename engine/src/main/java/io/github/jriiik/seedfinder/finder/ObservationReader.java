@@ -80,6 +80,8 @@ public final class ObservationReader {
     private static final Pattern PRESET = Pattern.compile("(?i)(?:world[- ])?preset[\\s:=]+(\\S.*?)\\s*");
     /** "minecraft 1.21.11" (also "Minecraft version: 26.3"); the version starts with a digit, unlike "minecraft:igloo". */
     private static final Pattern MINECRAFT = Pattern.compile("(?i)minecraft(?:[- ]version)?[\\s:=]+(\\d\\S*)");
+    /** The start of a version line, with something after the version ("minecraft 1.21.11 world"): a mistake. */
+    private static final Pattern MINECRAFT_START = Pattern.compile("(?i)minecraft(?:[- ]version)?[\\s:=]+\\d.*");
     private static final Pattern BIOME_ROW = Pattern.compile("[A-Za-z?]+");
     private static final Pattern NUMBER_ROW = Pattern.compile("(?:-?\\d+|\\?)(?:[\\s,;]+(?:-?\\d+|\\?))*");
     private static final Pattern DIGIT_ROW = Pattern.compile("[0-9?]+");
@@ -106,16 +108,34 @@ public final class ObservationReader {
     public static Optional<MinecraftVersion> minecraftVersion(List<String> lines) {
         Optional<MinecraftVersion> found = Optional.empty();
         for (int i = 0; i < lines.size(); i++) {
-            Matcher line = MINECRAFT.matcher(withoutComment(lines.get(i).strip()));
-            if (line.matches()) {
-                try {
-                    found = Optional.of(version(line.group(1), found));
-                } catch (IllegalArgumentException e) {
-                    throw new LineException(i, e.getMessage());
+            try {
+                Optional<String> named = versionName(lines.get(i).strip());
+                if (named.isPresent()) {
+                    found = Optional.of(version(named.get(), found));
                 }
+            } catch (IllegalArgumentException e) {
+                throw new LineException(i, e.getMessage());
             }
         }
         return found;
+    }
+
+    /**
+     * The version a {@code minecraft <version>} line names; empty for every other line.
+     *
+     * @throws IllegalArgumentException for a line that starts like one but has more in it
+     */
+    private static Optional<String> versionName(String text) {
+        String line = withoutComment(text);
+        Matcher matcher = MINECRAFT.matcher(line);
+        if (matcher.matches()) {
+            return Optional.of(matcher.group(1));
+        }
+        if (MINECRAFT_START.matcher(line).matches()) {
+            throw new IllegalArgumentException("this looks like the line that names the Minecraft version, but it must be only 'minecraft' and "
+                + "the version, like '" + versionLine(MinecraftVersion.latest()) + "' (put anything else after a #)");
+        }
+        return Optional.empty();
     }
 
     /** The version a line names, which must be supported and agree with the one named before (if any). */
@@ -145,9 +165,9 @@ public final class ObservationReader {
             String text = lines.get(i).strip();
             Matcher header = HEADER.matcher(withoutComment(text));
             try {
-                Matcher versionLine = MINECRAFT.matcher(withoutComment(text));
-                if (versionLine.matches()) {
-                    minecraft = Optional.of(version(versionLine.group(1), minecraft));
+                Optional<String> versionName = versionName(text);
+                if (versionName.isPresent()) {
+                    minecraft = Optional.of(version(versionName.get(), minecraft));
                     if (!minecraft.get().displayName().equals(data.version())) {
                         throw new IllegalArgumentException("these notes are from Minecraft " + minecraft.get().displayName()
                             + ", but are being read as Minecraft " + data.version());

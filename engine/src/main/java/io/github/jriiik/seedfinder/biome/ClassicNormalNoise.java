@@ -1,8 +1,6 @@
 package io.github.jriiik.seedfinder.biome;
 
-import io.github.jriiik.seedfinder.rng.RandomSupport;
 import io.github.jriiik.seedfinder.rng.XoroshiroPositionalFactory;
-import io.github.jriiik.seedfinder.rng.XoroshiroRandom;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
@@ -10,11 +8,9 @@ import java.util.List;
 /**
  * Minecraft 1.21.x's {@code NormalNoise}, in double arithmetic: two stacks of octaves (the game's {@code PerlinNoise}),
  * the second sampled slightly faster so the two do not line up, added and scaled. The layers are the same as 26.x
- * makes from the same names; only the arithmetic and the weights differ.
+ * makes from the same names ({@link NoiseGenerators}); only the arithmetic and the weights differ.
  */
 final class ClassicNormalNoise {
-
-    private static final double SECOND_STACK_FREQUENCY = 1.0181268882175227;
 
     private final Recipe recipe;
     private final PerlinNoise[] first;
@@ -27,9 +23,9 @@ final class ClassicNormalNoise {
     }
 
     double get(double x, double y, double z) {
-        double secondX = x * SECOND_STACK_FREQUENCY;
-        double secondY = y * SECOND_STACK_FREQUENCY;
-        double secondZ = z * SECOND_STACK_FREQUENCY;
+        double secondX = x * NoiseGenerators.SECOND_STACK_FREQUENCY;
+        double secondY = y * NoiseGenerators.SECOND_STACK_FREQUENCY;
+        double secondZ = z * NoiseGenerators.SECOND_STACK_FREQUENCY;
         return (stack(first, x, y, z) + stack(second, secondX, secondY, secondZ)) * recipe.valueFactor;
     }
 
@@ -50,9 +46,8 @@ final class ClassicNormalNoise {
      */
     static final class Recipe {
 
-        private final RandomSupport.Seed128 idHash;
+        private final NoiseGenerators generators;
         /** Per octave with a non-zero amplitude, from the lowest frequency up. */
-        private final RandomSupport.Seed128[] octaveHashes;
         private final double[] inputFactors;
         private final double[] valueFactors;
         private final double[] amplitudes;
@@ -64,7 +59,6 @@ final class ClassicNormalNoise {
          * @param amplitudes  one per octave; an octave with 0 is left out
          */
         Recipe(String id, int firstOctave, double[] amplitudes) {
-            this.idHash = RandomSupport.seedFromHashOf(id);
             int lowest = Integer.MAX_VALUE;
             int highest = Integer.MIN_VALUE;
             for (int i = 0; i < amplitudes.length; i++) {
@@ -89,13 +83,12 @@ final class ClassicNormalNoise {
                 inputFactor *= 2.0;
                 valueFactor /= 2.0;
             }
-            this.octaveHashes = new RandomSupport.Seed128[octaves.size()];
+            this.generators = new NoiseGenerators(id, octaves.stream().mapToInt(octave -> (int) octave[0]).toArray());
             this.inputFactors = new double[octaves.size()];
             this.valueFactors = new double[octaves.size()];
             this.amplitudes = new double[octaves.size()];
             for (int i = 0; i < octaves.size(); i++) {
                 double[] octave = octaves.get(i);
-                octaveHashes[i] = RandomSupport.seedFromHashOf("octave_" + (int) octave[0]);
                 inputFactors[i] = octave[1];
                 valueFactors[i] = octave[2];
                 this.amplitudes[i] = octave[3];
@@ -104,17 +97,8 @@ final class ClassicNormalNoise {
 
         /** The noise of the world whose generators come from {@code world} ({@code RandomState}'s root factory). */
         ClassicNormalNoise create(XoroshiroPositionalFactory world) {
-            XoroshiroRandom random = world.fromHash(idHash);
-            // each stack forks its own factory from the noise's random, the first stack first
-            XoroshiroPositionalFactory firstFactory = random.forkPositional();
-            XoroshiroPositionalFactory secondFactory = random.forkPositional();
-            PerlinNoise[] first = new PerlinNoise[octaveHashes.length];
-            PerlinNoise[] second = new PerlinNoise[octaveHashes.length];
-            for (int i = 0; i < octaveHashes.length; i++) {
-                first[i] = new PerlinNoise(firstFactory.fromHash(octaveHashes[i]));
-                second[i] = new PerlinNoise(secondFactory.fromHash(octaveHashes[i]));
-            }
-            return new ClassicNormalNoise(this, first, second);
+            PerlinNoise[][] stacks = generators.stacks(world);
+            return new ClassicNormalNoise(this, stacks[0], stacks[1]);
         }
 
         @Override

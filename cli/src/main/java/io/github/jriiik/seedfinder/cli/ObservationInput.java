@@ -27,8 +27,12 @@ record ObservationInput(Path file, List<String> lines, int fromFile) {
 
     /** Lines that belong to bedrock notes, for which the structure hint would not help. */
     private static final Pattern BEDROCK_LINE = Pattern.compile("(?i)\\s*((not[- ]|no[- ])?bedrock.*|[0-9?bB.,;\\s-]+)");
-    /** Biome, preset, hashed-seed and Minecraft version lines: not structures either. */
-    private static final Pattern OTHER_NOTE = Pattern.compile("(?i)\\s*(biome|(world[- ])?preset|hashed[- ]seed|minecraft\\s).*");
+    /**
+     * Biome, preset, hashed-seed and Minecraft version lines ("minecraft 26.3", "minecraft: 1.20.1"): not structures
+     * either. The version starts with a digit, unlike a structure name such as "minecraft:igloo".
+     */
+    private static final Pattern OTHER_NOTE = Pattern.compile(
+        "(?i)\\s*(biome|(world[- ])?preset|hashed[- ]seed|minecraft([- ]version)?[\\s:=]+\\d).*");
     /** A row of a biome grid (letters of its legend). */
     private static final Pattern GRID_ROW = Pattern.compile("[A-Za-z?\\s]+");
 

@@ -260,7 +260,8 @@ class BiomeEvidenceTest {
             assertTrue(real <= estimated, "wrong candidates fitting both groups: " + report);
             assertTrue(real <= MAX_GUARD_LIFT * independent, "groups at the spacing fit together too often: " + report);
             assertTrue(estimated >= MIN_GUARD_ESTIMATE, "too few expected wrong fits for the guard to tell anything: " + report);
-        }    }
+        }
+    }
 
     /** The guard's worlds must expect at least this many wrong fits per preset, or it couldn't catch an estimate too low. */
     private static final double MIN_GUARD_ESTIMATE = 500;

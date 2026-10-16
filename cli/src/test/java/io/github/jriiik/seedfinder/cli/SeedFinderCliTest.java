@@ -827,6 +827,23 @@ class SeedFinderCliTest {
         assertEquals(2, unknown.exitCode());
         assertTrue(unknown.err().contains("line 2 of " + file + ": Minecraft 1.20.1 is not supported (supported: 1.21.11, 26.3)."), unknown.err());
         assertFalse(unknown.err().contains("igloo:48,208"), "not a structure line: " + unknown.err());
+        // also written with a colon
+        java.nio.file.Files.writeString(file, "minecraft: 1.20.1\nvillage 336 80\n");
+        unknown = run(find("--file", file.toString()));
+        assertEquals(2, unknown.exitCode());
+        assertTrue(unknown.err().contains("line 1 of " + file + ": Minecraft 1.20.1 is not supported (supported: 1.21.11, 26.3)."), unknown.err());
+        assertFalse(unknown.err().contains("igloo:48,208"), "not a structure line: " + unknown.err());
+        // a version line with more in it is a mistake in the version line
+        java.nio.file.Files.writeString(file, "minecraft 1.21.11 world\nvillage 336 80\n");
+        Result more = run(find("--file", file.toString()));
+        assertEquals(2, more.exitCode());
+        assertTrue(more.err().contains("line 1 of " + file + ": this looks like the line that names the Minecraft version, but it must be only"
+            + " 'minecraft' and the version, like 'minecraft 26.3' (put anything else after a #)."), more.err());
+        assertFalse(more.err().contains("igloo:48,208") || more.err().contains("whole number"), more.err());
+        // a structure name starting with "minecraft:" still gets the hint
+        Result structure = run(find("minecraft:iglo:48,208"));
+        assertEquals(2, structure.exitCode());
+        assertTrue(structure.err().contains("igloo:48,208"), structure.err());
 
         java.nio.file.Files.writeString(file, "minecraft 1.21.11\nvillage 336 80\nminecraft 26.3\n");
         Result twice = run("full-seed", "12345", "--file", file.toString());

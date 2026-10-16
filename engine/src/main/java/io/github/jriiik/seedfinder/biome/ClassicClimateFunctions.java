@@ -253,7 +253,7 @@ final class ClassicClimateFunctions implements ClimateEvaluator {
         }
     }
 
-    enum Arithmetic { ADD, MUL }
+    private enum Arithmetic { ADD, MUL }
 
     /** {@code add} and {@code mul} of two functions ({@code Ap2}): a multiplication skips its right side when the left is 0. */
     private static final class TwoArguments extends Node {
